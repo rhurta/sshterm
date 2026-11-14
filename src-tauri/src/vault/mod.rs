@@ -1,6 +1,6 @@
-//! Vault cifrado: guarda sesiones, contraseñas y ajustes protegidos por la
-//! contraseña maestra. Este módulo no depende de Tauri, así que se puede
-//! probar con `cargo test` sin abrir ninguna ventana.
+//! Encrypted vault: stores sessions, passwords and settings protected by the
+//! master password. This module does not depend on Tauri, so it can be tested
+//! with `cargo test` without opening any window.
 
 mod crypto;
 mod error;
@@ -21,8 +21,8 @@ pub use crypto::KdfParams;
 pub use error::VaultError;
 pub use model::VaultData;
 
-/// Vault desbloqueado. Mientras exista, la clave está en memoria;
-/// al soltarlo (bloquear) la clave se borra (`Zeroizing`).
+/// Unlocked vault. While it exists, the key is in memory; on drop (locking)
+/// the key is cleared (`Zeroizing`).
 pub struct Vault {
     path: PathBuf,
     key: Zeroizing<[u8; KEY_LEN]>,
@@ -31,7 +31,7 @@ pub struct Vault {
     pub data: VaultData,
 }
 
-// Debug manual: nunca imprimir la clave ni los datos.
+// Manual Debug: never print the key or the data.
 impl fmt::Debug for Vault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Vault").field("path", &self.path).finish_non_exhaustive()
@@ -39,7 +39,7 @@ impl fmt::Debug for Vault {
 }
 
 impl Vault {
-    /// Crea un vault nuevo y vacío. Falla si ya existe uno.
+    /// Creates a new, empty vault. Fails if one already exists.
     pub fn create(path: &Path, password: &str) -> Result<Self, VaultError> {
         Self::create_with(path, password, KdfParams::default())
     }
@@ -58,7 +58,7 @@ impl Vault {
         Ok(vault)
     }
 
-    /// Abre un vault existente.
+    /// Opens an existing vault.
     pub fn unlock(path: &Path, password: &str) -> Result<Self, VaultError> {
         let bytes = fs::read(path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound { VaultError::NotFound } else { VaultError::Io(e) }
@@ -70,14 +70,14 @@ impl Vault {
         Ok(Vault { path: path.to_path_buf(), key, salt: header.salt, params: header.params, data })
     }
 
-    /// Guarda los datos actuales (nonce nuevo, escritura atómica).
+    /// Saves the current data (fresh nonce, atomic write).
     pub fn save(&self) -> Result<(), VaultError> {
         let bytes = serialize(&self.data, &self.key, &self.salt, &self.params)?;
         write_atomic(&self.path, &bytes)
     }
 
-    /// Cambia la contraseña maestra: sal nueva, clave nueva, todo re-cifrado.
-    /// Si el guardado falla, el vault en memoria queda como estaba.
+    /// Changes the master password: new salt, new key, everything re-encrypted.
+    /// If saving fails, the in-memory vault remains as it was.
     pub fn change_password(&mut self, new_password: &str) -> Result<(), VaultError> {
         if new_password.is_empty() {
             return Err(VaultError::EmptyPassword);
@@ -109,8 +109,8 @@ fn sibling(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Escribe en un archivo temporal, lo fuerza a disco, guarda una copia `.bak`
-/// del vault anterior y renombra. Un corte de luz no deja un vault a medias.
+/// Writes to a temporary file, forces it to disk, saves a `.bak` copy of the
+/// previous vault, and renames. A power cut never leaves a half-written vault.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
     let tmp = sibling(path, ".tmp");
     let bak = sibling(path, ".bak");

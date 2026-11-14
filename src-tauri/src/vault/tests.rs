@@ -2,7 +2,7 @@ use super::*;
 use std::fs;
 use tempfile::tempdir;
 
-/// Parámetros mínimos para que las pruebas sean rápidas.
+/// Minimal parameters so the tests run fast.
 const FAST: KdfParams = KdfParams { memory_kib: 8, iterations: 1, lanes: 1 };
 
 fn new_vault(dir: &Path, pw: &str) -> Vault {
@@ -50,25 +50,25 @@ fn tampered_header_fails() {
     new_vault(dir.path(), "pw");
     let original = fs::read(&path).unwrap();
 
-    // sal alterada
+    // altered salt
     let mut b = original.clone();
     b[17] ^= 0x01;
     fs::write(&path, &b).unwrap();
     assert!(matches!(Vault::unlock(&path, "pw").unwrap_err(), VaultError::WrongPasswordOrCorrupt));
 
-    // iteraciones alteradas (1 -> 2, sigue siendo un valor válido)
+    // altered iterations (1 -> 2, still a valid value)
     let mut b = original.clone();
     b[9] = 2;
     fs::write(&path, &b).unwrap();
     assert!(matches!(Vault::unlock(&path, "pw").unwrap_err(), VaultError::WrongPasswordOrCorrupt));
 
-    // versión desconocida
+    // unknown version
     let mut b = original.clone();
     b[4] = 9;
     fs::write(&path, &b).unwrap();
     assert!(matches!(Vault::unlock(&path, "pw").unwrap_err(), VaultError::UnsupportedVersion(9)));
 
-    // el original sigue funcionando
+    // the original still works
     fs::write(&path, &original).unwrap();
     assert!(Vault::unlock(&path, "pw").is_ok());
 }
@@ -79,7 +79,7 @@ fn absurd_kdf_params_are_rejected_before_deriving() {
     let path = dir.path().join("t.vault");
     new_vault(dir.path(), "pw");
     let mut b = fs::read(&path).unwrap();
-    b[5..9].copy_from_slice(&u32::MAX.to_le_bytes()); // memoria enorme
+    b[5..9].copy_from_slice(&u32::MAX.to_le_bytes()); // huge memory request
     fs::write(&path, &b).unwrap();
     assert!(matches!(Vault::unlock(&path, "pw").unwrap_err(), VaultError::InvalidParams));
 }
@@ -139,7 +139,7 @@ fn change_password_reencrypts() {
     let v2 = Vault::unlock(&path, "new").unwrap();
     assert_eq!(v2.data.known_hosts["h:22"], "SHA256:x");
 
-    // el vault abierto sigue siendo utilizable con la clave nueva
+    // the open vault is still usable with the new key
     v.data.known_hosts.insert("h2:22".into(), "SHA256:y".into());
     v.save().unwrap();
     assert_eq!(Vault::unlock(&path, "new").unwrap().data.known_hosts.len(), 2);
@@ -160,11 +160,11 @@ fn backup_is_created_on_second_save() {
     let path = dir.path().join("t.vault");
     let bak = dir.path().join("t.vault.bak");
     let v = new_vault(dir.path(), "pw");
-    assert!(!bak.exists()); // primera escritura: no había nada que copiar
+    assert!(!bak.exists()); // first write: nothing to copy yet
     v.save().unwrap();
     assert!(bak.exists());
     assert!(Vault::unlock(&bak, "pw").is_ok());
-    assert!(!dir.path().join("t.vault.tmp").exists()); // no queda basura
+    assert!(!dir.path().join("t.vault.tmp").exists()); // no leftover temp file
     assert!(Vault::unlock(&path, "pw").is_ok());
 }
 
@@ -177,8 +177,8 @@ fn every_save_uses_a_fresh_nonce() {
     v.save().unwrap();
     let b = fs::read(&path).unwrap();
     assert_eq!(a.len(), b.len());
-    assert_ne!(&a[33..57], &b[33..57]); // nonce distinto
-    assert_ne!(&a[57..], &b[57..]); // mismo contenido, texto cifrado distinto
+    assert_ne!(&a[33..57], &b[33..57]); // fresh nonce
+    assert_ne!(&a[57..], &b[57..]); // same content, different ciphertext
 }
 
 #[test]

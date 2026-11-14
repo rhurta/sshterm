@@ -13,14 +13,12 @@
 
 <style>
   .lang {
-    position: fixed;
-    top: 1rem;
-    right: 1.25rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.85rem;
     color: #8d97a8;
+    white-space: nowrap;
   }
   select {
     font: inherit;

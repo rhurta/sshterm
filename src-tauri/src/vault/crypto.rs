@@ -1,20 +1,20 @@
-//! Criptografía y formato binario del archivo.
+//! Cryptography and binary file format.
 //!
-//! Disposición del archivo:
+//! File layout:
 //!
-//! | bytes  | contenido                                              |
+//! | bytes  | content                                                |
 //! |--------|--------------------------------------------------------|
-//! | 0..4   | firma "SSHV"                                           |
-//! | 4      | versión del formato (1)                                |
-//! | 5..9   | Argon2: memoria en KiB (u32, little endian)           |
-//! | 9..13  | Argon2: iteraciones (u32)                              |
-//! | 13..17 | Argon2: carriles (u32)                                 |
-//! | 17..33 | sal aleatoria (16 bytes)                               |
-//! | 33..57 | nonce aleatorio (24 bytes), nuevo en cada guardado     |
-//! | 57..   | datos cifrados con XChaCha20-Poly1305 (+16 de etiqueta)|
+//! | 0..4   | magic "SSHV"                                          |
+//! | 4      | format version (1)                                    |
+//! | 5..9   | Argon2: memory in KiB (u32, little endian)            |
+//! | 9..13  | Argon2: iterations (u32)                              |
+//! | 13..17 | Argon2: lanes (u32)                                   |
+//! | 17..33 | random salt (16 bytes)                                |
+//! | 33..57 | random nonce (24 bytes), fresh on each save           |
+//! | 57..   | XChaCha20-Poly1305 ciphertext (+16-byte tag)          |
 //!
-//! Los primeros 33 bytes (la cabecera) se autentican como "datos asociados":
-//! si alguien los modifica, el descifrado falla.
+//! The first 33 bytes (the header) are authenticated as "associated data":
+//! if anyone modifies them, decryption fails.
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::{
@@ -35,7 +35,7 @@ const TAG_LEN: usize = 16;
 pub const HEADER_LEN: usize = 4 + 1 + 12 + SALT_LEN;
 pub const MIN_FILE_LEN: usize = HEADER_LEN + NONCE_LEN + TAG_LEN;
 
-/// Parámetros de Argon2id. Se guardan en la cabecera para poder subirlos en el futuro.
+/// Argon2id parameters. Stored in the header so they can be raised in the future.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KdfParams {
     pub memory_kib: u32,
@@ -50,7 +50,7 @@ impl Default for KdfParams {
 }
 
 impl KdfParams {
-    /// Un archivo manipulado podría pedir gigabytes de memoria: se limita antes de derivar.
+    /// A tampered file could request gigabytes of memory: it is capped before deriving.
     fn validate(&self) -> Result<(), VaultError> {
         let ok = (1..=16).contains(&self.lanes)
             && (1..=20).contains(&self.iterations)
@@ -71,7 +71,7 @@ pub fn random_bytes<const N: usize>() -> [u8; N] {
     b
 }
 
-/// Contraseña + sal -> clave de 32 bytes. Lento a propósito (frena la fuerza bruta).
+/// Password + salt -> 32-byte key. Slow on purpose (slows down brute force).
 pub fn derive_key(
     password: &str,
     salt: &[u8; SALT_LEN],
@@ -107,7 +107,7 @@ pub fn parse_header(file: &[u8]) -> Result<Header, VaultError> {
         return Err(VaultError::UnsupportedVersion(file[4]));
     }
     if file.len() < MIN_FILE_LEN {
-        return Err(VaultError::WrongPasswordOrCorrupt); // archivo truncado
+        return Err(VaultError::WrongPasswordOrCorrupt); // truncated file
     }
     let u32_at = |i: usize| u32::from_le_bytes(file[i..i + 4].try_into().unwrap());
     let mut salt = [0u8; SALT_LEN];
@@ -117,7 +117,7 @@ pub fn parse_header(file: &[u8]) -> Result<Header, VaultError> {
     Ok(Header { params, salt })
 }
 
-/// Cifra y devuelve el archivo completo: cabecera + nonce nuevo + datos cifrados.
+/// Encrypts and returns the complete file: header + fresh nonce + ciphertext.
 pub fn seal(
     key: &[u8; KEY_LEN],
     header: &[u8; HEADER_LEN],
@@ -135,7 +135,7 @@ pub fn seal(
     Ok(out)
 }
 
-/// Descifra el archivo completo. Falla si la clave es incorrecta o si algo cambió.
+/// Decrypts the complete file. Fails if the key is wrong or if anything changed.
 pub fn open(key: &[u8; KEY_LEN], file: &[u8]) -> Result<Zeroizing<Vec<u8>>, VaultError> {
     if file.len() < MIN_FILE_LEN {
         return Err(VaultError::WrongPasswordOrCorrupt);

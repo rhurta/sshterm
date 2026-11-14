@@ -4,10 +4,10 @@ use std::collections::BTreeMap;
 
 pub const DATA_VERSION: u32 = 1;
 
-/// Contenido descifrado del vault (se guarda como JSON dentro del archivo cifrado).
+/// Decrypted vault contents (stored as JSON inside the encrypted file).
 ///
-/// En M1 `tree` y `connections` son JSON libre. En M4 se sustituyen por
-/// estructuras tipadas (carpetas, conexiones, túneles, colores...).
+/// In M1 `tree` and `connections` are free-form JSON. In M4 they will be
+/// replaced by typed structures (folders, connections, tunnels, colors...).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VaultData {
     pub version: u32,

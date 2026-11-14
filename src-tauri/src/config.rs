@@ -1,7 +1,7 @@
-//! Ajustes no secretos, guardados en `config.toml` junto al exe.
+//! Non-secret settings, saved in `config.toml` next to the exe.
 //!
-//! Van fuera del vault a propósito: se necesitan antes de desbloquearlo
-//! (por ejemplo, el idioma de la pantalla de bloqueo).
+//! They are kept outside the vault on purpose: they are needed before unlocking
+//! (for example, the lock screen language).
 
 use std::fs::{self, File};
 use std::io::Write;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_LANGUAGE: &str = "en";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)] // los campos que falten en el archivo toman su valor por defecto
+#[serde(default)] // missing fields take their default value
 pub struct Config {
     pub language: String,
 }
@@ -24,8 +24,8 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Archivo ausente o ilegible -> valores por defecto. Un config.toml roto
-    /// nunca debe impedir que la aplicación arranque.
+    /// Missing or unreadable file -> default values. A broken config.toml
+    /// must never prevent the application from starting.
     pub fn load(path: &Path) -> Self {
         fs::read_to_string(path)
             .ok()
@@ -33,7 +33,7 @@ impl Config {
             .unwrap_or_default()
     }
 
-    /// Escribe en un archivo temporal y lo renombra (escritura atómica).
+    /// Writes to a temporary file and renames it (atomic write).
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let text = toml::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -49,8 +49,8 @@ impl Config {
     }
 }
 
-/// Acepta códigos de idioma como "en", "es", "pt-BR". Rechaza todo lo demás,
-/// para que nada raro llegue al archivo.
+/// Accepts language codes like "en", "es", "pt-BR". Rejects everything else,
+/// so nothing unexpected reaches the file.
 pub fn normalize_language(code: &str) -> Option<String> {
     let code = code.trim();
     let valid = !code.is_empty()

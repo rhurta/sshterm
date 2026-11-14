@@ -1,29 +1,29 @@
 use std::fmt;
 
-/// Todos los errores posibles del vault.
+/// All possible vault errors.
 #[derive(Debug)]
 pub enum VaultError {
     Io(std::io::Error),
     Serialize(serde_json::Error),
-    /// El archivo del vault no existe.
+    /// The vault file does not exist.
     NotFound,
-    /// Ya existe un vault y no se sobrescribe.
+    /// A vault already exists and is not overwritten.
     AlreadyExists,
-    /// El archivo no empieza por la firma "SSHV".
+    /// The file does not start with the "SSHV" magic.
     NotAVault,
-    /// Versión de formato que esta aplicación no conoce.
+    /// A format version this application does not know.
     UnsupportedVersion(u8),
-    /// Parámetros de Argon2 fuera de rango (archivo manipulado o dañado).
+    /// Argon2 parameters out of range (tampered or damaged file).
     InvalidParams,
     EmptyPassword,
-    /// Contraseña incorrecta O archivo alterado: el cifrado no distingue
-    /// los dos casos a propósito.
+    /// Wrong password OR altered file: the cipher does not distinguish
+    /// the two cases on purpose.
     WrongPasswordOrCorrupt,
     Crypto(String),
 }
 
 impl VaultError {
-    /// Código corto y estable. El frontend lo traduce a un mensaje para el usuario.
+    /// Short, stable code. The frontend translates it to a user-facing message.
     pub fn code(&self) -> &'static str {
         match self {
             Self::Io(_) => "io_error",

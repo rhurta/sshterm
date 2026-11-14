@@ -1,10 +1,14 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import LockScreen from "$lib/LockScreen.svelte";
-  import LanguageSelect from "$lib/LanguageSelect.svelte";
-  import { initLocale, t } from "$lib/i18n/index.svelte";
+  import Workspace from "$lib/Workspace.svelte";
+  import { initLocale } from "$lib/i18n/index.svelte";
+  import { startSessionBus } from "$lib/sessionBus";
 
-  let ready = $state(false); // evita mostrar un instante el idioma equivocado
+  // Register before any session can be opened, so no early PTY output is lost.
+  startSessionBus();
+
+  let ready = $state(false); // avoid briefly showing the wrong locale
   let unlocked = $state(false);
   let dir = $state("");
 
@@ -12,19 +16,17 @@
   invoke<string>("app_info").then((d) => (dir = d));
 
   async function lock() {
+    // Without this, ssh.exe processes would be left open after unmounting
+    // the Workspace.
+    await invoke("session_close_all");
     await invoke("vault_lock");
     unlocked = false;
   }
 </script>
 
 {#if ready}
-  <LanguageSelect />
   {#if unlocked}
-    <main class="home">
-      <h1>sshterm</h1>
-      <p>{t("home.unlocked", { dir })}</p>
-      <button onclick={lock}>{t("home.lock")}</button>
-    </main>
+    <Workspace {dir} onlock={lock} />
   {:else}
     <LockScreen onunlocked={() => (unlocked = true)} />
   {/if}
@@ -36,18 +38,5 @@
     background: #161a22;
     color: #dfe4ec;
     font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  }
-  .home {
-    padding: 2rem max(2rem, 8vw);
-  }
-  .home button {
-    font: inherit;
-    font-weight: 600;
-    color: #12161d;
-    background: #8fb4e8;
-    border: 0;
-    border-radius: 4px;
-    padding: 0.6rem 1rem;
-    cursor: pointer;
   }
 </style>

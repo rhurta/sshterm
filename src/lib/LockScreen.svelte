@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t, type MessageKey } from "$lib/i18n/index.svelte";
+  import LanguageSelect from "$lib/LanguageSelect.svelte";
 
   type Status = "loading" | "missing" | "locked" | "unlocked";
   type Problem = { key: MessageKey; params?: Record<string, string> };
@@ -10,7 +11,7 @@
   let status = $state<Status>("loading");
   let password = $state("");
   let confirm = $state("");
-  // Se guarda la clave del mensaje, no el texto: así cambia al cambiar de idioma.
+  // The message key is stored, not the text, so it updates on locale change.
   let problem = $state<Problem | null>(null);
   let busy = $state(false);
   let field: HTMLInputElement | undefined = $state();
@@ -25,7 +26,8 @@
     if (status === "missing" || status === "locked") field?.focus();
   });
 
-  // El backend devuelve códigos ("wrong_password"...). Aquí se convierten en mensajes.
+  // The backend returns codes ("wrong_password"...). Here they are converted
+  // to messages.
   function toProblem(code: string): Problem {
     const key = `error.${code}`;
     return hasMessage(key)
@@ -55,6 +57,9 @@
 </script>
 
 <main class="lock">
+  <div class="lang-corner">
+    <LanguageSelect />
+  </div>
   {#if status !== "loading"}
     <form onsubmit={submit}>
       <p class="mark">sshterm</p>
@@ -106,6 +111,12 @@
     align-items: center;
     padding: 0 max(2rem, 8vw);
     box-sizing: border-box;
+    position: relative;
+  }
+  .lang-corner {
+    position: absolute;
+    top: 1rem;
+    right: 1.25rem;
   }
   form {
     width: min(22rem, 100%);

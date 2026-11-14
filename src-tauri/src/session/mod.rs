@@ -1,0 +1,218 @@
+//! Open SSH sessions (M2).
+//!
+//! Each session owns a `Transport`. PTY bytes are published as `session:data`
+//! events (base64, to avoid splitting UTF-8 sequences across the JSON bridge);
+//! when the PTY reaches EOF, `session:closed` is emitted.
+
+use std::collections::HashMap;
+
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use rand::{rngs::OsRng, RngCore};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, State};
+use tokio::sync::Mutex;
+
+use crate::askpass::AskpassServer;
+use crate::commands::VaultState;
+use crate::paths;
+use crate::store;
+use crate::transport::{openssh::OpenSshTransport, PtySize, SshConfig, Transport};
+
+#[derive(Default)]
+pub struct SessionState(pub Mutex<HashMap<String, Box<dyn Transport>>>);
+
+impl Drop for SessionState {
+    fn drop(&mut self) {
+        // On app exit, each Transport kills its ssh.exe in its Drop.
+        self.0.get_mut().clear();
+    }
+}
+
+#[derive(Clone, Serialize)]
+struct DataEvent {
+    id: String,
+    data: String,
+}
+
+#[derive(Clone, Serialize)]
+struct ClosedEvent {
+    id: String,
+}
+
+fn new_id() -> String {
+    let mut bytes = [0u8; 8];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Appends one diagnostic line to logs/sshterm.log next to the executable.
+/// Only metadata and byte counts are recorded, never terminal contents or
+/// credentials. Failures to write are ignored: logging must not break a session.
+fn log_line(message: &str) {
+    use std::io::Write as _;
+    let dir = paths::logs_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("sshterm.log"))
+    {
+        let _ = writeln!(f, "{secs} {message}");
+    }
+}
+
+/// Opens a connection saved in the vault. The password is never passed to the
+/// frontend or shown on the command line: it is delivered via askpass.
+#[tauri::command]
+pub async fn session_open(
+    app: AppHandle,
+    state: State<'_, SessionState>,
+    vault_state: State<'_, VaultState>,
+    conn_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    let (cfg, password) = {
+        let g = vault_state.0.lock().unwrap_or_else(|e| e.into_inner());
+        let vault = g.as_ref().ok_or_else(|| "locked".to_string())?;
+        let conn = store::find(vault, &conn_id)
+            .ok_or_else(|| "connection_not_found".to_string())?;
+        let program = paths::ssh_program().map_err(|e| e.to_string())?;
+        let cfg = SshConfig {
+            program,
+            askpass_program: paths::askpass_program(),
+            known_hosts: paths::known_hosts_path(),
+            host: conn.host,
+            port: conn.port,
+            user: conn.user,
+            keepalive_secs: conn.keepalive_secs,
+        };
+        (cfg, conn.password)
+    };
+
+    let has_password = password.is_some();
+    let askpass = match password {
+        Some(p) => Some(AskpassServer::start(p).map_err(|e| e.to_string())?),
+        None => None,
+    };
+
+    let id = new_id();
+    let mut transport = OpenSshTransport::new(askpass);
+    transport
+        .open(&cfg, PtySize { cols, rows })
+        .await
+        .map_err(|e| e.code.to_string())?;
+    let mut rx = transport
+        .output()
+        .ok_or_else(|| "no_output".to_string())?;
+
+    state
+        .0
+        .lock()
+        .await
+        .insert(id.clone(), Box::new(transport));
+
+    log_line(&format!(
+        "open id={id} host={} port={} user={} program={} askpass={has_password}",
+        cfg.host,
+        cfg.port,
+        cfg.user,
+        cfg.program.display()
+    ));
+
+    // Immediate feedback in the terminal, even before ssh.exe emits anything.
+    // The app-wide session bus buffers it until the pane subscribes.
+    let banner = format!(
+        "sshterm: connecting to {}@{}:{} ...\r\n",
+        cfg.user, cfg.host, cfg.port
+    );
+    let _ = app.emit(
+        "session:data",
+        DataEvent { id: id.clone(), data: STANDARD.encode(banner.as_bytes()) },
+    );
+
+    let event_id = id.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut chunks = 0u64;
+        let mut total = 0u64;
+        while let Some(bytes) = rx.recv().await {
+            // Empty chunk = EOF sentinel from the transport's child watchdog.
+            // ConPTY does not always close the output pipe when ssh.exe exits.
+            if bytes.is_empty() {
+                log_line(&format!("ssh exited id={event_id} chunks={chunks} bytes={total}"));
+                break;
+            }
+            chunks += 1;
+            total += bytes.len() as u64;
+            if chunks <= 3 {
+                log_line(&format!("data id={event_id} chunk={chunks} bytes={}", bytes.len()));
+            }
+            let payload = DataEvent { id: event_id.clone(), data: STANDARD.encode(bytes) };
+            if app.emit("session:data", payload).is_err() {
+                log_line(&format!("emit failed id={event_id}"));
+                break;
+            }
+        }
+        log_line(&format!("reader ended id={event_id} chunks={chunks} bytes={total}"));
+        let _ = app.emit("session:closed", ClosedEvent { id: event_id });
+    });
+
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn session_write(
+    state: State<'_, SessionState>,
+    id: String,
+    data: String,
+) -> Result<(), String> {
+    let bytes = STANDARD.decode(&data).map_err(|_| "bad_base64".to_string())?;
+    let mut sessions = state.0.lock().await;
+    let transport = sessions
+        .get_mut(&id)
+        .ok_or_else(|| "session_not_found".to_string())?;
+    transport.write(&bytes).await.map_err(|e| e.code.to_string())
+}
+
+#[tauri::command]
+pub async fn session_resize(
+    state: State<'_, SessionState>,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let mut sessions = state.0.lock().await;
+    let transport = sessions
+        .get_mut(&id)
+        .ok_or_else(|| "session_not_found".to_string())?;
+    transport
+        .resize(PtySize { cols, rows })
+        .await
+        .map_err(|e| e.code.to_string())
+}
+
+#[tauri::command]
+pub async fn session_close(state: State<'_, SessionState>, id: String) -> Result<(), String> {
+    let mut sessions = state.0.lock().await;
+    if let Some(mut transport) = sessions.remove(&id) {
+        transport.close().await.map_err(|e| e.code.to_string())?;
+    }
+    Ok(())
+}
+
+/// When the vault is locked the UI unmounts: sessions must be closed so no
+/// ssh.exe processes are left running without a window to control them.
+#[tauri::command]
+pub async fn session_close_all(state: State<'_, SessionState>) -> Result<(), String> {
+    let mut sessions = state.0.lock().await;
+    for (_, mut transport) in sessions.drain() {
+        let _ = transport.close().await;
+    }
+    Ok(())
+}
