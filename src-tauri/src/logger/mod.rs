@@ -82,11 +82,31 @@ fn strip_control_chars(input: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+/// Collapses runs of consecutive blank lines into a single blank line so a log
+/// the remote host padded with many newlines (e.g. a centered banner) stays
+/// readable. A run of N newlines becomes at most two (one blank line).
+fn collapse_blank_lines(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    for &b in input {
+        if b == b'\n' {
+            // Keep at most one blank line: allow a run of two newlines, drop the rest.
+            let len = out.len();
+            if len >= 2 && out[len - 1] == b'\n' && out[len - 2] == b'\n' {
+                continue;
+            }
+        }
+        out.push(b);
+    }
+    out
+}
+
 /// Cleans terminal bytes for the log file: first strips ANSI/escape sequences,
-/// then removes other control characters, leaving readable text.
+/// then removes other control characters, then collapses runs of blank lines,
+/// leaving readable text.
 fn clean_for_log(input: &[u8]) -> Vec<u8> {
     let no_ansi = strip_ansi_sequences(input);
-    strip_control_chars(&no_ansi)
+    let no_control = strip_control_chars(&no_ansi);
+    collapse_blank_lines(&no_control)
 }
 
 pub struct SessionLogger {
@@ -207,5 +227,19 @@ mod tests {
         // ANSI color plus a stray CR: both gone, readable text remains.
         let input = b"\x1b[32mok\x1b[0m\r\n";
         assert_eq!(clean_for_log(input), b"ok\n");
+    }
+
+    #[test]
+    fn blank_lines_collapse_to_one() {
+        // Three newlines (two blank lines) become two newlines (one blank line).
+        let input = b"line1\n\n\nline2";
+        assert_eq!(collapse_blank_lines(input), b"line1\n\nline2");
+    }
+
+    #[test]
+    fn many_blank_lines_collapse_to_one() {
+        // A run of seven newlines keeps a single blank line between the blocks.
+        let input = b"head\n\n\n\n\n\n\n\ntail";
+        assert_eq!(collapse_blank_lines(input), b"head\n\ntail");
     }
 }
