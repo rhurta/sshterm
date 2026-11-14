@@ -5,6 +5,7 @@
 //! when the PTY reaches EOF, `session:closed` is emitted.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rand::{rngs::OsRng, RngCore};
@@ -14,17 +15,22 @@ use tokio::sync::Mutex;
 
 use crate::askpass::AskpassServer;
 use crate::commands::VaultState;
+use crate::config::Config;
+use crate::logger::SessionLogger;
 use crate::paths;
 use crate::store;
 use crate::transport::{openssh::OpenSshTransport, PtySize, SshConfig, Transport};
 
 #[derive(Default)]
-pub struct SessionState(pub Mutex<HashMap<String, Box<dyn Transport>>>);
+pub struct SessionState {
+    pub transports: Mutex<HashMap<String, Box<dyn Transport>>>,
+    pub loggers: Mutex<HashMap<String, Arc<Mutex<SessionLogger>>>>,
+}
 
 impl Drop for SessionState {
     fn drop(&mut self) {
         // On app exit, each Transport kills its ssh.exe in its Drop.
-        self.0.get_mut().clear();
+        self.transports.get_mut().clear();
     }
 }
 
@@ -78,7 +84,7 @@ pub async fn session_open(
     cols: u16,
     rows: u16,
 ) -> Result<String, String> {
-    let (cfg, password) = {
+    let (cfg, password, name) = {
         let g = vault_state.0.lock().unwrap_or_else(|e| e.into_inner());
         let vault = g.as_ref().ok_or_else(|| "locked".to_string())?;
         let conn = store::find(vault, &conn_id)
@@ -88,12 +94,12 @@ pub async fn session_open(
             program,
             askpass_program: paths::askpass_program(),
             known_hosts: paths::known_hosts_path(),
-            host: conn.host,
+            host: conn.host.clone(),
             port: conn.port,
-            user: conn.user,
+            user: conn.user.clone(),
             keepalive_secs: conn.keepalive_secs,
         };
-        (cfg, conn.password)
+        (cfg, conn.password, conn.name.clone())
     };
 
     let has_password = password.is_some();
@@ -103,6 +109,22 @@ pub async fn session_open(
     };
 
     let id = new_id();
+
+    // Per-session log file (M3): named after the connection so it is easy to
+    // find. Only terminal bytes are written here, never the password.
+    let app_cfg = Config::load(&paths::config_path());
+    let logger = Arc::new(tokio::sync::Mutex::new(SessionLogger::open(
+        &name,
+        &cfg.host,
+        &cfg.user,
+        &app_cfg,
+    )));
+    state
+        .loggers
+        .lock()
+        .await
+        .insert(id.clone(), Arc::clone(&logger));
+
     let mut transport = OpenSshTransport::new(askpass);
     transport
         .open(&cfg, PtySize { cols, rows })
@@ -113,7 +135,7 @@ pub async fn session_open(
         .ok_or_else(|| "no_output".to_string())?;
 
     state
-        .0
+        .transports
         .lock()
         .await
         .insert(id.clone(), Box::new(transport));
@@ -153,6 +175,7 @@ pub async fn session_open(
             if chunks <= 3 {
                 log_line(&format!("data id={event_id} chunk={chunks} bytes={}", bytes.len()));
             }
+            logger.lock().await.log_output(&bytes);
             let payload = DataEvent { id: event_id.clone(), data: STANDARD.encode(bytes) };
             if app.emit("session:data", payload).is_err() {
                 log_line(&format!("emit failed id={event_id}"));
@@ -173,7 +196,15 @@ pub async fn session_write(
     data: String,
 ) -> Result<(), String> {
     let bytes = STANDARD.decode(&data).map_err(|_| "bad_base64".to_string())?;
-    let mut sessions = state.0.lock().await;
+    // Log typed input (only if enabled in config) before forwarding to the PTY.
+    let logger = {
+        let loggers = state.loggers.lock().await;
+        loggers.get(&id).cloned()
+    };
+    if let Some(logger) = logger {
+        logger.lock().await.log_input(&bytes);
+    }
+    let mut sessions = state.transports.lock().await;
     let transport = sessions
         .get_mut(&id)
         .ok_or_else(|| "session_not_found".to_string())?;
@@ -187,7 +218,7 @@ pub async fn session_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let mut sessions = state.0.lock().await;
+    let mut sessions = state.transports.lock().await;
     let transport = sessions
         .get_mut(&id)
         .ok_or_else(|| "session_not_found".to_string())?;
@@ -199,10 +230,14 @@ pub async fn session_resize(
 
 #[tauri::command]
 pub async fn session_close(state: State<'_, SessionState>, id: String) -> Result<(), String> {
-    let mut sessions = state.0.lock().await;
+    let mut sessions = state.transports.lock().await;
     if let Some(mut transport) = sessions.remove(&id) {
         transport.close().await.map_err(|e| e.code.to_string())?;
     }
+    drop(sessions);
+    // Drop the map entry. The reader task still holds its own Arc clone, so the
+    // log file stays open until EOF is reached and then closes cleanly.
+    state.loggers.lock().await.remove(&id);
     Ok(())
 }
 
@@ -210,9 +245,11 @@ pub async fn session_close(state: State<'_, SessionState>, id: String) -> Result
 /// ssh.exe processes are left running without a window to control them.
 #[tauri::command]
 pub async fn session_close_all(state: State<'_, SessionState>) -> Result<(), String> {
-    let mut sessions = state.0.lock().await;
+    let mut sessions = state.transports.lock().await;
     for (_, mut transport) in sessions.drain() {
         let _ = transport.close().await;
     }
+    drop(sessions);
+    state.loggers.lock().await.clear();
     Ok(())
 }

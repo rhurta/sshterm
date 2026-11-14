@@ -1,6 +1,7 @@
 mod askpass;
 mod commands;
 mod config;
+mod logger;
 mod paths;
 mod session;
 mod store;

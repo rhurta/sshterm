@@ -15,11 +15,24 @@ pub const DEFAULT_LANGUAGE: &str = "en";
 #[serde(default)] // missing fields take their default value
 pub struct Config {
     pub language: String,
+    /// Write terminal output to the per-session log file (default true).
+    pub log_output: bool,
+    /// Also write typed input to the log file (default false: keeps secrets out).
+    pub log_input: bool,
+    /// Strip special characters from the log file — ANSI/escape sequences and
+    /// other control characters (carriage returns, bell, backspace, …) — leaving
+    /// readable text (default true). Set to false to keep the raw byte stream.
+    pub strip_special: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { language: DEFAULT_LANGUAGE.to_string() }
+        Self {
+            language: DEFAULT_LANGUAGE.to_string(),
+            log_output: true,
+            log_input: false,
+            strip_special: true,
+        }
     }
 }
 
@@ -77,9 +90,24 @@ mod tests {
     fn save_and_load_roundtrip() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        Config { language: "es".into() }.save(&path).unwrap();
-        assert_eq!(Config::load(&path).language, "es");
+        Config { language: "es".into(), ..Default::default() }.save(&path).unwrap();
+        let cfg = Config::load(&path);
+        assert_eq!(cfg.language, "es");
+        assert!(cfg.log_output);
+        assert!(!cfg.log_input);
+        assert!(cfg.strip_special);
         assert!(!dir.path().join("config.toml.tmp").exists());
+    }
+
+    #[test]
+    fn logging_fields_default_off_for_secrets() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "language = \"es\"\n").unwrap();
+        let cfg = Config::load(&path);
+        assert!(cfg.log_output); // output on by default
+        assert!(!cfg.log_input); // never log typed input by default
+        assert!(cfg.strip_special); // special characters stripped by default
     }
 
     #[test]
