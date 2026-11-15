@@ -1,0 +1,954 @@
+diff --git a/src-tauri/Cargo.lock b/src-tauri/Cargo.lock
+index 05bc4bc..93db0eb 100644
+--- a/src-tauri/Cargo.lock
++++ b/src-tauri/Cargo.lock
+@@ -3263,6 +3263,7 @@ dependencies = [
+  "async-trait",
+  "base64 0.22.1",
+  "chacha20poly1305",
++ "chrono",
+  "portable-pty",
+  "rand",
+  "serde",
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index 849693e..a1918f3 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -26,6 +26,8 @@ chacha20poly1305 = "0.10"
+ rand = "0.8"
+ zeroize = "1"
+ toml = "0.8"
++# M3: local date-time in log file names
++chrono = { version = "0.4", default-features = false, features = ["clock"] }
+ # M2: ssh.exe over ConPTY, password hand-off via named pipe, and events
+ portable-pty = "0.9"
+ tokio = { version = "1", features = ["sync", "net", "io-util", "time", "rt"] }
+diff --git a/src-tauri/src/config.rs b/src-tauri/src/config.rs
+index 0dc04a5..0c5c202 100644
+--- a/src-tauri/src/config.rs
++++ b/src-tauri/src/config.rs
+@@ -11,18 +11,26 @@ use serde::{Deserialize, Serialize};
+ 
+ pub const DEFAULT_LANGUAGE: &str = "en";
+ 
++/// What goes into the per-session log file.
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
++#[serde(rename_all = "lowercase")]
++pub enum LogMode {
++    /// Plain text of what the terminal shows (default). Built in the frontend from
++    /// the xterm.js buffer, so redraws sent by ConPTY never repeat lines.
++    Screen,
++    /// The bytes of the PTY exactly as received, escape codes included. For
++    /// diagnostics only: ConPTY output is a stream of screen redraws.
++    Raw,
++}
++
+ #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+ #[serde(default)] // missing fields take their default value
+ pub struct Config {
+     pub language: String,
+-    /// Write terminal output to the per-session log file (default true).
++    /// Write a log file per session (default true).
+     pub log_output: bool,
+-    /// Also write typed input to the log file (default false: keeps secrets out).
+-    pub log_input: bool,
+-    /// Strip special characters from the log file — ANSI/escape sequences and
+-    /// other control characters (carriage returns, bell, backspace, …) — leaving
+-    /// readable text (default true). Set to false to keep the raw byte stream.
+-    pub strip_special: bool,
++    /// Kind of log (default: plain text of the screen).
++    pub log_mode: LogMode,
+ }
+ 
+ impl Default for Config {
+@@ -30,8 +38,7 @@ impl Default for Config {
+         Self {
+             language: DEFAULT_LANGUAGE.to_string(),
+             log_output: true,
+-            log_input: false,
+-            strip_special: true,
++            log_mode: LogMode::Screen,
+         }
+     }
+ }
+@@ -94,20 +101,27 @@ mod tests {
+         let cfg = Config::load(&path);
+         assert_eq!(cfg.language, "es");
+         assert!(cfg.log_output);
+-        assert!(!cfg.log_input);
+-        assert!(cfg.strip_special);
++        assert_eq!(cfg.log_mode, LogMode::Screen);
+         assert!(!dir.path().join("config.toml.tmp").exists());
+     }
+ 
+     #[test]
+-    fn logging_fields_default_off_for_secrets() {
++    fn logging_defaults() {
+         let dir = tempdir().unwrap();
+         let path = dir.path().join("config.toml");
+         fs::write(&path, "language = \"es\"\n").unwrap();
+         let cfg = Config::load(&path);
+-        assert!(cfg.log_output); // output on by default
+-        assert!(!cfg.log_input); // never log typed input by default
+-        assert!(cfg.strip_special); // special characters stripped by default
++        assert!(cfg.log_output);
++        assert_eq!(cfg.log_mode, LogMode::Screen);
++    }
++
++    #[test]
++    fn log_mode_is_read_from_the_file_and_old_fields_are_ignored() {
++        let dir = tempdir().unwrap();
++        let path = dir.path().join("config.toml");
++        // `strip_special` and `log_input` existed before: they must not break loading
++        fs::write(&path, "log_mode = \"raw\"\nstrip_special = true\nlog_input = false\n").unwrap();
++        assert_eq!(Config::load(&path).log_mode, LogMode::Raw);
+     }
+ 
+     #[test]
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 3f12b42..925ce22 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -61,6 +61,8 @@ pub fn run() {
+             session::session_resize,
+             session::session_close,
+             session::session_close_all,
++            session::session_log_append,
++            session::session_log_close,
+         ])
+         .run(tauri::generate_context!())
+         .expect("error while running tauri application");
+diff --git a/src-tauri/src/logger/mod.rs b/src-tauri/src/logger/mod.rs
+index 2b29fd6..e457e5b 100644
+--- a/src-tauri/src/logger/mod.rs
++++ b/src-tauri/src/logger/mod.rs
+@@ -1,245 +1,216 @@
+-//! Per-session terminal logging (M3).
++//! Per-session logging (M3).
+ //!
+-//! One file per session, named `logs/<connection>_<timestamp>.log` next to the
+-//! exe. Only terminal bytes are written: the header plus the bytes that flow
+-//! through the PTY. The metadata diagnostics in `session/mod.rs::log_line`
+-//! (which never logs secrets or terminal contents) stay in `logs/sshterm.log`.
++//! One file per session: `logs/<connection>_<YYYYMMDD-HHMMSS>.log` next to the exe.
++//!
++//! The default log is plain text built in the frontend from what the terminal
++//! DISPLAYS (`src/lib/logCapture.ts`), not from the bytes of the PTY. ConPTY keeps
++//! its own copy of the screen and re-sends it (full repaints on resize and scroll,
++//! partial-line updates with cursor jumps). A log made by stripping the escape
++//! codes from that stream repeats the same screen many times and leaves text
++//! fragments, and it cannot be repaired afterwards because the cursor movements
++//! that explain the redraws are gone.
++//!
++//! `LogMode::Raw` keeps the old behaviour (bytes as received) for diagnostics.
++//! Typed input is never logged: commands already appear in the screen log next to
++//! the prompt, and a password typed at a prompt is not echoed, so it never shows.
+ 
+-use std::fs::{self, File, OpenOptions};
++use std::fs::{File, OpenOptions};
+ use std::io::Write;
+-use std::time::{SystemTime, UNIX_EPOCH};
++use std::path::{Path, PathBuf};
++
++use chrono::{DateTime, Local};
+ 
+-use crate::config::Config;
++use crate::config::{Config, LogMode};
+ use crate::paths;
+ 
+ /// Replaces characters that are illegal or awkward in Windows file names.
+ fn sanitize(name: &str) -> String {
+-    name.chars()
++    let cleaned: String = name
++        .chars()
+         .map(|c| match c {
+             '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+             c if c.is_control() => '_',
+             c => c,
+         })
+-        .collect()
+-}
+-
+-/// Minimal ANSI/escape stripper for log files. It removes CSI (`ESC [` ...),
+-/// OSC (`ESC ]` ... BEL) and other two-byte escapes. It is not a full terminal
+-/// emulator, only enough to keep the log readable.
+-fn strip_ansi_sequences(input: &[u8]) -> Vec<u8> {
+-    let mut out = Vec::with_capacity(input.len());
+-    let mut i = 0;
+-    while i < input.len() {
+-        let b = input[i];
+-        if b == 0x1b {
+-            // An escape sequence starts here.
+-            if i + 1 >= input.len() {
+-                break;
+-            }
+-            let next = input[i + 1];
+-            if next == b'[' {
+-                // CSI: ESC [ params... final byte (0x40..=0x7e)
+-                i += 2;
+-                while i < input.len() && !(0x40..=0x7e).contains(&input[i]) {
+-                    i += 1;
+-                }
+-                if i < input.len() {
+-                    i += 1; // skip the final byte
+-                }
+-                continue;
+-            } else if next == b']' {
+-                // OSC: ESC ] ... BEL (0x07) or ST (ESC \)
+-                i += 2;
+-                while i < input.len() && input[i] != 0x07 {
+-                    i += 1;
+-                }
+-                if i < input.len() {
+-                    i += 1; // skip the BEL
+-                }
+-                continue;
+-            } else {
+-                // Other escapes (e.g. ESC ( B): consume ESC and the next byte.
+-                i += 2;
+-                continue;
+-            }
+-        }
+-        out.push(b);
+-        i += 1;
+-    }
+-    out
+-}
+-
+-/// Removes stray control characters that make a plain-text log hard to read,
+-/// while keeping the text itself. It drops carriage returns, bell, backspace
+-/// and the rest of the C0 controls, plus DEL (0x7f). The line feed (0x0a) and
+-/// horizontal tab (0x09) are kept so the log keeps its line breaks and
+-/// indentation. Printable ASCII and UTF-8 (including multibyte) are preserved.
+-fn strip_control_chars(input: &[u8]) -> Vec<u8> {
+-    input
+-        .iter()
+-        .copied()
+-        .filter(|&b| b == b'\n' || b == b'\t' || (b >= 0x20 && b != 0x7f))
+-        .collect()
++        .collect();
++    // Windows does not allow names ending in a dot or a space.
++    let trimmed = cleaned.trim().trim_end_matches('.').chars().take(80).collect::<String>();
++    if trimmed.is_empty() { "session".to_string() } else { trimmed }
+ }
+ 
+-/// Collapses runs of consecutive blank lines into a single blank line so a log
+-/// the remote host padded with many newlines (e.g. a centered banner) stays
+-/// readable. A run of N newlines becomes at most two (one blank line).
+-fn collapse_blank_lines(input: &[u8]) -> Vec<u8> {
+-    let mut out = Vec::with_capacity(input.len());
+-    for &b in input {
+-        if b == b'\n' {
+-            // Keep at most one blank line: allow a run of two newlines, drop the rest.
+-            let len = out.len();
+-            if len >= 2 && out[len - 1] == b'\n' && out[len - 2] == b'\n' {
+-                continue;
+-            }
+-        }
+-        out.push(b);
+-    }
+-    out
+-}
+-
+-/// Cleans terminal bytes for the log file: first strips ANSI/escape sequences,
+-/// then removes other control characters, then collapses runs of blank lines,
+-/// leaving readable text.
+-fn clean_for_log(input: &[u8]) -> Vec<u8> {
+-    let no_ansi = strip_ansi_sequences(input);
+-    let no_control = strip_control_chars(&no_ansi);
+-    collapse_blank_lines(&no_control)
++fn stamp(now: DateTime<Local>) -> String {
++    now.format("%Y%m%d-%H%M%S").to_string()
+ }
+ 
+ pub struct SessionLogger {
+     file: Option<File>,
+-    log_input: bool,
+-    strip_special: bool,
++    mode: LogMode,
+ }
+ 
+ impl SessionLogger {
+-    /// Opens the per-session log file. Any failure is swallowed: a logging
+-    /// problem must never break a session.
++    /// Opens the per-session log file. Any failure is swallowed: a logging problem
++    /// must never break a session.
+     pub fn open(connection_name: &str, host: &str, user: &str, cfg: &Config) -> Self {
+-        let mut logger = SessionLogger {
+-            file: None,
+-            log_input: cfg.log_input,
+-            strip_special: cfg.strip_special,
+-        };
+-        logger.try_open(connection_name, host, user);
++        Self::open_in(&paths::logs_dir(), connection_name, host, user, cfg)
++    }
++
++    pub fn open_in(dir: &Path, connection_name: &str, host: &str, user: &str, cfg: &Config) -> Self {
++        let mut logger = SessionLogger { file: None, mode: cfg.log_mode };
++        if cfg.log_output {
++            logger.file = create_file(dir, connection_name, host, user);
++        }
+         logger
+     }
+ 
+-    fn try_open(&mut self, connection_name: &str, host: &str, user: &str) {
+-        let dir = paths::logs_dir();
+-        if fs::create_dir_all(&dir).is_err() {
++    /// Plain text produced from the terminal screen (`LogMode::Screen`).
++    pub fn write_text(&mut self, text: &str) {
++        if self.mode != LogMode::Screen {
+             return;
+         }
+-        let secs = SystemTime::now()
+-            .duration_since(UNIX_EPOCH)
+-            .map(|d| d.as_secs())
+-            .unwrap_or(0);
+-        let name = format!("{}_{}.log", sanitize(connection_name), secs);
+-        let path = dir.join(&name);
+-        match OpenOptions::new().create(true).append(true).open(&path) {
+-            Ok(mut f) => {
+-                let _ = writeln!(f, "sshterm session log");
+-                let _ = writeln!(f, "connection: {connection_name}");
+-                let _ = writeln!(f, "user: {user}");
+-                let _ = writeln!(f, "host: {host}");
+-                let _ = writeln!(f, "started: {secs}");
+-                let _ = writeln!(f, "----");
+-                self.file = Some(f);
+-            }
+-            Err(_) => {}
+-        }
++        self.write(text.as_bytes());
+     }
+ 
+-    /// Writes terminal output to the log file (unless `log_output` was off, which
+-    /// it never is here — the caller only builds a logger when logging is on).
+-    pub fn log_output(&mut self, bytes: &[u8]) {
+-        if self.file.is_none() {
++    /// PTY bytes exactly as received (`LogMode::Raw`).
++    pub fn write_raw(&mut self, bytes: &[u8]) {
++        if self.mode != LogMode::Raw {
+             return;
+         }
+-        let data: Vec<u8> = if self.strip_special {
+-            clean_for_log(bytes)
+-        } else {
+-            bytes.to_vec()
+-        };
+-        if let Some(f) = self.file.as_mut() {
+-            let _ = f.write_all(&data);
+-            let _ = f.flush();
+-        }
++        self.write(bytes);
+     }
+ 
+-    /// Writes typed input, marked so the log stays readable. Respects the
+-    /// `log_input` setting (off by default to keep secrets out).
+-    pub fn log_input(&mut self, bytes: &[u8]) {
+-        if !self.log_input || self.file.is_none() {
+-            return;
++    /// Writes the closing line and releases the file.
++    pub fn finish(&mut self) {
++        if self.file.is_some() {
++            let line = format!("---- ended: {}\n", Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false));
++            self.write(line.as_bytes());
+         }
++        self.file = None;
++    }
++
++    fn write(&mut self, bytes: &[u8]) {
+         if let Some(f) = self.file.as_mut() {
+-            let _ = write!(f, "\x1b[2m← {}\x1b[0m", String::from_utf8_lossy(bytes));
++            let _ = f.write_all(bytes);
+             let _ = f.flush();
+         }
+     }
+ }
+ 
++/// Creates a new file. Two sessions of the same connection that start within the
++/// same second get `_2`, `_3`... instead of sharing (and mixing) one file.
++fn create_file(dir: &Path, connection_name: &str, host: &str, user: &str) -> Option<File> {
++    std::fs::create_dir_all(dir).ok()?;
++    let now = Local::now();
++    let base = format!("{}_{}", sanitize(connection_name), stamp(now));
++    let mut path: PathBuf = dir.join(format!("{base}.log"));
++    for n in 2..100 {
++        match OpenOptions::new().create_new(true).append(true).open(&path) {
++            Ok(mut f) => {
++                let _ = write!(
++                    f,
++                    "sshterm session log\nconnection: {connection_name}\nuser: {user}\nhost: {host}\nstarted: {}\n----\n",
++                    now.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
++                );
++                return Some(f);
++            }
++            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
++                path = dir.join(format!("{base}_{n}.log"));
++            }
++            Err(_) => return None,
++        }
++    }
++    None
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use std::fs;
++    use tempfile::tempdir;
+ 
+-    #[test]
+-    fn sanitize_replaces_illegal_characters() {
+-        assert_eq!(sanitize("a/b:c*d?e\"f<g>h|i\\j"), "a_b_c_d_e_f_g_h_i_j");
+-        assert_eq!(sanitize("normal-name"), "normal-name");
++    fn cfg(mode: LogMode) -> Config {
++        Config { log_mode: mode, ..Config::default() }
+     }
+ 
+-    #[test]
+-    fn ansi_sequences_are_stripped() {
+-        // ESC[32m is a green color; ESC[0m resets it.
+-        let input = b"\x1b[32mgreen\x1b[0m text";
+-        let out = strip_ansi_sequences(input);
+-        assert_eq!(out, b"green text");
++    fn only_log(dir: &Path) -> String {
++        let mut files: Vec<_> = fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).collect();
++        files.sort();
++        assert_eq!(files.len(), 1, "expected exactly one log file, got {files:?}");
++        fs::read_to_string(&files[0]).unwrap()
+     }
+ 
+     #[test]
+-    fn osc_title_sequences_are_stripped() {
+-        // ESC]0;title BEL
+-        let input = b"\x1b]0;my title\x07prompt$ ";
+-        let out = strip_ansi_sequences(input);
+-        assert_eq!(out, b"prompt$ ");
++    fn sanitize_replaces_illegal_characters() {
++        assert_eq!(sanitize("a/b:c*d?e\"f<g>h|i\\j"), "a_b_c_d_e_f_g_h_i_j");
++        assert_eq!(sanitize("normal-name"), "normal-name");
++        assert_eq!(sanitize("  name. "), "name");
++        assert_eq!(sanitize("..."), "session");
++        assert_eq!(sanitize("").as_str(), "session");
++        assert_eq!(sanitize(&"x".repeat(200)).len(), 80);
+     }
+ 
+     #[test]
+-    fn plain_text_is_untouched() {
+-        let input = b"hello world\r\n";
+-        assert_eq!(strip_ansi_sequences(input), input);
++    fn file_name_has_a_readable_timestamp() {
++        let dir = tempdir().unwrap();
++        let _ = SessionLogger::open_in(dir.path(), "server", "h", "u", &cfg(LogMode::Screen));
++        let name = fs::read_dir(dir.path()).unwrap().next().unwrap().unwrap().file_name();
++        let name = name.to_string_lossy().into_owned();
++        // server_YYYYMMDD-HHMMSS.log
++        let re_ok = name.starts_with("server_")
++            && name.ends_with(".log")
++            && name.len() == "server_20260101-120000.log".len()
++            && name.as_bytes()["server_".len() + 8] == b'-';
++        assert!(re_ok, "unexpected file name {name}");
+     }
+ 
+     #[test]
+-    fn control_characters_are_stripped() {
+-        // CR (0x0d) and BEL (0x07) are removed; LF (0x0a) and printable kept.
+-        let input = b"line1\r\nline2\x07done";
+-        assert_eq!(clean_for_log(input), b"line1\nline2done");
++    fn screen_mode_writes_text_and_ignores_raw_bytes() {
++        let dir = tempdir().unwrap();
++        let mut l = SessionLogger::open_in(dir.path(), "srv", "10.0.0.5", "olfo", &cfg(LogMode::Screen));
++        l.write_raw(b"\x1b[2J garbage that must not appear");
++        l.write_text("line one\nline two\n");
++        l.finish();
++        let log = only_log(dir.path());
++        assert!(log.starts_with("sshterm session log\nconnection: srv\nuser: olfo\nhost: 10.0.0.5\nstarted: "));
++        assert!(log.contains("----\nline one\nline two\n---- ended: "));
++        assert!(!log.contains("garbage"));
+     }
+ 
+     #[test]
+-    fn special_characters_cleaned_keeps_text() {
+-        // ANSI color plus a stray CR: both gone, readable text remains.
+-        let input = b"\x1b[32mok\x1b[0m\r\n";
+-        assert_eq!(clean_for_log(input), b"ok\n");
++    fn raw_mode_writes_bytes_and_ignores_screen_text() {
++        let dir = tempdir().unwrap();
++        let mut l = SessionLogger::open_in(dir.path(), "srv", "u", "h", &cfg(LogMode::Raw));
++        l.write_text("screen text must not appear");
++        l.write_raw(b"raw bytes");
++        let log = only_log(dir.path());
++        assert!(log.contains("raw bytes"));
++        assert!(!log.contains("screen text"));
+     }
+ 
+     #[test]
+-    fn blank_lines_collapse_to_one() {
+-        // Three newlines (two blank lines) become two newlines (one blank line).
+-        let input = b"line1\n\n\nline2";
+-        assert_eq!(collapse_blank_lines(input), b"line1\n\nline2");
++    fn log_output_false_creates_no_file() {
++        let dir = tempdir().unwrap();
++        let mut c = cfg(LogMode::Screen);
++        c.log_output = false;
++        let mut l = SessionLogger::open_in(dir.path(), "srv", "u", "h", &c);
++        l.write_text("x");
++        l.finish();
++        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+     }
+ 
+     #[test]
+-    fn many_blank_lines_collapse_to_one() {
+-        // A run of seven newlines keeps a single blank line between the blocks.
+-        let input = b"head\n\n\n\n\n\n\n\ntail";
+-        assert_eq!(collapse_blank_lines(input), b"head\n\ntail");
++    fn two_sessions_in_the_same_second_do_not_share_a_file() {
++        let dir = tempdir().unwrap();
++        let mut a = SessionLogger::open_in(dir.path(), "srv", "u", "h", &cfg(LogMode::Screen));
++        let mut b = SessionLogger::open_in(dir.path(), "srv", "u", "h", &cfg(LogMode::Screen));
++        a.write_text("from a\n");
++        b.write_text("from b\n");
++        let mut contents: Vec<String> = fs::read_dir(dir.path())
++            .unwrap()
++            .map(|e| fs::read_to_string(e.unwrap().path()).unwrap())
++            .collect();
++        contents.sort();
++        assert_eq!(contents.len(), 2);
++        assert!(contents.iter().any(|c| c.contains("from a") && !c.contains("from b")));
++        assert!(contents.iter().any(|c| c.contains("from b") && !c.contains("from a")));
+     }
+ }
+diff --git a/src-tauri/src/session/mod.rs b/src-tauri/src/session/mod.rs
+index 3e029f4..a9b876c 100644
+--- a/src-tauri/src/session/mod.rs
++++ b/src-tauri/src/session/mod.rs
+@@ -110,8 +110,19 @@ pub async fn session_open(
+ 
+     let id = new_id();
+ 
+-    // Per-session log file (M3): named after the connection so it is easy to
+-    // find. Only terminal bytes are written here, never the password.
++    let mut transport = OpenSshTransport::new(askpass);
++    transport
++        .open(&cfg, PtySize { cols, rows })
++        .await
++        .map_err(|e| e.code.to_string())?;
++    let mut rx = transport
++        .output()
++        .ok_or_else(|| "no_output".to_string())?;
++
++    // Per-session log file (M3), created only once ssh has really started so a
++    // failed start leaves no empty file behind. In the default mode the text comes
++    // from the frontend (`session_log_append`); the PTY bytes are only written in
++    // `raw` mode. Typed input and passwords are never logged.
+     let app_cfg = Config::load(&paths::config_path());
+     let logger = Arc::new(tokio::sync::Mutex::new(SessionLogger::open(
+         &name,
+@@ -125,15 +136,6 @@ pub async fn session_open(
+         .await
+         .insert(id.clone(), Arc::clone(&logger));
+ 
+-    let mut transport = OpenSshTransport::new(askpass);
+-    transport
+-        .open(&cfg, PtySize { cols, rows })
+-        .await
+-        .map_err(|e| e.code.to_string())?;
+-    let mut rx = transport
+-        .output()
+-        .ok_or_else(|| "no_output".to_string())?;
+-
+     state
+         .transports
+         .lock()
+@@ -175,7 +177,7 @@ pub async fn session_open(
+             if chunks <= 3 {
+                 log_line(&format!("data id={event_id} chunk={chunks} bytes={}", bytes.len()));
+             }
+-            logger.lock().await.log_output(&bytes);
++            logger.lock().await.write_raw(&bytes);
+             let payload = DataEvent { id: event_id.clone(), data: STANDARD.encode(bytes) };
+             if app.emit("session:data", payload).is_err() {
+                 log_line(&format!("emit failed id={event_id}"));
+@@ -196,14 +198,6 @@ pub async fn session_write(
+     data: String,
+ ) -> Result<(), String> {
+     let bytes = STANDARD.decode(&data).map_err(|_| "bad_base64".to_string())?;
+-    // Log typed input (only if enabled in config) before forwarding to the PTY.
+-    let logger = {
+-        let loggers = state.loggers.lock().await;
+-        loggers.get(&id).cloned()
+-    };
+-    if let Some(logger) = logger {
+-        logger.lock().await.log_input(&bytes);
+-    }
+     let mut sessions = state.transports.lock().await;
+     let transport = sessions
+         .get_mut(&id)
+@@ -234,10 +228,8 @@ pub async fn session_close(state: State<'_, SessionState>, id: String) -> Result
+     if let Some(mut transport) = sessions.remove(&id) {
+         transport.close().await.map_err(|e| e.code.to_string())?;
+     }
+-    drop(sessions);
+-    // Drop the map entry. The reader task still holds its own Arc clone, so the
+-    // log file stays open until EOF is reached and then closes cleanly.
+-    state.loggers.lock().await.remove(&id);
++    // The logger stays registered: the terminal sends the last lines of the screen
++    // after the session ends, and then calls `session_log_close`.
+     Ok(())
+ }
+ 
+@@ -249,7 +241,30 @@ pub async fn session_close_all(state: State<'_, SessionState>) -> Result<(), Str
+     for (_, mut transport) in sessions.drain() {
+         let _ = transport.close().await;
+     }
+-    drop(sessions);
+-    state.loggers.lock().await.clear();
++    Ok(())
++}
++
++/// Appends plain text that the terminal built from its screen (see
++/// `src/lib/logCapture.ts`). Ignored in `raw` mode or when logging is off.
++#[tauri::command]
++pub async fn session_log_append(
++    state: State<'_, SessionState>,
++    id: String,
++    text: String,
++) -> Result<(), String> {
++    let logger = state.loggers.lock().await.get(&id).cloned();
++    if let Some(logger) = logger {
++        logger.lock().await.write_text(&text);
++    }
++    Ok(())
++}
++
++/// Writes the closing line of the log and releases the file.
++#[tauri::command]
++pub async fn session_log_close(state: State<'_, SessionState>, id: String) -> Result<(), String> {
++    let logger = state.loggers.lock().await.remove(&id);
++    if let Some(logger) = logger {
++        logger.lock().await.finish();
++    }
+     Ok(())
+ }
+diff --git a/src-tauri/src/transport/openssh.rs b/src-tauri/src/transport/openssh.rs
+index ec6a8f3..f7f11e9 100644
+--- a/src-tauri/src/transport/openssh.rs
++++ b/src-tauri/src/transport/openssh.rs
+@@ -151,7 +151,7 @@ impl Transport for OpenSshTransport {
+         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+         // Clone before the reader thread takes ownership of `tx`.
+         let watch_tx = tx.clone();
+-        std::thread::Builder::new()
++        let reader_thread = std::thread::Builder::new()
+             .name(format!("sshterm-pty-{}", cfg.host))
+             .spawn(move || {
+                 let mut reader = reader;
+@@ -204,9 +204,25 @@ impl Transport for OpenSshTransport {
+                     }
+                     std::thread::sleep(Duration::from_millis(100));
+                 }
+-                watch_stop.store(true, Ordering::Relaxed);
++                // Give ConPTY a moment to flush the last output (the "logout" line, an
++                // error message) before the PTY is closed. When the session is being
++                // closed on purpose there is nothing left to wait for.
++                if !watch_stop.swap(true, Ordering::Relaxed) {
++                    std::thread::sleep(Duration::from_millis(150));
++                }
+                 if let Ok(mut guard) = watch_master.lock() {
+-                    let _ = guard.take();
++                    let _ = guard.take(); // unblocks the reader thread
++                }
++                // The end marker must come AFTER everything the reader still has to
++                // send; otherwise the receiver stops at the marker and loses the tail.
++                // Wait for the reader, but never hang the session if ConPTY does not
++                // release it: after 2 seconds the end marker is sent anyway.
++                for _ in 0..40 {
++                    if reader_thread.is_finished() {
++                        let _ = reader_thread.join();
++                        break;
++                    }
++                    std::thread::sleep(Duration::from_millis(50));
+                 }
+                 let _ = watch_tx.send(Vec::new());
+             })
+diff --git a/src/lib/TerminalPane.svelte b/src/lib/TerminalPane.svelte
+index 7f47845..af835e2 100644
+--- a/src/lib/TerminalPane.svelte
++++ b/src/lib/TerminalPane.svelte
+@@ -5,6 +5,7 @@
+   import { FitAddon } from "@xterm/addon-fit";
+   import "@xterm/xterm/css/xterm.css";
+   import { toBase64 } from "$lib/encoding";
++  import { LogCapture } from "$lib/logCapture";
+   import { subscribeClosed, subscribeData, releaseSession } from "$lib/sessionBus";
+ 
+   let {
+@@ -13,9 +14,30 @@
+     onclosed,
+   }: { sessionId: string; active: boolean; onclosed: (id: string) => void } = $props();
+ 
++  // Workspace opens every session at 80x24; the first real fit may match it.
++  const PROVISIONAL = { cols: 80, rows: 24 };
++
+   let host: HTMLDivElement;
+   let term: Terminal | undefined;
+   let fit: FitAddon | undefined;
++  let lastCols = PROVISIONAL.cols;
++  let lastRows = PROVISIONAL.rows;
++
++  /** Fits the terminal to its box and tells the PTY, but only when the size really
++   * changed: every resize makes ConPTY repaint the whole screen. */
++  function syncSize() {
++    if (!active || !term || !fit) return; // a hidden tab has no valid dimensions
++    try {
++      fit.fit();
++    } catch {
++      return; // no size yet
++    }
++    const { cols, rows } = term;
++    if (cols === lastCols && rows === lastRows) return;
++    lastCols = cols;
++    lastRows = rows;
++    void invoke("session_resize", { id: sessionId, cols, rows });
++  }
+ 
+   onMount(() => {
+     // The canvas renderer is used deliberately: the WebGL addon can fail to
+@@ -33,17 +55,28 @@
+     t.loadAddon(f);
+     t.open(host);
+ 
+-    const resize = () => {
+-      if (!active) return; // a hidden tab has no valid dimensions
+-      try {
+-        f.fit();
+-        void invoke("session_resize", { id: sessionId, cols: t.cols, rows: t.rows });
+-      } catch {
+-        // no size yet
+-      }
++    // Session log: plain text built from what this terminal displays (see
++    // logCapture.ts). Calls are chained so the text reaches the file in order.
++    let logQueue: Promise<unknown> = Promise.resolve();
++    const logCall = (cmd: string, args: Record<string, unknown>) => {
++      logQueue = logQueue.then(() => invoke(cmd, args)).catch(() => {});
+     };
+-    resize();
+-    const observer = new ResizeObserver(resize);
++    const capture = new LogCapture(t, (text) => logCall("session_log_append", { id: sessionId, text }));
++    let logFinished = false;
++    const finishLog = () => {
++      if (logFinished) return;
++      logFinished = true;
++      capture.finish(); // sends the last lines, including the unfinished one
++      logCall("session_log_close", { id: sessionId });
++    };
++
++    syncSize();
++    // Dragging the window fires many events: wait until the size settles.
++    let timer: ReturnType<typeof setTimeout> | undefined;
++    const observer = new ResizeObserver(() => {
++      clearTimeout(timer);
++      timer = setTimeout(syncSize, 80);
++    });
+     observer.observe(host);
+ 
+     t.onData((data) => {
+@@ -55,27 +88,29 @@
+ 
+     const cleanups = [
+       subscribeData(sessionId, (bytes) => t.write(bytes)),
+-      subscribeClosed(sessionId, () => onclosed(sessionId)),
++      subscribeClosed(sessionId, () => {
++        // xterm parses writes asynchronously: wait until the last output is in the
++        // buffer before the log is closed and the tab is dropped.
++        t.write("", () => {
++          finishLog();
++          onclosed(sessionId);
++        });
++      }),
+     ];
+ 
+     return () => {
+       cleanups.forEach((fn) => fn());
+       releaseSession(sessionId);
++      clearTimeout(timer);
+       observer.disconnect();
++      finishLog();
+       t.dispose();
+     };
+   });
+ 
+   // When a tab becomes active the pane has dimensions again: refit.
+   $effect(() => {
+-    if (active && fit && term) {
+-      try {
+-        fit.fit();
+-        void invoke("session_resize", { id: sessionId, cols: term.cols, rows: term.rows });
+-      } catch {
+-        // ignore: the observer will retry
+-      }
+-    }
++    if (active) syncSize();
+   });
+ </script>
+ 
+diff --git a/src/lib/logCapture.ts b/src/lib/logCapture.ts
+new file mode 100644
+index 0000000..c612f37
+--- /dev/null
++++ b/src/lib/logCapture.ts
+@@ -0,0 +1,155 @@
++import type { IMarker, Terminal } from "@xterm/xterm";
++
++/**
++ * Builds a plain-text session log from what the terminal DISPLAYS, not from the
++ * bytes ConPTY sends.
++ *
++ * Why: ConPTY does not forward the remote bytes. It keeps its own copy of the
++ * screen and sends redraws (cursor jumps, partial-line updates, full repaints on
++ * resize and scroll). Stripping the escape codes from that stream leaves repeated
++ * screens and text fragments. xterm.js interprets the redraws correctly, so its
++ * buffer holds each line once. A line is written only when the cursor has moved
++ * below it, so redraws and `\r` progress bars never reach the file.
++ */
++export class LogCapture {
++  /** First line not written yet. xterm keeps it valid while the buffer scrolls and
++   * reflows, but disposes it when that line is erased (ESC[2J) or trimmed. */
++  private marker: IMarker | undefined;
++  private out: string[] = [];
++  private blankRun = 0;
++  /** Last lines written, used to recognise a screen repaint after a marker loss. */
++  private recent: string[] = [];
++  /** Where new text starts after a screen erase (absolute line of the screen top). */
++  private anchor: number | undefined;
++  private timer: ReturnType<typeof setTimeout> | undefined;
++  private listeners: { dispose(): void }[];
++
++  constructor(
++    private term: Terminal,
++    private send: (text: string) => void,
++    private flushMs = 250,
++  ) {
++    this.marker = term.registerMarker(0);
++    this.listeners = [
++      term.onWriteParsed(() => this.capture(false)),
++      // Erasing the screen (ED 1/2/3, RIS) disposes the marker and may erase lines
++      // that were not written yet. Write everything complete first, and remember
++      // where the new text will start. Returning false lets xterm run the erase.
++      term.parser.registerCsiHandler({ final: "J" }, (params) => {
++        if (((params[0] as number) ?? 0) !== 0) this.beforeErase();
++        return false;
++      }),
++      term.parser.registerEscHandler({ final: "c" }, () => {
++        this.beforeErase();
++        return false;
++      }),
++    ];
++  }
++
++  private beforeErase(): void {
++    if (this.term.buffer.active.type === "alternate") return;
++    this.capture(false);
++    this.anchor = this.term.buffer.active.baseY;
++  }
++
++  /** Writes the remaining text (including the unfinished last line) and stops. */
++  finish(): void {
++    this.listeners.forEach((l) => l.dispose());
++    this.capture(true);
++    while (this.out.length > 0 && this.out[this.out.length - 1] === "") this.out.pop();
++    this.flush();
++    this.marker?.dispose();
++  }
++
++  private capture(final: boolean): void {
++    const buf = this.term.buffer.active;
++    // vim, top, less... draw on the alternate screen: nothing useful to log.
++    if (buf.type === "alternate" && !final) return;
++
++    const lost = !this.marker || this.marker.isDisposed;
++    // Marker lost (screen erased): start where the new text began after the erase.
++    // A repaint of the old screen is recognised and skipped below.
++    const start = lost ? (this.anchor ?? buf.baseY) : this.marker!.line;
++    const cursorAbs = buf.baseY + buf.cursorY;
++    let end = cursorAbs; // lines above the cursor are complete
++    if (final) {
++      end = cursorAbs + 1;
++      for (let i = buf.length - 1; i > cursorAbs; i--) {
++        const l = buf.getLine(i);
++        if (l && l.translateToString(true) !== "") {
++          end = i + 1;
++          break;
++        }
++      }
++    } else {
++      // a wrapped line is still being written: keep all of its rows pending
++      while (end > start && buf.getLine(end)?.isWrapped) end--;
++    }
++
++    if (end > start) {
++      const lines: string[] = [];
++      let text = "";
++      for (let i = start; i < end; i++) {
++        const line = buf.getLine(i);
++        if (!line) continue;
++        const continues = i + 1 < end && !!buf.getLine(i + 1)?.isWrapped;
++        text += line.translateToString(!continues);
++        if (!continues) {
++          lines.push(text.replace(/\s+$/, ""));
++          text = "";
++        }
++      }
++      if (text) lines.push(text.replace(/\s+$/, ""));
++      for (const l of lost ? lines.slice(this.overlap(lines)) : lines) this.addLine(l);
++    }
++
++    if (!final && (lost || end > start)) {
++      if (lost) this.anchor = undefined;
++      this.marker?.dispose();
++      this.marker = this.term.registerMarker(Math.max(end, start) - cursorAbs);
++      this.schedule();
++    }
++  }
++
++  /** How many leading lines repeat the tail of what was already written. */
++  private overlap(lines: string[]): number {
++    const max = Math.min(lines.length, this.recent.length);
++    for (let m = max; m > 0; m--) {
++      let same = true;
++      for (let i = 0; i < m; i++) {
++        if (lines[i] !== this.recent[this.recent.length - m + i]) {
++          same = false;
++          break;
++        }
++      }
++      if (same) return m;
++    }
++    return 0;
++  }
++
++  /** At most one blank line in a row; no blank lines at the very top. */
++  private addLine(line: string): void {
++    this.recent.push(line);
++    if (this.recent.length > 100) this.recent.shift();
++    if (line === "") {
++      if (this.blankRun >= 1 || this.out.length === 0) return;
++      this.blankRun++;
++    } else {
++      this.blankRun = 0;
++    }
++    this.out.push(line);
++  }
++
++  private schedule(): void {
++    if (this.timer === undefined) this.timer = setTimeout(() => this.flush(), this.flushMs);
++  }
++
++  private flush(): void {
++    if (this.timer !== undefined) clearTimeout(this.timer);
++    this.timer = undefined;
++    if (this.out.length === 0) return;
++    const text = this.out.join("\n") + "\n";
++    this.out = [];
++    this.send(text);
++  }
++}

@@ -17,5 +17,3 @@ known_hosts
 config.toml
 highlight/
 
-# Documentación de trabajo local (guías y especificaciones, no versionadas)
-/docs/
