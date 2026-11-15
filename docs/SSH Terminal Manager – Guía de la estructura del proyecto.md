@@ -123,7 +123,7 @@ sshterm/
 | `vite.config.js` | Puerto 1420 (`strictPort`), ignora `src-tauri/` en el watcher. |
 | `README.md` | Visión general del proyecto: objetivos, stack, estructura, instrucciones de desarrollo, arquitectura. |
 | `ROADMAP.md` | Tabla de hitos M0-M10 con commits, detalle de implementación y listas de pendientes. |
-| `.gitignore` | Excluye `node_modules/`, `build/`, `.svelte-kit/`, `*.vault`, `config.toml`, `webview-data/`, `logs/`, `highlight/`, `known_hosts`, `docs/`. |
+| `.gitignore` | Excluye `node_modules/`, `build/`, `.svelte-kit/`, `*.vault`, `config.toml`, `webview-data/`, `logs/`, `highlight/`, `known_hosts`. |
 
 ### Frontend (`src/`)
 
