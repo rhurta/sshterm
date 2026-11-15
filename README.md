@@ -1,332 +1,178 @@
 # SSHTerm
 
-A secure, portable SSH terminal application built with Tauri, Rust, and SvelteKit.
+A portable, modular SSH terminal for Windows 11, built with Tauri and Rust.
+One executable plus data files next to it — no installer, no registry, no `%APPDATA%`.
 
-## Overview
+## Goals
 
-SSHTerm is a cross-platform SSH client that provides a secure, user-friendly terminal experience with encrypted credential storage and comprehensive session logging.
+- **Portable** — resolve every path from the exe's directory; runs from a USB drive.
+- **Modular** — each feature is a separate Rust module and a separate UI component, built and tested in steps.
+- **Secure by default** — every secret lives in one encrypted vault opened with a master password.
+- **Phased SSH engine** — phase 1 uses Windows' built-in `ssh.exe` inside a ConPTY the app owns; phase 2 adds a native `russh` engine. The UI and all other modules stay the same between phases.
 
-## Features
+## Status
 
-### ✅ Completed (M0-M3)
+| Milestone | What it delivers | Status |
+|-----------|-----------------|--------|
+| M0 | Portable skeleton, WebView2 data folder | ✅ Complete |
+| M1 | Encrypted vault, i18n | ✅ Complete |
+| M2 | First SSH session over ConPTY + xterm.js | ✅ Complete |
+| M3 | Per-session log files | ✅ Complete |
+| M4 | Session tree (folders, CRUD, search, import) | 🚧 Next |
+| M5 | Jump hosts (`-J` chain, per-hop passwords) | 📋 Planned |
+| M6 | Tiling, broadcast, syntax highlighting | 📋 Planned |
+| M7 | Port-forwarding tunnels | 📋 Planned |
+| M8 | Native SFTP (`russh-sftp`) | 📋 Planned |
+| M9 | Polish (colors, host-key UI, auto-reconnect) | 📋 Planned |
+| M10 | Native `russh` engine replaces phase 1 | 📋 Planned |
 
-- **M0: Project Foundation**
-  - Tauri + SvelteKit + TypeScript setup
-  - Basic window and application structure
+## Portable layout
 
-- **M1: Encrypted Vault & i18n**
-  - AES-256-GCM encrypted credential storage
-  - Argon2id key derivation from master password
-  - Multi-language support (English, Spanish)
-  - Secure vault operations (create, unlock, lock, change password)
-  - Connection management (add, edit, delete)
+```
+sshterm.exe
+sshterm.vault      encrypted: connections, passwords, tunnels, colors
+config.toml        plain: language, log settings, font, keepalive defaults
+known_hosts        SSH host-key fingerprints (used by ssh.exe in phase 1)
+highlight/         *.toml syntax-highlighting rule files
+logs/              <connection>_<YYYYMMDD-HHMMSS>.log  per-session logs
+webview-data/      WebView2 cache (WEBVIEW2_USER_DATA_FOLDER)
+```
 
-- **M2: SSH Session Management**
-  - Real SSH connections via Windows ssh.exe over ConPTY
-  - Password delivery through secure named pipe (askpass)
-  - Host key verification with trust-on-first-use (TOFU)
-  - Keep-alive and timeout configuration
-  - EOF watchdog for reliable session cleanup
-  - Full terminal emulation with xterm.js
+## Technology stack
 
-- **M3: Session Logging**
-  - Per-session log files with readable timestamps
-  - Screen buffer capture (logs what user sees, not PTY redraws)
-  - Two modes: Screen (clean text) and Raw (PTY bytes for diagnostics)
-  - Automatic handling of progress bars and screen repaints
-  - Alternate screen programs (vim, less) excluded from logs
-  - Comprehensive logging without duplicates
+| Layer | Choice |
+|-------|--------|
+| Shell | Tauri 2 |
+| Backend | Rust + tokio |
+| SSH phase 1 | `ssh.exe` (Windows OpenSSH) through `portable-pty` (ConPTY) |
+| SSH phase 2 | `russh` + `russh-keys` |
+| SFTP | `russh-sftp` (M8) |
+| Crypto | `argon2`, `chacha20poly1305`, `zeroize` |
+| Frontend | TypeScript + Svelte 5 |
+| Terminal | `xterm.js` + FitAddon |
+| Config | `serde` + `toml` |
 
-### 🚧 In Progress
-
-- **M4: Multi-Tab Session Management** (Next)
-  - Multiple concurrent SSH sessions in tabs
-  - Tab bar with visual indicators
-  - Independent sessions per tab
-  - Background session maintenance
-  - Per-tab logging
-
-### 📋 Planned
-
-- **M5: Advanced Features**
-  - SFTP file transfer integration
-  - Session templates and profiles
-  - Custom key bindings
-  - Color scheme customization
-  - Font configuration
-
-- **M6: Enhanced Security**
-  - SSH key management
-  - Certificate-based authentication
-  - Session recording and playback
-  - Audit logging
-
-## Technology Stack
-
-### Frontend
-- **SvelteKit**: Reactive UI framework
-- **TypeScript**: Type-safe development
-- **xterm.js**: Terminal emulation
-- **Vite**: Build tool and dev server
-
-### Backend
-- **Rust**: High-performance, memory-safe backend
-- **Tauri**: Native desktop application framework
-- **chacha20poly1305**: Vault encryption
-- **argon2**: Password-based key derivation
-- **portable-pty**: Cross-platform PTY implementation
-- **tokio**: Async runtime
-- **chrono**: Date/time handling for logs
-
-## Project Structure
+## Project structure
 
 ```
 sshterm/
-├── src/                    # Frontend (SvelteKit)
+├── src/                        # Frontend (SvelteKit)
 │   ├── lib/
-│   │   ├── components/    # Svelte components
-│   │   ├── i18n/         # Translations
-│   │   ├── encoding.ts   # Base64 utilities
-│   │   ├── logCapture.ts # Terminal logging
-│   │   └── sessionBus.ts # Session event handling
-│   ├── routes/           # SvelteKit routes
-│   └── app.html          # HTML template
-├── src-tauri/            # Backend (Rust)
-│   ├── src/
-│   │   ├── askpass/      # SSH password delivery
-│   │   ├── config.rs     # App configuration
-│   │   ├── logger/       # Session logging
-│   │   ├── paths.rs      # File path management
-│   │   ├── session/      # SSH session management
-│   │   ├── store/        # Connection storage
-│   │   ├── transport/    # SSH transport layer
-│   │   └── vault/        # Encrypted credential vault
-│   ├── Cargo.toml        # Rust dependencies
-│   └── tauri.conf.json   # Tauri configuration
-├── static/               # Static assets
-└── package.json          # Node dependencies
+│   │   ├── components/         # Svelte UI components
+│   │   ├── i18n/               # Translation dictionaries (en, es)
+│   │   ├── encoding.ts         # Base64 helpers
+│   │   ├── logCapture.ts       # Screen-buffer log capture
+│   │   └── sessionBus.ts       # session:data / session:closed event bus
+│   └── routes/                 # SvelteKit pages
+└── src-tauri/                  # Backend (Rust)
+    └── src/
+        ├── vault/              # Encrypt / decrypt credential store
+        ├── store/              # Connection and tree CRUD
+        ├── session/            # Open / close / resize sessions
+        ├── transport/          # Transport trait + openssh.rs (+ russh.rs in M10)
+        ├── askpass/            # Named-pipe password delivery to ssh.exe
+        ├── logger/             # Per-session log files
+        ├── config.rs           # config.toml model
+        └── paths.rs            # Portable path resolution
 ```
 
 ## Development
 
 ### Prerequisites
 
-- **Node.js** 18+ and npm
-- **Rust** 1.70+ (rustup recommended)
-- **Windows**: Visual Studio Build Tools or MSVC
-- **SSH client**: OpenSSH (typically pre-installed on Windows 10+)
+- Rust (stable, via rustup)
+- Node.js 18+ and npm
+- Windows 11 — WebView2 and OpenSSH are pre-installed
+- Visual Studio Build Tools (MSVC toolchain)
 
-### Setup
+### Run in dev mode
 
 ```bash
-# Clone repository
-git clone <repository-url>
-cd sshterm
-
-# Install frontend dependencies
 npm install
-
-# Build and run in development mode
 npm run tauri dev
 ```
 
-### Building
+### Production build
 
 ```bash
-# Production build
 npm run tauri build
-
-# Output:
-# - MSI installer: src-tauri/target/release/bundle/msi/
-# - NSIS installer: src-tauri/target/release/bundle/nsis/
-# - Portable exe: src-tauri/target/release/sshterm.exe
+# exe: src-tauri/target/release/sshterm.exe
+# MSI: src-tauri/target/release/bundle/msi/
 ```
 
-### Testing
+### Tests
 
 ```bash
-# Run Rust tests
 cd src-tauri
-cargo test
-
-# Run specific test module
-cargo test logger
-cargo test vault
+cargo test            # all unit tests
+cargo test logger     # logger module only
+cargo test vault      # vault module only
 ```
 
-## Architecture
+## Architecture notes
 
-### Security Model
+### Vault
 
-1. **Vault Encryption**
-   - Master password → Argon2id → 256-bit key
-   - Each connection encrypted separately with AES-256-GCM
-   - Vault file: chacha20poly1305 with random nonce
-   - Zero memory copies of sensitive data (zeroize crate)
+- Format: `SSHV` magic + Argon2id KDF params + 16-byte salt + 24-byte nonce + XChaCha20-Poly1305 ciphertext (header authenticated as AAD).
+- KDF defaults: 64 MiB, 3 iterations, 1 lane. Parameters are stored in the header so they can be raised later.
+- Atomic saves: write to `.tmp`, flush, rename. One `.bak` copy kept.
+- Secrets held in `zeroize`-wrapped memory; dropped on lock.
+- Password change re-encrypts with a new salt and nonce.
 
-2. **Password Delivery**
-   - SSH passwords never touch command line
-   - Named pipe (Windows) with random token
-   - Askpass server validates token before responding
-   - Pipe closed after single use
+### Transport trait (phase 1 / phase 2 boundary)
 
-3. **Session Isolation**
-   - Each session = separate ssh.exe process
-   - Independent PTY per session
-   - Separate log files
-   - No cross-session data leakage
-
-### Logging Architecture (M3)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  xterm.js Terminal Buffer (frontend)                         │
-│  - Correctly interprets PTY redraws and cursor movements     │
-│  - Each line exists exactly once                             │
-└────────────────────┬────────────────────────────────────────┘
-                     │ LogCapture monitors buffer
-                     │ Sends complete lines only
-                     ↓
-┌─────────────────────────────────────────────────────────────┐
-│  SessionLogger (backend)                                     │
-│  - write_text() for Screen mode (default)                   │
-│  - write_raw() for Raw mode (diagnostics)                   │
-│  - Timestamps: YYYYMMDD-HHMMSS format                       │
-└────────────────────┬────────────────────────────────────────┘
-                     ↓
-              Log File: logs/server_timestamp.log
+```rust
+trait Transport {
+    async fn open(&mut self, conn: &Connection, size: PtySize) -> Result<()>;
+    async fn write(&mut self, data: &[u8]) -> Result<()>;
+    async fn resize(&mut self, size: PtySize) -> Result<()>;
+    async fn close(&mut self) -> Result<()>;
+    fn output(&mut self) -> Option<Receiver<Vec<u8>>>;
+}
 ```
 
-**Why this approach:**
-- ConPTY sends screen redraws, not raw terminal bytes
-- Stripping escape codes from redraws creates duplicates
-- xterm.js maintains correct screen state
-- Logging from screen buffer gives clean, user-visible text
+Session code calls this trait and never references `ssh.exe` or `russh` directly. A per-connection `engine` field (`openssh` | `russh`) selects the implementation, so both can run side by side.
 
-### Session Management (M2)
+### Password delivery (phase 1)
+
+`ssh.exe` is started with `SSH_ASKPASS` pointing to the app's own exe (run with `--askpass`) and `SSH_ASKPASS_REQUIRE=force`. The helper connects to a named pipe, presents a one-time token, receives the password for the host in ssh's prompt, and writes it to stdout. The password never appears on a command line or in an environment variable.
+
+### Logging (M3)
+
+ConPTY does not forward raw remote bytes — it sends screen redraws (full repaints on resize, partial updates on scroll). Stripping escape codes from that stream creates duplicate lines and fragments. The fix: log from the xterm.js screen buffer instead.
 
 ```
-Frontend (TerminalPane) ←→ IPC ←→ Backend (SessionState)
-                                         ↓
-                                    HashMap<SessionId, Transport>
-                                         ↓
-                            ┌────────────┴─────────────┐
-                            ↓                          ↓
-                     OpenSshTransport              SessionLogger
-                            ↓                          ↓
-                    ConPTY + ssh.exe              Log File
+PTY redraws ──▶ xterm.js ──▶ screen buffer (each line once)
+                                    │
+                              LogCapture.ts
+                              (complete lines, 250 ms batch)
+                                    │
+                          session_log_append (IPC)
+                                    │
+                            SessionLogger (Rust)
+                            write_text() / write_raw()
+                                    │
+                      logs/<connection>_<YYYYMMDD-HHMMSS>.log
 ```
+
+`log_mode = "screen"` (default) captures clean readable text.
+`log_mode = "raw"` stores PTY bytes with escape codes, for diagnostics.
 
 ## Configuration
 
-Application data is stored in:
-- **Windows**: `%LOCALAPPDATA%\sshterm\`
-- **Linux**: `~/.local/share/sshterm/`
-- **macOS**: `~/Library/Application Support/sshterm/`
-
-### Files
-
-- `vault.dat`: Encrypted connections and passwords
-- `config.toml`: Application settings (language, log mode)
-- `known_hosts`: SSH host key fingerprints
-- `logs/`: Session logs directory
-  - `sshterm.log`: Application diagnostics
-  - `<connection>_<timestamp>.log`: Per-session logs
-
-### config.toml
+`config.toml` (next to the exe):
 
 ```toml
-language = "en"              # or "es"
-log_output = true            # Enable session logging
-log_mode = "screen"          # "screen" or "raw"
+language   = "en"       # "en" | "es"
+log_output = true
+log_mode   = "screen"   # "screen" | "raw"
 ```
 
-## Milestones
+## Security notes
 
-### M0: Foundation (✅ Complete)
-- Tauri project setup
-- Basic application window
-- SvelteKit integration
-
-### M1: Vault & i18n (✅ Complete)
-- Encrypted credential storage
-- Password-based encryption
-- Multi-language UI
-- Connection CRUD operations
-
-### M2: SSH Sessions (✅ Complete)
-- SSH connection establishment
-- Terminal emulation
-- PTY management
-- Password delivery via askpass
-- Host key verification
-
-### M3: Logging (✅ Complete)
-- Session log files
-- Screen buffer capture
-- Clean text output
-- Timestamp formatting
-- Log rotation handling
-
-### M4: Multi-Tab (🚧 In Progress)
-- Tab bar component
-- Multiple concurrent sessions
-- Tab switching and management
-- Per-tab logging
-- Background session maintenance
-
-### M5: Advanced Features (📋 Planned)
-- SFTP integration
-- Session profiles
-- Customization options
-- Enhanced UI/UX
-
-### M6: Security Enhancements (📋 Planned)
-- SSH key management
-- Certificate authentication
-- Session recording
-- Audit logging
-
-## Contributing
-
-This is currently a personal project. Contributions, suggestions, and bug reports are welcome.
-
-## License
-
-[License information to be added]
-
-## Acknowledgments
-
-- Built with [Tauri](https://tauri.app/)
-- Terminal emulation by [xterm.js](https://xtermjs.org/)
-- UI framework: [SvelteKit](https://kit.svelte.dev/)
-- Icons: [Lucide](https://lucide.dev/)
-
-## Security Notice
-
-- Never share your vault file or master password
-- Review host key fingerprints on first connection
-- Session logs may contain sensitive information
-- Keep the application and dependencies updated
-
-## Troubleshooting
-
-### Session not connecting
-- Verify SSH server is reachable
-- Check username and password
-- Review known_hosts for key changes
-- Check logs/sshterm.log for details
-
-### Log files too large
-- Set `log_mode = "screen"` in config.toml for cleaner logs
-- Use `log_output = false` to disable logging
-- Manually clean old logs from logs/ directory
-
-### Vault unlock fails
-- Verify master password is correct
-- Check vault.dat is not corrupted
-- Backup vault.dat before attempting recovery
-
-## Contact
-
-[Contact information to be added]
+- No secrets in logs, `config.toml`, or crash output.
+- The named askpass pipe is restricted to the current user; it accepts one token per session.
+- `ssh.exe` child processes are killed when the app exits or the vault locks.
+- Private key files are stored by path only (the vault keeps the path, not the key content).
+- Host keys: trust-on-first-use; a changed key triggers a hard warning.
+- Clipboard cleared shortly after copying a password.

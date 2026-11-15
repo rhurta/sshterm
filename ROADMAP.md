@@ -1,533 +1,346 @@
-# SSHTerm Development Roadmap
+# SSHTerm – Roadmap
 
-## Current Status: M3 Complete → M4 In Progress
-
-Last Updated: November 2026
-
----
-
-## ✅ M0: Project Foundation (Complete)
-
-**Goal**: Establish project structure and tooling
-
-### Deliverables
-- [x] Tauri + SvelteKit project setup
-- [x] TypeScript configuration
-- [x] Build system (Vite)
-- [x] Basic application window
-- [x] Development workflow
-
-### Technical Details
-- Framework: Tauri 2.0 + SvelteKit 2.0
-- Build: Vite 5.0
-- Package manager: npm
-- Target: Windows (primary), Linux/macOS (future)
+Milestones from the project spec, updated with what has actually been built.
+Each milestone ends with a working exe you can use from the field.
 
 ---
 
-## ✅ M1: Vault & Internationalization (Complete)
+## ✅ M0 — Portable skeleton
 
-**Goal**: Secure credential storage and multi-language support
+**Done when:** Tauri app builds to one exe; portable paths and WebView2 data folder work.
 
-**Commit**: `bd4d6b4` (tag: m1)
+- Tauri 2 + SvelteKit + TypeScript project
+- `paths.rs` resolves every path from the exe's directory
+- `WEBVIEW2_USER_DATA_FOLDER` set before the window opens so nothing is written outside the folder
+- `ssh.exe` lookup: `bin/` next to the exe first, then `System32`
 
-### Security Implementation
-- **Encryption**: AES-256-GCM via chacha20poly1305 crate
-- **Key Derivation**: Argon2id (64 MiB memory, ~200ms)
-  - Salt: 16 random bytes per vault
-  - Output: 256-bit key
-- **Data Model**:
-  ```rust
-  struct Connection {
-      id: String,
-      name: String,
-      host: String,
-      port: u16,
-      user: String,
-      password: Option<String>,
-      keepalive_secs: u16,
-  }
-  ```
-- **Vault Format**: TOML encrypted as single blob
-- **Memory Safety**: zeroize crate for automatic secret clearing
-
-### i18n Implementation
-- **Languages**: English (en), Spanish (es)
-- **Architecture**: 
-  - TypeScript translation dictionaries
-  - Reactive language switching
-  - Config persists language preference
-- **Coverage**: All UI strings
-
-### Deliverables
-- [x] Vault encryption/decryption
-- [x] Master password validation
-- [x] Password change with re-encryption
-- [x] Connection CRUD operations
-- [x] Language selector
-- [x] Translation files (en, es)
-- [x] Configuration file (config.toml)
-
-### Testing
-- [x] Vault crypto tests
-- [x] Password verification
-- [x] Round-trip encryption
-- [x] Connection storage
-
-**Status**: Deployed and stable
+**Commit:** `bd4d6b4` (tag: m1 — M0 and M1 landed together)
 
 ---
 
-## ✅ M2: SSH Session Management (Complete)
+## ✅ M1 — Vault
 
-**Goal**: Establish and manage SSH connections with terminal emulation
+**Done when:** Create, lock, unlock, change password; unit tests for wrong password and corruption.
 
-**Commit**: `2c19e40` (tag: m2)
+### Vault format
 
-### Architecture
+| Field | Size | Content |
+|-------|------|---------|
+| Magic | 4 B | `SSHV` |
+| Version | 1 B | `1` |
+| KDF params | 12 B | Argon2id memory (KiB), iterations, parallelism |
+| Salt | 16 B | random per vault |
+| Nonce | 24 B | random per save |
+| Ciphertext | rest | XChaCha20-Poly1305 (header is AAD) |
 
-```
-Frontend (Svelte)           Backend (Rust)              System
-     │                           │                         │
-     ├─ session_open ──────────> │                         │
-     │                           ├─ Create Transport       │
-     │                           ├─ Start askpass server   │
-     │                           ├─ Open ConPTY ──────────> ssh.exe
-     │                           ├─ Spawn reader thread    │
-     │                           └─ Return session ID      │
-     │                                                      │
-     │ <────── session:data ──── PTY Reader Thread ────< ssh.exe
-     │                                                      │
-     ├─ session_write ─────────> │                         │
-     │                           └─ Write to PTY ─────────> ssh.exe
-     │                                                      │
-     ├─ session_resize ────────> │                         │
-     │                           └─ Resize ConPTY          │
-```
+- KDF defaults: Argon2id 64 MiB / 3 iterations / 1 lane.
+- Atomic saves: `.tmp` → flush → rename; one `.bak` copy kept.
+- Secrets in `zeroize`-wrapped memory; dropped on lock.
+- Password change: new salt + nonce, full re-encrypt.
 
-### Key Components
+### Connection model (current — flat list)
 
-1. **OpenSSH Integration**
-   - Uses system ssh.exe (Windows OpenSSH)
-   - Flags: `-tt` (force TTY), host key policy, timeouts
-   - No password on command line (security)
-
-2. **Password Delivery (Askpass)**
-   - Named pipe: `\\.\pipe\sshterm-askpass-{random}`
-   - Single-use token validation
-   - Automatic cleanup after use
-   - Environment: `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE=force`
-
-3. **PTY Management**
-   - Windows ConPTY (portable-pty crate)
-   - Dedicated reader thread (blocking I/O)
-   - 8KB buffer size
-   - Base64 encoding for IPC
-
-4. **EOF Handling**
-   - Watchdog thread monitors ssh.exe exit
-   - 100ms polling interval
-   - Closes PTY master to unblock reader
-   - Sends empty chunk as EOF sentinel
-
-5. **Terminal Emulation**
-   - xterm.js with canvas renderer
-   - FitAddon for responsive sizing
-   - Configurable cols/rows
-   - Full ANSI support
-
-### SSH Configuration
-- **Host Keys**: Custom known_hosts file
-- **Policy**: StrictHostKeyChecking=accept-new (TOFU)
-- **Keep-alive**: ServerAliveInterval + CountMax=3
-- **Timeout**: ConnectTimeout=15 seconds
-
-### Deliverables
-- [x] SSH connection establishment
-- [x] PTY creation and management
-- [x] Password delivery via askpass
-- [x] Host key verification
-- [x] Terminal emulation (xterm.js)
-- [x] Session resize handling
-- [x] Clean session termination
-- [x] EOF watchdog for ConPTY
-
-### Testing
-- [x] SSH command flag validation
-- [x] Askpass environment setup
-- [x] PTY size forwarding
-- [x] ConPTY output capture (manual)
-
-**Status**: Deployed and stable
-
----
-
-## ✅ M3: Session Logging (Complete)
-
-**Goal**: Comprehensive, readable session logs without duplicates
-
-**Commits**: 
-- `952e5cd` (tag: m3) - Initial logging
-- `248b264` - Blank line collapsing
-- `bbc0262` - Screen buffer capture (current)
-
-### The Problem (Solved)
-
-**Original Approach** (M3 initial):
-- Logged PTY bytes with ANSI stripping
-- **Issue**: ConPTY sends screen redraws, not raw bytes
-  - Full repaints on resize/scroll
-  - Partial updates with cursor positioning
-  - Same content sent multiple times
-- **Result**: Logs had duplicate MOTD, repeated lines, text fragments
-
-**Root Cause**: Stripping escape codes removed cursor positioning info that explained the redraws. The log couldn't be reconstructed correctly.
-
-### The Solution (M3 fix)
-
-**New Approach**: Log from xterm.js screen buffer
-- xterm.js correctly interprets all PTY redraws
-- Each line exists exactly once in the buffer
-- Lines written only when cursor moves past them
-- Progress bars and redraws never reach log
-
-### Architecture
-
-```
-PTY bytes with redraws ──> xterm.js ──> Screen Buffer (clean state)
-                                              │
-                                        LogCapture.ts
-                                        - Monitors buffer
-                                        - Detects complete lines
-                                        - Batches writes (250ms)
-                                              │
-                                              ↓
-                              session_log_append command
-                                              │
-                                              ↓
-                              SessionLogger (Rust)
-                              - write_text() or write_raw()
-                              - Collision detection
-                              - Timestamp formatting
-                                              │
-                                              ↓
-                              logs/server_YYYYMMDD-HHMMSS.log
-```
-
-### Features
-
-1. **Log Modes**
-   - `Screen` (default): Clean text from terminal display
-   - `Raw`: PTY bytes with escape codes (diagnostics)
-
-2. **LogCapture Logic**
-   - Marker tracking (survives scroll/reflow)
-   - Screen erase detection (ESC[J, RIS)
-   - Repaint recognition via recent line history
-   - Alternate screen detection (vim, less, top)
-   - Blank line collapsing (max one between blocks)
-
-3. **Logger Features**
-   - Readable timestamps: `YYYYMMDD-HHMMSS`
-   - Collision handling: `_2`, `_3` suffixes
-   - Closing timestamp when session ends
-   - chrono crate for local time
-
-4. **Configuration**
-   ```toml
-   log_output = true      # Enable/disable logging
-   log_mode = "screen"    # "screen" or "raw"
-   ```
-
-### Deliverables
-- [x] SessionLogger with dual modes
-- [x] LogCapture class (TypeScript)
-- [x] Screen buffer monitoring
-- [x] Alternate screen filtering
-- [x] Readable timestamp format
-- [x] File collision detection
-- [x] Config option for log mode
-- [x] TerminalPane integration
-- [x] Final output capture on close
-
-### Testing
-- [x] File name sanitization
-- [x] Timestamp format validation
-- [x] Screen vs Raw mode separation
-- [x] Collision handling
-- [x] No file created when log_output=false
-- [x] Manual: SSH session with MOTD (no duplicates)
-- [x] Manual: Progress bars don't pollute log
-- [x] Manual: vim/less don't appear in log
-
-**Status**: Deployed and stable
-
----
-
-## 🚧 M4: Multi-Tab Session Management (In Progress)
-
-**Goal**: Support multiple concurrent SSH sessions in tabbed interface
-
-**Target**: Next release
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                  Workspace Component                     │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │  Tab Bar                                           │ │
-│  │  [● server1 ×] [server2 ×] [server3 ×]  [+]      │ │
-│  └────────────────────────────────────────────────────┘ │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │  Active TerminalPane (visible)                     │ │
-│  │  session_id: "abc123"                             │ │
-│  └────────────────────────────────────────────────────┘ │
-│  Hidden TerminalPanes (keep running):                  │
-│  - session_id: "def456"                               │
-│  - session_id: "ghi789"                               │
-└─────────────────────────────────────────────────────────┘
-```
-
-### State Management
-
-```typescript
-interface Tab {
-  id: string;           // Session ID
-  connId: string;       // Vault connection ID  
-  name: string;         // Display name
-  active: boolean;      // Currently visible
-}
-
-interface WorkspaceState {
-  tabs: Tab[];
-  activeTabId: string;
-}
-```
-
-### Key Features
-
-1. **Tab Management**
-   - New tab: [+] button or connection selector
-   - Switch tab: Click tab → show that TerminalPane
-   - Close tab: [×] button → session_close + remove
-   - Active indicator: Visual highlight on current tab
-
-2. **Session Behavior**
-   - Each tab = unique session ID
-   - Hidden tabs keep running (PTY still active)
-   - Only active tab triggers PTY resize
-   - All tabs log continuously
-   - Can open same server multiple times
-
-3. **UI Components**
-   - `Workspace.svelte`: Tab bar + content area
-   - `TabBar.svelte`: Tab list + new tab button
-   - `Tab.svelte`: Individual tab with close button
-   - `TerminalPane.svelte`: Modified for visibility prop
-
-### Backend (Already Ready!)
-
-The current `SessionState` already supports multiple sessions:
 ```rust
-pub struct SessionState {
-    pub transports: Mutex<HashMap<String, Box<dyn Transport>>>,
-    pub loggers: Mutex<HashMap<String, Arc<Mutex<SessionLogger>>>>,
+struct Connection {
+    id, name, host: String,
+    port: u16,
+    user: String,
+    password: Option<String>,
+    keepalive_secs: u16,
 }
 ```
 
-No backend changes needed! Just frontend work.
+The vault payload will gain folders, jump chains, tunnels, and colors when M4 adds the session tree.
 
-### Data Flow
+### i18n
 
-**Opening Tab**:
-```
-User clicks connection → session_open → new session ID
-  → Create tab in state → Mount TerminalPane → Set active
-```
+- Languages: English, Spanish.
+- Reactive switching; preference stored in `config.toml`.
 
-**Switching Tab**:
-```
-User clicks Tab 2 → Set active=true for Tab 2, active=false for others
-  → Show Tab 2 TerminalPane → Hide others → syncSize() on Tab 2
-```
-
-**Closing Tab**:
-```
-User clicks [×] → onclose callback → session_close(id)
-  → Kill ssh.exe → logger.finish() → Remove tab from state
-  → If last tab: show connection selector
-```
-
-### Implementation Plan
-
-#### Phase 1: Core Tab Management
-- [ ] Create `Workspace.svelte` component
-- [ ] Implement tab state management
-- [ ] Tab bar UI with active indicator
-- [ ] New tab button
-- [ ] Close tab button per tab
-
-#### Phase 2: Integration
-- [ ] Modify `TerminalPane.svelte` for visibility
-- [ ] Only active terminal resizes PTY
-- [ ] Connection selector for new tabs
-- [ ] Handle last tab closed scenario
-
-#### Phase 3: Polish
-- [ ] Tab switching animations
-- [ ] Keyboard shortcuts (Ctrl+Tab, Ctrl+W)
-- [ ] Tab reordering (drag & drop)
-- [ ] Tab overflow handling (scrollable)
-
-#### Phase 4: Testing
-- [ ] Multiple sessions to same server
-- [ ] Rapid tab switching
-- [ ] Close active tab
-- [ ] Close non-active tab
-- [ ] Logging continues when hidden
-- [ ] Memory usage with 10+ tabs
-
-### Deliverables
-- [ ] Workspace component with tab bar
-- [ ] Tab state management
-- [ ] Multi-session UI
-- [ ] Keyboard shortcuts
-- [ ] Visual polish
-- [ ] Documentation
-
-**Status**: Design complete, implementation starting
+**Commit:** `bd4d6b4` (tag: m1)
 
 ---
 
-## 📋 M5: Advanced Features (Planned)
+## ✅ M2 — First session on `ssh.exe`
 
-**Goal**: Enhanced functionality and user experience
+**Done when:** `Transport` trait + `OpenSshTransport` over ConPTY; xterm.js terminal, resize, keepalive flags, password through askpass from the vault.
 
-### Proposed Features
+### Transport trait
 
-1. **SFTP Integration**
-   - File browser panel
-   - Upload/download files
-   - Progress indication
-   - Drag-and-drop support
+```rust
+trait Transport {
+    async fn open(&mut self, cfg: &SshConfig, size: PtySize) -> Result<()>;
+    async fn write(&mut self, data: &[u8]) -> Result<()>;
+    async fn resize(&mut self, size: PtySize) -> Result<()>;
+    async fn close(&mut self) -> Result<()>;
+    fn output(&mut self) -> Option<Receiver<Vec<u8>>>;
+}
+```
 
-2. **Session Profiles**
-   - Saved terminal size preferences
-   - Custom color schemes per connection
-   - Font size settings
-   - Command history
+### `OpenSshTransport`
 
-3. **Key Bindings**
-   - Customizable shortcuts
-   - Common operations (copy, paste, search)
-   - Tab management shortcuts
+- `ssh.exe` flags: `-tt`, `-p`, `UserKnownHostsFile=`, `StrictHostKeyChecking=accept-new`, `ServerAliveInterval`, `ServerAliveCountMax=3`, `ConnectTimeout=15`.
+- PTY: `portable-pty` (ConPTY on Windows), 8 KB read buffer, dedicated reader thread.
+- Password: `SSH_ASKPASS` + `SSH_ASKPASS_REQUIRE=force` + one-time named-pipe token. Password never on a command line.
+- EOF watchdog: polls `child.try_wait()` every 100 ms; on exit gives ConPTY 150 ms to flush, waits up to 2 s for the reader thread, then sends an empty sentinel chunk.
 
-4. **Appearance**
-   - Multiple color schemes (Solarized, Monokai, etc.)
-   - Font family selection
-   - Font size adjustment
-   - Cursor style options
+### Frontend
 
-5. **Quality of Life**
-   - Search in terminal output
-   - Copy/paste improvements
-   - URL detection and opening
-   - Connection groups/folders
+- `xterm.js` canvas renderer + FitAddon.
+- Resize debounced 80 ms; only the active tab resizes the PTY.
+- Input and output over base64-encoded IPC events.
 
-### Technical Considerations
-- Store preferences in config.toml
-- Per-connection settings in vault
-- Color scheme JSON format
-- Font configuration validation
-
-**Status**: Requirements gathering
+**Commit:** `2c19e40` (tag: m2)
 
 ---
 
-## 📋 M6: Security Enhancements (Planned)
+## ✅ M3 — Logging
 
-**Goal**: Advanced authentication and auditing
+**Done when:** one log file per session with the correct name.
 
-### Proposed Features
+### The problem with the first implementation
 
-1. **SSH Key Management**
-   - Import existing keys
-   - Generate new key pairs
-   - Key-based authentication
-   - Agent forwarding
-   - Certificate support
+The initial approach stripped ANSI codes from PTY bytes. ConPTY does not forward raw remote bytes — it maintains its own screen and sends redraws (full repaints on resize/scroll, partial updates with cursor jumps). Stripping those codes removed the cursor-positioning context that explained the redraws, producing repeated MOTD blocks, random number fragments, and garbage.
 
-2. **Security Audit**
-   - Connection attempt logging
-   - Failed authentication tracking
-   - Session duration recording
-   - Export audit logs
+### The fix: log from the xterm.js screen buffer
 
-3. **Session Recording**
-   - Record terminal sessions
-   - Playback capability
-   - TTYrec format support
-   - Privacy controls
+xterm.js applies every redraw correctly, so its buffer always holds each line exactly once. `LogCapture.ts` monitors that buffer and sends complete lines to the backend only after the cursor moves past them.
 
-4. **Enhanced Encryption**
-   - YubiKey support
-   - Hardware security module integration
-   - Biometric unlock (Windows Hello)
-   - Auto-lock on idle
+```
+PTY redraws ──▶ xterm.js ──▶ buffer (each line once)
+                                  │
+                            LogCapture.ts
+                            • marker tracking (survives scroll/reflow)
+                            • screen-erase detection (ESC[J, RIS)
+                            • repaint dedup via recent-line history
+                            • alternate-screen skip (vim, less, top)
+                            • blank-line collapsing (max 1 in a row)
+                            • 250 ms flush batch
+                                  │ session_log_append / session_log_close
+                            SessionLogger (Rust)
+                            • write_text()  ← Screen mode (default)
+                            • write_raw()   ← Raw mode (diagnostics)
+                            • create_new collision: adds _2, _3 …
+                                  │
+                    logs/<connection>_<YYYYMMDD-HHMMSS>.log
+```
 
-### Technical Considerations
-- SSH key storage format
-- Audit log database
-- TTYrec format implementation
-- Platform-specific security APIs
+### Configuration
 
-**Status**: Research phase
+```toml
+log_output = true       # false → no file created
+log_mode   = "screen"   # "screen" | "raw"
+```
 
----
+### What is logged (screen mode)
 
-## Future Considerations
+- One copy of each line the user saw, trailing whitespace trimmed.
+- Blank lines collapsed to at most one.
+- Alternate-screen content (vim, less, htop) excluded.
+- Progress bars and `\r` overwrites never reach the file.
+- Closing line: `---- ended: <RFC 3339 timestamp>`.
 
-### M7+: Cross-Platform
-- Linux support
-- macOS support
-- Platform-specific SSH client integration
-- Native PTY handling per platform
-
-### M8+: Advanced Networking
-- Jump host / bastion support
-- Port forwarding UI
-- SOCKS proxy
-- VPN integration
-
-### M9+: Team Features
-- Shared connection vaults
-- Team authentication
-- Connection templates
-- Centralized management
+**Commits:** `952e5cd` (tag: m3, initial) → `248b264` (blank-line fix) → `bbc0262` (screen-buffer capture, current)
 
 ---
 
-## Version History
+## 🚧 M4 — Session tree
 
-| Milestone | Version | Date | Status |
-|-----------|---------|------|--------|
-| M0 | 0.1.0 | - | ✅ Complete |
-| M1 | 0.2.0 | - | ✅ Complete |
-| M2 | 0.3.0 | - | ✅ Complete |
-| M3 | 0.4.0 | Nov 2026 | ✅ Complete |
-| M4 | 0.5.0 | TBD | 🚧 In Progress |
-| M5 | 0.6.0 | TBD | 📋 Planned |
-| M6 | 0.7.0 | TBD | 📋 Planned |
+**Done when:** folders, CRUD, search, import from PuTTY / WinSSHTerm / `~/.ssh/config`, and multi-tab workspace.
+
+### What changes
+
+The spec's M4 is primarily about the **session tree** (sidebar with folders, drag-and-drop, search, import). The multi-tab workspace — multiple open sessions at once — ships together with it because the sidebar is the natural place to open new tabs.
+
+### Vault data model additions
+
+```json
+{
+  "tree": [
+    { "type": "folder", "id": "f1", "name": "Production", "children": [
+      { "type": "connection", "id": "c1" }
+    ]}
+  ],
+  "connections": {
+    "c1": {
+      "name": "pgw-01", "host": "10.0.0.5", "port": 22,
+      "user": "admin",
+      "auth": { "type": "password", "password": "…" },
+      "keepalive_secs": 30,
+      "colors": { "fg": "#d0d0d0", "bg": "#1b1b1b" },
+      "protected": false
+    }
+  }
+}
+```
+
+### Frontend components
+
+```
+Sidebar
+├── SearchBox
+├── Tree (folders + connections, drag-and-drop)
+│   ├── FolderNode (expand/collapse, rename, delete)
+│   └── ConnectionNode (open, edit, delete)
+└── ImportButton (PuTTY / WinSSHTerm / ~/.ssh/config)
+
+Workspace
+├── TabBar  [● pgw-01 ×] [server2 ×]  [+]
+└── TerminalPane[]  (one per tab, hidden when inactive)
+```
+
+### Multi-tab behaviour
+
+- Each tab = one independent SSH session (unique session ID, separate PTY, separate log file).
+- Hidden tabs keep running; only the active one triggers PTY resize.
+- `SessionState` already holds a `HashMap<SessionId, Transport>` — no backend changes needed for multi-tab.
+- Last tab closed → show connection selector / sidebar.
+
+### Backend additions
+
+New Tauri commands for tree and connection management:
+
+| Command | Description |
+|---------|-------------|
+| `tree_get` | Return full tree |
+| `conn_upsert` | Create or update a connection |
+| `conn_delete` | Delete a connection |
+| `folder_upsert` | Create or rename a folder |
+| `folder_delete` | Delete folder (and optionally its children) |
+| `search` | Search connections by name / host / user |
+| `import_sshconfig` | Import from `~/.ssh/config` |
+| `import_putty` | Import from PuTTY registry |
+| `import_winsshterm` | Import from WinSSHTerm config file |
+
+### Implementation checklist
+
+- [ ] Extend vault data model (tree, colors, protected)
+- [ ] `store` module: tree CRUD + search
+- [ ] Import parsers (`~/.ssh/config`, PuTTY registry, WinSSHTerm)
+- [ ] Sidebar component (tree, drag-and-drop, search)
+- [ ] Connection editor (general, auth, colors, keepalive)
+- [ ] `Workspace.svelte` with tab bar
+- [ ] `TerminalPane` visibility + deferred resize
+- [ ] Per-connection colors applied to terminal theme and tab accent
 
 ---
 
-## Contributing
+## 📋 M5 — Jump hosts
 
-This roadmap is subject to change based on:
-- User feedback
-- Technical discoveries
-- Security requirements
-- Platform limitations
+**Done when:** `-J` chain works end-to-end, including a different password per hop.
 
-Suggestions and feedback are welcome!
+- Each connection gains an ordered `jump: ["conn_id", …]` list.
+- Phase 1: passed as `-J host1,host2` to `ssh.exe`; the askpass helper identifies the hop from ssh's prompt text and returns the right password.
+- Phase 2 (M10): chained `direct-tcpip` channels with `russh`.
+- Failures name the hop that failed.
+- UI: jump chain editor in the connection editor, visual chain diagram in the tab.
+
+---
+
+## 📋 M6 — Tiling, broadcast and syntax highlighting
+
+**Done when:** splits work, broadcast reaches a hand-picked set of panes, and rule files load and colorize prompt / command / parameters / output / IPs.
+
+### Tiling
+
+- Layouts: tabs (current), split horizontal, split vertical, 2×2 grid.
+- Pane handles: drag to resize.
+
+### Broadcast
+
+- Send input to: all visible panes, all open sessions, or a hand-picked set.
+- `protected: true` connections are excluded by default and visually marked.
+- Multi-line paste shows a confirmation dialog before sending.
+
+### Syntax highlighting (M6b)
+
+Rule files are plain TOML in `highlight/` next to the exe.
+
+```toml
+name   = "linux"
+prompt = '^\S+@\S+:[^\n]*[$#] '
+
+[[rule]]
+name = "command"; scope = "command"
+pattern = '^\S+'; fg = "#e3b341"; bold = true
+
+[[rule]]
+name = "param"; scope = "command"
+pattern = '(?<=\s)--?[\w-]+'; fg = "#79c0ff"
+
+[[rule]]
+name = "ipv4"; scope = "any"
+pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
+```
+
+- Matching runs on the xterm.js buffer through its decoration API, never by rewriting the byte stream.
+- Scopes: `prompt`, `command`, `output`, `any`.
+- Connections (or folders for all their children) link rule sets by name: `highlight = ["linux", "common"]`.
+- Highlighting off while alternate screen is active (vim, top, less).
+- Validation: JSON schema + `sshterm.exe --check-highlight file.toml` + in-app test panel (paste sample text, see classification and colors).
+- Guard against catastrophic backtracking: pattern-length limit and timing check in the validator.
+
+---
+
+## 📋 M7 — Tunnels
+
+**Done when:** `-L`, `-R`, `-D` saved per connection and started with the session or on demand.
+
+- Tunnels stored in the vault per connection.
+- Phase 1: passed as `-L`/`-R`/`-D` flags, or a background `ssh -N` process.
+- Status display: active / failed / port-in-use.
+- UI: tunnel manager panel (list, start, stop, status).
+
+---
+
+## 📋 M8 — Native SFTP
+
+**Done when:** `russh-sftp` file browser and downloads with custom ports work.
+
+- SFTP uses the connection's own host, port, and jump chain (optional separate SFTP port).
+- Operations: list directory, download (single file and recursive folder), upload, delete, rename.
+- Multi-select, progress bar, cancel, overwrite confirmation.
+- `russh` enters the project here (before it replaces the phase-1 engine in M10).
+
+---
+
+## 📋 M9 — Polish
+
+**Done when:** per-connection colors, host-key confirmation UI, auto-reconnect with backoff, idle lock, release build.
+
+- Per-connection `fg`/`bg` colors: applied to the terminal theme and tab accent.
+- Host-key change: hard visual warning with the old and new fingerprints.
+- Auto-reconnect: exponential backoff shown in the tab title.
+- Idle lock: configurable timeout; sessions stay open, new connections need the password.
+- Release build: code-stripped binary, installer.
+
+---
+
+## 📋 M10 — Native engine (`russh`)
+
+**Done when:** `RusshTransport` reaches parity with phase 1 and becomes the default; `openssh` stays selectable per connection.
+
+- `russh` + `russh-keys` implement the full `Transport` trait.
+- Typed errors (no more parsing process output).
+- Jump chains via chained `direct-tcpip` channels.
+- Tunnels as native listeners.
+- Per-connection `engine` field: `"russh"` (default after M10) | `"openssh"` (kept for legacy equipment).
+- Private key files read in place; path stored in vault, key content never copied.
+
+---
+
+## Milestone summary
+
+| # | Milestone | Commit / tag | Status |
+|---|-----------|--------------|--------|
+| M0 | Portable skeleton | `bd4d6b4` / m1 | ✅ |
+| M1 | Vault + i18n | `bd4d6b4` / m1 | ✅ |
+| M2 | First SSH session | `2c19e40` / m2 | ✅ |
+| M3 | Session logging | `bbc0262` | ✅ |
+| M4 | Session tree + multi-tab | — | 🚧 |
+| M5 | Jump hosts | — | 📋 |
+| M6 | Tiling + broadcast + highlighting | — | 📋 |
+| M7 | Tunnels | — | 📋 |
+| M8 | Native SFTP | — | 📋 |
+| M9 | Polish | — | 📋 |
+| M10 | Native `russh` engine | — | 📋 |
