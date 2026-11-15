@@ -108,6 +108,29 @@
     return null;
   }
 
+  function findLocation(
+    nodes: TreeNode[],
+    id: string,
+    parentId: string | null = null,
+  ): { parentId: string | null; index: number } | null {
+    for (let index = 0; index < nodes.length; index++) {
+      const node = nodes[index];
+      if (node.id === id) return { parentId, index };
+      if (node.type === "folder") {
+        const found = findLocation(node.children, id, node.id);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  function moveAt(id: string, parentId: string | null, index: number) {
+    const source = findLocation(tree, id);
+    const adjustedIndex =
+      source?.parentId === parentId && source.index < index ? index - 1 : index;
+    onmove(id, parentId, Math.max(0, adjustedIndex));
+  }
+
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
     node.select();
@@ -191,9 +214,9 @@
     dragId = null;
     if (!id || !position) return;
     if (position === "into" && node.type === "folder") {
-      onmove(id, node.id, node.children.length);
+      moveAt(id, node.id, node.children.length);
     } else {
-      onmove(id, parentId, index + (position === "after" ? 1 : 0));
+      moveAt(id, parentId, index + (position === "after" ? 1 : 0));
     }
   }
 
@@ -212,7 +235,7 @@
     event.preventDefault();
     event.stopPropagation();
     const id = event.dataTransfer?.getData("text/plain") || dragId;
-    if (id && !query.trim()) onmove(id, null, tree.length);
+    if (id && !query.trim()) moveAt(id, null, tree.length);
     clearDrag();
   }
 
