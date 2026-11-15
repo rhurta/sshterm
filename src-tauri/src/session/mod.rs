@@ -98,8 +98,9 @@ pub async fn session_open(
             port: conn.port,
             user: conn.user.clone(),
             keepalive_secs: conn.keepalive_secs,
+            key_path: conn.key_path().map(std::path::PathBuf::from),
         };
-        (cfg, conn.password, conn.name.clone())
+        (cfg, conn.password(), conn.name.clone())
     };
 
     let has_password = password.is_some();

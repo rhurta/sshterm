@@ -36,6 +36,8 @@ async-trait = "0.1"
 # serde and serde_json come from the template; serde needs features = ["derive"]
 
 [target.'cfg(windows)'.dependencies]
+# M4: read PuTTY sessions from HKCU\Software\SimonTatham\PuTTY\Sessions.
+winreg = "0.52"
 # Askpass pipe DACL: only the current user may connect. The pipe is created
 # with CreateNamedPipeW + a current-user-only ACL applied at creation time.
 windows-sys = { version = "0.61", features = [

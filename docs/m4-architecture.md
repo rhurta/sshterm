@@ -1,5 +1,12 @@
 # M4: Multi-Tab Session Management Architecture
 
+> **Historical design note (M3).** Multi-tab was implemented in M3 in `src/lib/Workspace.svelte`
+> (tabs array, `activeId`, one mounted `TerminalPane` per session, hidden panes keep running,
+> only the active pane resizes the PTY). M4 kept that design, added focus-on-open/switch in
+> `TerminalPane.svelte`, and spent its effort on the session tree instead:
+> typed vault model, tree CRUD/search, imports, sidebar UI and the connection editor.
+> The backend `SessionState` HashMap needed no changes.
+
 ## Overview
 M4 adds the ability to open multiple SSH sessions simultaneously, each in its own tab within the application window.
 

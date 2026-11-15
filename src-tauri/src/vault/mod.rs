@@ -19,7 +19,7 @@ use zeroize::Zeroizing;
 use crypto::{derive_key, encode_header, open, parse_header, random_bytes, seal, KEY_LEN, SALT_LEN};
 pub use crypto::KdfParams;
 pub use error::VaultError;
-pub use model::VaultData;
+pub use model::{Auth, Connection, TreeNode, VaultData, DEFAULT_FOLDER_ID};
 
 /// Unlocked vault. While it exists, the key is in memory; on drop (locking)
 /// the key is cleared (`Zeroizing`).

@@ -22,6 +22,8 @@
   let fit: FitAddon | undefined;
   let lastCols = PROVISIONAL.cols;
   let lastRows = PROVISIONAL.rows;
+  // Set once xterm is mounted, so the focus effect runs after `open()`.
+  let mounted = $state(false);
 
   /** Fits the terminal to its box and tells the PTY, but only when the size really
    * changed: every resize makes ConPTY repaint the whole screen. */
@@ -54,6 +56,7 @@
     fit = f;
     t.loadAddon(f);
     t.open(host);
+    mounted = true;
 
     // Session log: plain text built from what this terminal displays (see
     // logCapture.ts). Calls are chained so the text reaches the file in order.
@@ -108,9 +111,14 @@
     };
   });
 
-  // When a tab becomes active the pane has dimensions again: refit.
+  // M4: a newly opened session (or a tab switch) must take keyboard focus so
+  // typing goes straight into the terminal, not into the sidebar or tab bar.
+  // The pane is only focusable once it is visible and xterm has been opened.
   $effect(() => {
-    if (active) syncSize();
+    if (active && mounted) {
+      syncSize();
+      term?.focus();
+    }
   });
 </script>
 

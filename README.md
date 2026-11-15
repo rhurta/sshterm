@@ -18,7 +18,7 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M1 | Encrypted vault, i18n | ✅ Complete |
 | M2 | First SSH session over ConPTY + xterm.js | ✅ Complete |
 | M3 | Per-session log files | ✅ Complete |
-| M4 | Session tree (folders, CRUD, search, import) | 🚧 Next |
+| M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | 📋 Planned |
 | M6 | Tiling, broadcast, syntax highlighting | 📋 Planned |
 | M7 | Port-forwarding tunnels | 📋 Planned |
@@ -58,7 +58,9 @@ webview-data/      WebView2 cache (WEBVIEW2_USER_DATA_FOLDER)
 sshterm/
 ├── src/                        # Frontend (SvelteKit)
 │   ├── lib/
-│   │   ├── components/         # Svelte UI components
+│   │   ├── ConnectionTree.svelte   # Recursive folder/connection tree
+│   │   ├── ConnectionSidebar.svelte
+│   │   ├── SearchBox.svelte / ImportDialog.svelte
 │   │   ├── i18n/               # Translation dictionaries (en, es)
 │   │   ├── encoding.ts         # Base64 helpers
 │   │   ├── logCapture.ts       # Screen-buffer log capture
@@ -67,7 +69,9 @@ sshterm/
 └── src-tauri/                  # Backend (Rust)
     └── src/
         ├── vault/              # Encrypt / decrypt credential store
-        ├── store/              # Connection and tree CRUD
+        ├── store/              # Connection + tree CRUD, search, imports
+        │   ├── tree.rs         # Pure tree algorithms
+        │   └── import/         # ssh config, PuTTY, WinSSHTerm parsers
         ├── session/            # Open / close / resize sessions
         ├── transport/          # Transport trait + openssh.rs (+ russh.rs in M10)
         ├── askpass/            # Named-pipe password delivery to ssh.exe
@@ -157,6 +161,35 @@ PTY redraws ──▶ xterm.js ──▶ screen buffer (each line once)
 
 `log_mode = "screen"` (default) captures clean readable text.
 `log_mode = "raw"` stores PTY bytes with escape codes, for diagnostics.
+
+### Session tree (M4)
+
+The vault payload stays at `version: 1` and the file format is unchanged. `tree`
+is a nested `Vec<TreeNode>` of folders and connection references; every
+connection id appears exactly once in the tree. M1–M3 vaults are migrated on
+unlock: the flat list is wrapped in one **Connections** folder and the old
+`password` field moves into `auth`.
+
+New commands: `tree_get`, `folder_upsert`, `folder_delete`, `move_node`,
+`search`, `import_preview`, `import_apply`. Imports are read-only until the user
+confirms the preview; duplicates on `(host, port, user)` are skipped unless
+"import as copy" is selected.
+
+WinSSHTerm exports represent folders as nested `<Node Type="Container">`
+elements. Each candidate carries its full folder path, and the import recreates
+that hierarchy in the vault tree (reusing folders that already exist), so the
+source folder structure is preserved. WinSSHTerm passwords are encrypted with
+WinSSHTerm's own key and are never imported; those connections are created with
+agent auth and a warning, and must be edited to set credentials. Port forwards,
+login commands and jump hosts from the export are not imported.
+
+Each tab owns an independent session. Opening a session or switching tabs
+focuses the xterm pane so typing reaches the remote host immediately.
+
+Scrollbars are styled thin (6px) and matched to the dark theme across all
+scrollable areas (sidebar, dialogs, terminal viewport). The connection picker
+opened from the `+` tab button can be dismissed with Escape, the × button, or
+click-outside.
 
 ## Configuration
 

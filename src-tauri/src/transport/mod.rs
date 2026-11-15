@@ -50,6 +50,9 @@ pub struct SshConfig {
     pub port: u16,
     pub user: String,
     pub keepalive_secs: u32,
+    /// Optional private key file (M4, `auth.type = key`). Only the path is
+    /// stored in the vault; the file itself is read in place by ssh.exe.
+    pub key_path: Option<PathBuf>,
 }
 
 #[async_trait]

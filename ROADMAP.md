@@ -144,13 +144,15 @@ log_mode   = "screen"   # "screen" | "raw"
 
 ---
 
-## 🚧 M4 — Session tree
+## ✅ M4 — Session tree
 
 **Done when:** folders, CRUD, search, import from PuTTY / WinSSHTerm / `~/.ssh/config`, and multi-tab workspace.
 
-### What changes
+### What changed
 
-The spec's M4 is primarily about the **session tree** (sidebar with folders, drag-and-drop, search, import). The multi-tab workspace — multiple open sessions at once — ships together with it because the sidebar is the natural place to open new tabs.
+The spec's M4 is primarily about the **session tree** (sidebar with folders, drag-and-drop, search, import). The multi-tab workspace already shipped with M3 (`Workspace.svelte` kept one `TerminalPane` per session, hidden but still running), so M4 only had to verify it and add terminal focus handling. Per-connection colors were **deferred to M9** (spec §8/§11 and ROADMAP M9 both assign them there; the M4 checklist below no longer claims them).
+
+The vault payload stays at `version: 1` with the same on-disk file format. `tree` and `connections` are now typed; old flat vaults are migrated in memory on unlock.
 
 ### Vault data model additions
 
@@ -177,16 +179,17 @@ The spec's M4 is primarily about the **session tree** (sidebar with folders, dra
 ### Frontend components
 
 ```
-Sidebar
-├── SearchBox
-├── Tree (folders + connections, drag-and-drop)
-│   ├── FolderNode (expand/collapse, rename, delete)
-│   └── ConnectionNode (open, edit, delete)
-└── ImportButton (PuTTY / WinSSHTerm / ~/.ssh/config)
+ConnectionSidebar.svelte
+├── SearchBox.svelte                 (debounced search, match count)
+├── ConnectionTree.svelte            (recursive snippet; folders + connections)
+│   ├── inline rename (F2 / double-click)
+│   ├── context menu  (open, edit, duplicate, new, rename, delete)
+│   └── HTML5 drag-and-drop  → move_node
+└── ImportDialog.svelte              (source → preview → apply)
 
-Workspace
-├── TabBar  [● pgw-01 ×] [server2 ×]  [+]
-└── TerminalPane[]  (one per tab, hidden when inactive)
+ConnectionEditor.svelte   General / Authentication / Advanced
+Workspace.svelte          TabBar [● pgw-01 ×] [server2 ×] [+]
+└── TerminalPane.svelte[]  (one per tab, hidden when inactive, focused on activate)
 ```
 
 ### Multi-tab behaviour
@@ -202,26 +205,31 @@ New Tauri commands for tree and connection management:
 
 | Command | Description |
 |---------|-------------|
-| `tree_get` | Return full tree |
-| `conn_upsert` | Create or update a connection |
-| `conn_delete` | Delete a connection |
-| `folder_upsert` | Create or rename a folder |
-| `folder_delete` | Delete folder (and optionally its children) |
-| `search` | Search connections by name / host / user |
-| `import_sshconfig` | Import from `~/.ssh/config` |
-| `import_putty` | Import from PuTTY registry |
-| `import_winsshterm` | Import from WinSSHTerm config file |
+| `tree_get` | Return full typed tree |
+| `conn_list`, `conn_get` | Summaries and full connection (secrets only while unlocked) |
+| `conn_upsert`, `conn_delete` | Create/update/delete; tree is reconciled automatically |
+| `folder_upsert` | Create (`id: null`) or rename a folder |
+| `folder_delete` | Delete folder, `cascade` controls whether children go too |
+| `move_node` | Move/reorder; rejects cycles, keeps one parent per node |
+| `search` | Case-insensitive name / host / user, returns folder breadcrumbs |
+| `import_preview` | Read-only parse of one source into candidates + skips + warnings |
+| `import_apply` | Write with `skip` (default) or `copy` duplicate policy |
+
+Sources: `ssh_config` (`~/.ssh/config`), `putty` (HKCU registry, Windows only, `winreg`), `winsshterm` (`connections.xml`, schema-tolerant parser). Saved passwords are never imported (WinSSHTerm encrypts them with its own key, so a warning is shown and the connection is created with agent auth for the user to edit afterwards).
+
+WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="Connection"` / `Type="Container"`, with containers nested recursively. The parser records the full ancestor path on each candidate and `import_apply` recreates it with `tree::ensure_path`, reusing same-named folders so repeated imports do not duplicate the hierarchy. Port-forward arguments, login commands and jump-host settings in the export are not imported (M5/M6 scope).
 
 ### Implementation checklist
 
-- [ ] Extend vault data model (tree, colors, protected)
-- [ ] `store` module: tree CRUD + search
-- [ ] Import parsers (`~/.ssh/config`, PuTTY registry, WinSSHTerm)
-- [ ] Sidebar component (tree, drag-and-drop, search)
-- [ ] Connection editor (general, auth, colors, keepalive)
-- [ ] `Workspace.svelte` with tab bar
-- [ ] `TerminalPane` visibility + deferred resize
-- [ ] Per-connection colors applied to terminal theme and tab accent
+- [x] Extend vault data model (typed tree, `auth`, `protected`, forward fields for M5–M8)
+- [x] Migration of M1–M3 flat vaults on unlock (no format bump)
+- [x] `store` module: tree CRUD + search (`store/tree.rs` is pure and unit-tested)
+- [x] Import parsers (`~/.ssh/config`, PuTTY registry, WinSSHTerm), including recreation of the WinSSHTerm folder hierarchy
+- [x] Sidebar component (tree, drag-and-drop, debounced search, context menu, inline rename)
+- [x] Connection editor (General / Authentication / Advanced; `auth.type = key` passes `-i` to ssh.exe)
+- [x] Multi-tab workspace verification (already in M3) + terminal focus on open/switch
+- [x] Thin theme-matched scrollbars; dismissable connection picker (Escape, ×, click-outside)
+- [ ] Per-connection colors applied to terminal theme and tab accent → **M9** (spec §8/§11)
 
 ---
 
@@ -337,7 +345,7 @@ pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
 | M1 | Vault + i18n | `bd4d6b4` / m1 | ✅ |
 | M2 | First SSH session | `2c19e40` / m2 | ✅ |
 | M3 | Session logging | `bbc0262` | ✅ |
-| M4 | Session tree + multi-tab | — | 🚧 |
+| M4 | Session tree + multi-tab | pending commit / tag `m4` | ✅ |
 | M5 | Jump hosts | — | 📋 |
 | M6 | Tiling + broadcast + highlighting | — | 📋 |
 | M7 | Tunnels | — | 📋 |

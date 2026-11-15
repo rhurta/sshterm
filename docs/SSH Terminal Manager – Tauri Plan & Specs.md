@@ -104,7 +104,7 @@ Rules:
 
 `highlight` is an optional list of rule-set names on a connection or a folder (see Syntax highlighting in section 8). A folder's list applies to its children unless they set their own.
 
-**Current state (through M3):** `tree` and `connections` are stored as free-form `serde_json::Value` in `model.rs`. The `Connection` struct in `store/mod.rs` covers only the fields needed so far: `id`, `name`, `host`, `port`, `user`, `password`, `keepalive_secs`. The full model above will be realised in M4.
+**Current state (through M4):** `tree` and `connections` are typed (`TreeNode` enum and `Connection`). The full model above is realised, including `Auth` (`password` / `key` / `agent`), `colors`, `protected`, and forward-declared `jump`, `tunnels`, `sftp` and `highlight` with `serde(default)`. The payload is still `version: 1` and the encrypted file format is unchanged; M1–M3 vaults are migrated in memory on unlock (flat list → one "Connections" folder, `password` → `auth`). Colors are stored but deliberately not applied to the UI until M9.
 
 ## 6. Backend modules
 
@@ -113,7 +113,7 @@ Each module exposes Tauri commands and emits events. The frontend never touches 
 | Module | Responsibility | Main commands / events | Status |
 | --- | --- | --- | --- |
 | `vault` | Create, unlock, lock, save, change password | `vault_unlock`, `vault_lock`, `vault_save` | ✅ M1 |
-| `store` | Connection CRUD; tree and search in M4 | `conn_list`, `conn_get`, `conn_upsert`, `conn_delete` | ✅ M2 (flat list) |
+| `store` | Connection CRUD, tree, search, imports | `conn_list`, `conn_get`, `conn_upsert`, `conn_delete`, `tree_get`, `folder_upsert`, `folder_delete`, `move_node`, `search`, `import_preview`, `import_apply` | ✅ M4 |
 | `transport` | `Transport` trait; `openssh.rs` (phase 1) | internal | ✅ M2 |
 | `askpass` | Hands vault passwords to `ssh.exe` via named pipe | internal | ✅ M2 |
 | `session` | Open/close sessions, resize, keepalive, log bridge | `session_open`, `session_write`, `session_resize`, `session_close`, `session_close_all`, `session_log_append`, `session_log_close`; event `session:data`, `session:closed` | ✅ M2–M3 |
@@ -170,11 +170,11 @@ Note: the actual signature uses `&SshConfig` (not `&Connection`) and returns `Op
 | --- | --- | --- |
 | Lock screen | Master password entry, create-vault flow | ✅ M1 |
 | Language selector | Pick language, persist to config.toml | ✅ M1 |
-| Connection sidebar | List of connections; open in new tab | ✅ M2 (flat list) |
-| Connection editor | Create/edit a connection | ✅ M2 |
-| Workspace | Tab bar + terminal panes | ✅ M2–M3 |
-| Terminal pane (`TerminalPane.svelte`) | xterm.js pane, resize, LogCapture | ✅ M2–M3 |
-| Sidebar with tree | Folders, drag-and-drop, search, import | 📋 M4 |
+| Connection sidebar | Tree of folders and connections; open in new tab | ✅ M4 |
+| Connection editor | General / Authentication / Advanced sections | ✅ M4 |
+| Workspace | Tab bar + terminal panes; focus on open/switch | ✅ M2–M4 |
+| Terminal pane (`TerminalPane.svelte`) | xterm.js pane, resize, LogCapture, focus | ✅ M2–M4 |
+| Sidebar with tree | Folders, drag-and-drop, search, import | ✅ M4 |
 | Tunnel manager | Active tunnels, start/stop | 📋 M7 |
 | SFTP panel | Remote file list, download queue | 📋 M8 |
 | Broadcast bar | Command input, per-pane checkboxes | 📋 M6 |
@@ -332,7 +332,8 @@ sshterm/
       commands.rs   VaultState, vault_* and config_* commands
       config.rs     Config { language, log_output, log_mode }; LogMode enum
       vault/        mod.rs, crypto.rs, model.rs, error.rs, tests.rs
-      store/        mod.rs — Connection CRUD (flat list through M3)
+      store/        mod.rs — commands; tree.rs (pure algorithms);
+                    import/ (ssh_config.rs, putty.rs, winsshterm.rs)
       transport/    mod.rs (Transport trait + SshConfig + PtySize),
                     openssh.rs (OpenSshTransport, build_command, watchdog)
       askpass/      mod.rs (AskpassServer, run_helper), acl.rs (pipe ACL)
@@ -346,9 +347,12 @@ sshterm/
     lib/
       LockScreen.svelte
       LanguageSelect.svelte
-      ConnectionSidebar.svelte   flat connection list (M2–M3)
-      ConnectionEditor.svelte    create / edit connection form (M2)
-      Workspace.svelte           tab bar + terminal pane mounting (M2–M3)
+      ConnectionSidebar.svelte   tree controller (M4)
+      ConnectionTree.svelte      recursive folder/connection tree (M4)
+      SearchBox.svelte           debounced search (M4)
+      ImportDialog.svelte        preview → apply import (M4)
+      ConnectionEditor.svelte    General / Auth / Advanced (M4)
+      Workspace.svelte           tab bar + terminal pane mounting (M2–M4)
       TerminalPane.svelte        xterm.js + FitAddon + LogCapture (M2–M3)
       logCapture.ts              screen-buffer log capture (M3)
       sessionBus.ts              session:data / session:closed event fan-out
@@ -367,7 +371,7 @@ sshterm/
 | M1 | Vault | Create, lock, unlock and change password; unit tests for wrong password and corruption | ✅ |
 | M2 | First session on `ssh.exe` | `Transport` trait and `OpenSshTransport` over ConPTY; xterm.js terminal, resize, keepalive flags, password through askpass from the vault | ✅ |
 | M3 | Logging | One log file per session; screen-buffer capture via `LogCapture.ts`; no duplicate lines from ConPTY redraws | ✅ |
-| M4 | Session tree | Folders, CRUD, search, import from PuTTY / WinSSHTerm / `~/.ssh/config`; multi-tab workspace | 🚧 |
+| M4 | Session tree | Folders, CRUD, search, import from PuTTY / WinSSHTerm / `~/.ssh/config`; multi-tab workspace | ✅ |
 | M5 | Jump hosts | `-J` chain works, including a different password per hop | 📋 |
 | M6 | Tiling and broadcast | Splits, per-pane targeting, protected hosts | 📋 |
 | M6b | Syntax highlighting | Rule files load and link to connections; prompt, command, parameter, output, IP and keyword colors work; test panel; `--check-highlight` | 📋 |
@@ -384,8 +388,9 @@ Each milestone ends with a working exe, so you can use the tool from M2 onward.
 - OpenSSH client: look for `ssh.exe` in `bin/` next to the exe first, then in System32.
 - Private keys: the vault stores only the path to the key file (for example `~/.ssh/id_ed25519`), which stays where it is. Nothing is written to disk by the app and the key is not covered by the master password; an optional passphrase can be kept in the vault. Both engines read the file in place, including `russh`.
 - Engine: `russh` becomes the default once it reaches parity (M10); `openssh` stays selectable per connection, for example for legacy equipment.
-- Import: `~/.ssh/config`, PuTTY (registry) and WinSSHTerm in M4. The WinSSHTerm file format is checked when the connections file is provided.
+- Import: `~/.ssh/config`, PuTTY (registry) and WinSSHTerm in M4. WinSSHTerm's `connections.xml` uses a single `<Node>` tag with `Type="Connection"` / `Type="Container"`; containers nest, and the import recreates the full folder path in the vault tree. Its saved passwords are encrypted with WinSSHTerm's own key and are not reusable, so they are never imported — affected connections are created with agent auth and a warning.
 - Code signing: none, the tool is for personal use.
 - Logging: log from the xterm.js screen buffer (not PTY bytes) so ConPTY redraws never produce duplicate lines. `LogMode::Screen` is the default; `LogMode::Raw` is available for diagnostics.
 - Syntax highlighting: TOML rule files in `highlight/` with scoped rules (prompt, command, parameters, output, IPs, keywords), written with AI help from a skill file and checked by a validator; no MCP for now. Milestone M6b.
 - `chrono` crate added in M3 for local date-time in log file names (default features disabled, `clock` feature only).
+- UI polish in M4: scrollbars are styled thin (6px) and matched to the dark theme via global `::-webkit-scrollbar` rules (the standard `scrollbar-width`/`scrollbar-color` properties are deliberately not used, because Chromium 121+ ignores all `::-webkit-scrollbar` styling when they are set). Modal dialogs (connection picker, import dialog) can be dismissed with Escape, a × button, or click-outside; the connection editor does not get Escape because it could silently discard unsaved form data.

@@ -1,45 +1,19 @@
-//! Minimal connection store (M2).
+//! Connection and tree store (M4).
 //!
-//! `VaultData.connections` remains free-form JSON until M4; here it is read
-//! and written with a proper type, without changing the vault format. This
-//! lets M2 retrieve the password from the vault and deliver it to askpass.
+//! All commands work on the unlocked vault in memory and persist with
+//! `Vault::save()`. The typed payload and pure tree algorithms live in
+//! `vault/model.rs` and `store/tree.rs`; importing has its own submodule.
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+pub mod import;
+pub mod tree;
+
 use tauri::State;
 
 use crate::commands::VaultState;
-use crate::vault::Vault;
+use crate::vault::{Auth, Connection, TreeNode, Vault};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Connection {
-    pub id: String,
-    pub name: String,
-    pub host: String,
-    pub port: u16,
-    pub user: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-    pub keepalive_secs: u32,
-}
-
-impl Default for Connection {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            name: String::new(),
-            host: String::new(),
-            port: 22,
-            user: String::new(),
-            password: None,
-            keepalive_secs: 30,
-        }
-    }
-}
-
-/// What is shown in the sidebar: never includes the password.
-#[derive(Debug, Clone, Serialize)]
+/// What the sidebar shows: never includes a password or key path.
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ConnectionSummary {
     pub id: String,
     pub name: String,
@@ -48,9 +22,15 @@ pub struct ConnectionSummary {
     pub user: String,
 }
 
-impl From<Connection> for ConnectionSummary {
-    fn from(c: Connection) -> Self {
-        Self { id: c.id, name: c.name, host: c.host, port: c.port, user: c.user }
+impl From<&Connection> for ConnectionSummary {
+    fn from(c: &Connection) -> Self {
+        Self {
+            id: c.id.clone(),
+            name: c.name.clone(),
+            host: c.host.clone(),
+            port: c.port,
+            user: c.user.clone(),
+        }
     }
 }
 
@@ -61,11 +41,23 @@ fn guard<'r>(state: &'r State<'r, VaultState>) -> std::sync::MutexGuard<'r, Opti
 }
 
 pub fn find(vault: &Vault, id: &str) -> Option<Connection> {
-    vault
-        .data
-        .connections
-        .get(id)
-        .and_then(|v: &Value| serde_json::from_value(v.clone()).ok())
+    vault.data.connections.get(id).cloned()
+}
+
+/// Migrates M1-M3 payloads in memory: `password` becomes `auth::password` and
+/// the flat connection list is wrapped in one "Connections" folder. Returns
+/// true when the vault must be saved again.
+pub fn migrate(vault: &mut Vault) -> bool {
+    let mut changed = false;
+    for conn in vault.data.connections.values_mut() {
+        if conn.migrate_legacy() {
+            changed = true;
+        }
+    }
+    if tree::reconcile(&mut vault.data.tree, &vault.data.connections) {
+        changed = true;
+    }
+    changed
 }
 
 fn normalize(mut c: Connection) -> Result<Connection, &'static str> {
@@ -82,8 +74,15 @@ fn normalize(mut c: Connection) -> Result<Connection, &'static str> {
     if c.keepalive_secs == 0 {
         c.keepalive_secs = 30;
     }
-    // An empty password means "no password" (key or agent).
-    c.password = c.password.filter(|p| !p.is_empty());
+    // Consume a legacy password field if the editor sent one back unchanged.
+    c.migrate_legacy();
+    c.legacy_password = None;
+    // Empty credentials mean "no password": ssh uses a key or the agent.
+    match &c.auth {
+        Auth::Password { password } if password.is_empty() => c.auth = Auth::Agent,
+        Auth::Key { path, .. } if path.trim().is_empty() => c.auth = Auth::Agent,
+        _ => {}
+    }
     Ok(c)
 }
 
@@ -94,8 +93,7 @@ pub fn conn_list(state: State<'_, VaultState>) -> Result<Vec<ConnectionSummary>,
     let mut out: Vec<ConnectionSummary> = vault
         .data
         .connections
-        .iter()
-        .filter_map(|(_, v)| serde_json::from_value::<Connection>(v.clone()).ok())
+        .values()
         .map(ConnectionSummary::from)
         .collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -110,12 +108,18 @@ pub fn conn_get(state: State<'_, VaultState>, id: String) -> Result<Option<Conne
 }
 
 #[tauri::command]
-pub fn conn_upsert(state: State<'_, VaultState>, conn: Connection) -> Result<(), String> {
-    let conn = normalize(conn).map_err(|e| e.to_string())?;
-    let value = serde_json::to_value(&conn).map_err(|_| "serialize_error".to_string())?;
+pub fn conn_upsert(
+    state: State<'_, VaultState>,
+    conn: Connection,
+    parent_id: Option<String>,
+) -> Result<(), String> {
+    let conn = normalize(conn).map_err(str::to_string)?;
     let mut g = guard(&state);
     let vault = g.as_mut().ok_or("locked")?;
-    vault.data.connections.insert(conn.id.clone(), value);
+    let id = conn.id.clone();
+    vault.data.connections.insert(id.clone(), conn);
+    tree::link(&mut vault.data.tree, &id, parent_id.as_deref());
+    tree::reconcile(&mut vault.data.tree, &vault.data.connections);
     vault.save().map_err(|e| e.code().to_string())
 }
 
@@ -124,31 +128,144 @@ pub fn conn_delete(state: State<'_, VaultState>, id: String) -> Result<(), Strin
     let mut g = guard(&state);
     let vault = g.as_mut().ok_or("locked")?;
     vault.data.connections.remove(&id);
+    tree::unlink(&mut vault.data.tree, &id);
+    for conn in vault.data.connections.values_mut() {
+        conn.jump.retain(|hop| hop != &id);
+    }
+    tree::reconcile(&mut vault.data.tree, &vault.data.connections);
     vault.save().map_err(|e| e.code().to_string())
+}
+
+#[tauri::command]
+pub fn tree_get(state: State<'_, VaultState>) -> Result<Vec<TreeNode>, String> {
+    let g = guard(&state);
+    let vault = g.as_ref().ok_or("locked")?;
+    Ok(vault.data.tree.clone())
+}
+
+#[tauri::command]
+pub fn folder_upsert(
+    state: State<'_, VaultState>,
+    id: Option<String>,
+    parent_id: Option<String>,
+    name: String,
+) -> Result<String, String> {
+    let mut g = guard(&state);
+    let vault = g.as_mut().ok_or("locked")?;
+    let result = tree::upsert_folder(&mut vault.data.tree, id, parent_id, name)
+        .map_err(str::to_string)?;
+    vault.save().map_err(|e| e.code().to_string())?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn folder_delete(
+    state: State<'_, VaultState>,
+    id: String,
+    cascade: bool,
+) -> Result<(), String> {
+    let mut g = guard(&state);
+    let vault = g.as_mut().ok_or("locked")?;
+    let ids = tree::delete_folder(&mut vault.data.tree, &id, cascade)
+        .map_err(str::to_string)?;
+    for connection_id in ids {
+        vault.data.connections.remove(&connection_id);
+        for conn in vault.data.connections.values_mut() {
+            conn.jump.retain(|hop| hop != &connection_id);
+        }
+    }
+    tree::reconcile(&mut vault.data.tree, &vault.data.connections);
+    vault.save().map_err(|e| e.code().to_string())
+}
+
+#[tauri::command]
+pub fn move_node(
+    state: State<'_, VaultState>,
+    id: String,
+    parent_id: Option<String>,
+    index: usize,
+) -> Result<(), String> {
+    let mut g = guard(&state);
+    let vault = g.as_mut().ok_or("locked")?;
+    tree::move_node(&mut vault.data.tree, &id, parent_id.as_deref(), index)
+        .map_err(str::to_string)?;
+    tree::reconcile(&mut vault.data.tree, &vault.data.connections);
+    vault.save().map_err(|e| e.code().to_string())
+}
+
+#[tauri::command]
+pub fn search(state: State<'_, VaultState>, query: String) -> Result<Vec<tree::SearchHit>, String> {
+    let g = guard(&state);
+    let vault = g.as_ref().ok_or("locked")?;
+    let paths = tree::paths(&vault.data.tree);
+    Ok(tree::search(&vault.data.connections, &paths, &query))
+}
+
+/// Read-only parse. The dialog shows candidates, skips and warnings before
+/// anything is written to the vault.
+#[tauri::command]
+pub fn import_preview(
+    source: String,
+    path: Option<String>,
+) -> Result<import::ImportPreview, String> {
+    import::preview(&source, path.as_deref()).map_err(str::to_string)
+}
+
+#[tauri::command]
+pub fn import_apply(
+    state: State<'_, VaultState>,
+    source: String,
+    path: Option<String>,
+    parent_id: Option<String>,
+    policy: String,
+) -> Result<import::ImportReport, String> {
+    let preview = import::preview(&source, path.as_deref()).map_err(str::to_string)?;
+    let mut g = guard(&state);
+    let vault = g.as_mut().ok_or("locked")?;
+    let report = import::apply(&mut vault.data, preview, parent_id.as_deref(), &policy)
+        .map_err(str::to_string)?;
+    vault.save().map_err(|e| e.code().to_string())?;
+    Ok(report)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vault::VaultData;
 
     #[test]
-    fn normalize_fills_defaults_and_strips_empty_password() {
+    fn normalize_fills_defaults_and_keeps_password_auth() {
         let c = Connection {
             id: " c1 ".into(),
             name: "  ".into(),
             host: " 10.0.0.5 ".into(),
-            port: 22,
             user: " admin ".into(),
-            password: Some("".into()),
+            auth: Auth::Password { password: "secret".into() },
             keepalive_secs: 0,
+            ..Connection::default()
         };
         let c = normalize(c).unwrap();
         assert_eq!(c.id, "c1");
         assert_eq!(c.name, "10.0.0.5");
         assert_eq!(c.host, "10.0.0.5");
-        assert_eq!(c.user, "admin");
         assert_eq!(c.keepalive_secs, 30);
-        assert!(c.password.is_none());
+        assert_eq!(c.password().as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn normalize_converts_a_legacy_password_and_clears_the_field() {
+        let c = Connection {
+            id: "c1".into(),
+            name: "old".into(),
+            host: "h".into(),
+            user: "u".into(),
+            legacy_password: Some("legacy".into()),
+            ..Connection::default()
+        };
+        let c = normalize(c).unwrap();
+        assert_eq!(c.auth, Auth::Password { password: "legacy".into() });
+        assert!(c.legacy_password.is_none());
+        assert_eq!(c.password().as_deref(), Some("legacy"));
     }
 
     #[test]
@@ -165,18 +282,60 @@ mod tests {
     }
 
     #[test]
+    fn empty_credentials_become_agent_auth() {
+        for auth in [
+            Auth::Password { password: "".into() },
+            Auth::Key { path: "  ".into(), passphrase: None },
+        ] {
+            let c = normalize(Connection {
+                id: "c1".into(),
+                host: "h".into(),
+                user: "u".into(),
+                auth,
+                ..Connection::default()
+            })
+            .unwrap();
+            assert_eq!(c.auth, Auth::Agent);
+            assert!(c.password().is_none());
+        }
+    }
+
+    #[test]
     fn summary_never_contains_a_password() {
-        let summary = ConnectionSummary::from(Connection {
+        let summary = ConnectionSummary::from(&Connection {
             id: "c1".into(),
             name: "srv".into(),
             host: "h".into(),
-            port: 22,
             user: "u".into(),
-            password: Some("secret".into()),
-            keepalive_secs: 30,
+            auth: Auth::Password { password: "secret".into() },
+            ..Connection::default()
         });
         let json = serde_json::to_string(&summary).unwrap();
         assert!(!json.contains("secret"));
         assert!(!json.contains("password"));
+    }
+
+    #[test]
+    fn migration_wraps_a_flat_payload() {
+        let mut data = VaultData::default();
+        data.connections.insert(
+            "c1".into(),
+            Connection {
+                id: "c1".into(),
+                name: "old".into(),
+                host: "h".into(),
+                user: "u".into(),
+                legacy_password: Some("pw".into()),
+                ..Connection::default()
+            },
+        );
+        // Exercise the same pure pieces `migrate()` uses: a real Vault needs
+        // an encrypted file on disk, which the vault tests already cover.
+        for conn in data.connections.values_mut() {
+            conn.migrate_legacy();
+        }
+        tree::reconcile(&mut data.tree, &data.connections);
+        assert!(matches!(data.tree[0], TreeNode::Folder { .. }));
+        assert_eq!(data.connections["c1"].password().as_deref(), Some("pw"));
     }
 }

@@ -104,6 +104,10 @@ fn build_command(cfg: &SshConfig, askpass: Option<(&str, &str)>) -> CommandBuild
     cmd.arg("-o");
     // A stalled TCP connect must not leave the terminal blank forever.
     cmd.arg("ConnectTimeout=15");
+    if let Some(key) = &cfg.key_path {
+        cmd.arg("-i");
+        cmd.arg(key.display().to_string());
+    }
     cmd.arg(format!("{}@{}", cfg.user, cfg.host));
 
     if let Some((pipe, token)) = askpass {
@@ -286,6 +290,7 @@ mod tests {
             port: 2222,
             user: "admin".into(),
             keepalive_secs: 45,
+            key_path: None,
         }
     }
 
@@ -325,6 +330,15 @@ mod tests {
     fn no_password_never_leaks_into_the_command_line() {
         let args = argv(&build_command(&cfg(), Some(("pipe", "token"))));
         assert!(!args.iter().any(|a| a.contains("token") || a.contains("pipe")));
+        assert_eq!(args.last().map(String::as_str), Some("admin@10.0.0.5"));
+    }
+
+    #[test]
+    fn key_auth_adds_the_identity_file_flag() {
+        let mut config = cfg();
+        config.key_path = Some(PathBuf::from("C:/keys/id_ed25519"));
+        let args = argv(&build_command(&config, None));
+        assert!(args.windows(2).any(|w| w[0] == "-i" && w[1] == "C:/keys/id_ed25519"));
         assert_eq!(args.last().map(String::as_str), Some("admin@10.0.0.5"));
     }
 

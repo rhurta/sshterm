@@ -173,6 +173,13 @@ struct ImportResult {
 }
 ```
 
+> **Implementation note (post-review).** The shipped shape uses `label`,
+> `warnings`, `folder_path: Vec<String>` on `ImportCandidate` and an
+> `ImportReport { created, folders_created, skipped }`. `folder_path` is needed
+> because the real WinSSHTerm export encodes folders as recursively nested
+> `<Node Type="Container">` elements; `import_apply` recreates that chain with
+> `tree::ensure_path`. See `src-tauri/src/store/import/mod.rs`.
+
 **Step 3a — `~/.ssh/config`** (`ssh_config.rs`)
 - Parse `Host`, `HostName`, `Port`, `User`, `IdentityFile`.
 - Skip `Host *` and wildcard-only hosts; record skip reason.

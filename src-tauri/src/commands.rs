@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::config::{self, Config};
 use crate::paths;
+use crate::store;
 use crate::vault::{Vault, VaultError};
 
 /// Shared application state: the open vault, or nothing if locked.
@@ -38,10 +39,15 @@ pub fn vault_status(state: State<'_, VaultState>) -> &'static str {
 #[tauri::command]
 pub async fn vault_create(state: State<'_, VaultState>, password: String) -> Result<(), String> {
     let path = paths::vault_path();
-    let vault = tauri::async_runtime::spawn_blocking(move || Vault::create(&path, &password))
+    let mut vault = tauri::async_runtime::spawn_blocking(move || Vault::create(&path, &password))
         .await
         .map_err(|e| e.to_string())?
         .map_err(code)?;
+    // M4: a new vault already has a typed payload, but run the same
+    // migration path as unlock so both are always in a consistent shape.
+    if store::migrate(&mut vault) {
+        vault.save().map_err(code)?;
+    }
     *lock(&state) = Some(vault);
     Ok(())
 }
@@ -49,10 +55,16 @@ pub async fn vault_create(state: State<'_, VaultState>, password: String) -> Res
 #[tauri::command]
 pub async fn vault_unlock(state: State<'_, VaultState>, password: String) -> Result<(), String> {
     let path = paths::vault_path();
-    let vault = tauri::async_runtime::spawn_blocking(move || Vault::unlock(&path, &password))
+    let mut vault = tauri::async_runtime::spawn_blocking(move || Vault::unlock(&path, &password))
         .await
         .map_err(|e| e.to_string())?
         .map_err(code)?;
+    // M4: M1-M3 vaults have a flat connection list and a plain `password`
+    // field. Wrap them in one folder and move the password into `auth` before
+    // the UI sees the data. Payload version and file format stay unchanged.
+    if store::migrate(&mut vault) {
+        vault.save().map_err(code)?;
+    }
     *lock(&state) = Some(vault);
     Ok(())
 }

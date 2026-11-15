@@ -39,4 +39,35 @@
     color: #dfe4ec;
     font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   }
+
+  /* WebView2 is Chromium-based. Styling these pseudo-elements replaces the
+     thick light Windows scrollbar with a slim one that matches the dark theme.
+     `scrollbar-width` / `scrollbar-color` are intentionally left at `auto`:
+     setting them makes Chromium ignore the rules below. */
+  :global(::-webkit-scrollbar) {
+    width: 6px;
+    height: 6px;
+  }
+  :global(::-webkit-scrollbar-track) {
+    background: transparent;
+  }
+  :global(::-webkit-scrollbar-thumb) {
+    background: #3a4557;
+    border-radius: 3px;
+  }
+  :global(::-webkit-scrollbar-thumb:hover) {
+    background: #52627c;
+  }
+  :global(::-webkit-scrollbar-thumb:active) {
+    background: #8fb4e8;
+  }
+  /* Hide the native arrow buttons and the bottom-right corner patch. */
+  :global(::-webkit-scrollbar-button) {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  :global(::-webkit-scrollbar-corner) {
+    background: transparent;
+  }
 </style>
