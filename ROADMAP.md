@@ -345,7 +345,7 @@ pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
 | M1 | Vault + i18n | `bd4d6b4` / m1 | ✅ |
 | M2 | First SSH session | `2c19e40` / m2 | ✅ |
 | M3 | Session logging | `bbc0262` | ✅ |
-| M4 | Session tree + multi-tab | pending commit / tag `m4` | ✅ |
+| M4 | Session tree + multi-tab | `bbb2c6c` / m4 | ✅ |
 | M5 | Jump hosts | — | 📋 |
 | M6 | Tiling + broadcast + highlighting | — | 📋 |
 | M7 | Tunnels | — | 📋 |
