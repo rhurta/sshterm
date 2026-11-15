@@ -26,6 +26,8 @@ chacha20poly1305 = "0.10"
 rand = "0.8"
 zeroize = "1"
 toml = "0.8"
+# M3: local date-time in log file names
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # M2: ssh.exe over ConPTY, password hand-off via named pipe, and events
 portable-pty = "0.9"
 tokio = { version = "1", features = ["sync", "net", "io-util", "time", "rt"] }

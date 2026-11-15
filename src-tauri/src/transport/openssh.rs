@@ -151,7 +151,7 @@ impl Transport for OpenSshTransport {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         // Clone before the reader thread takes ownership of `tx`.
         let watch_tx = tx.clone();
-        std::thread::Builder::new()
+        let reader_thread = std::thread::Builder::new()
             .name(format!("sshterm-pty-{}", cfg.host))
             .spawn(move || {
                 let mut reader = reader;
@@ -204,9 +204,25 @@ impl Transport for OpenSshTransport {
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 }
-                watch_stop.store(true, Ordering::Relaxed);
+                // Give ConPTY a moment to flush the last output (the "logout" line, an
+                // error message) before the PTY is closed. When the session is being
+                // closed on purpose there is nothing left to wait for.
+                if !watch_stop.swap(true, Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(150));
+                }
                 if let Ok(mut guard) = watch_master.lock() {
-                    let _ = guard.take();
+                    let _ = guard.take(); // unblocks the reader thread
+                }
+                // The end marker must come AFTER everything the reader still has to
+                // send; otherwise the receiver stops at the marker and loses the tail.
+                // Wait for the reader, but never hang the session if ConPTY does not
+                // release it: after 2 seconds the end marker is sent anyway.
+                for _ in 0..40 {
+                    if reader_thread.is_finished() {
+                        let _ = reader_thread.join();
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
                 }
                 let _ = watch_tx.send(Vec::new());
             })

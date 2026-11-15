@@ -61,6 +61,8 @@ pub fn run() {
             session::session_resize,
             session::session_close,
             session::session_close_all,
+            session::session_log_append,
+            session::session_log_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

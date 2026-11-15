@@ -5,6 +5,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import "@xterm/xterm/css/xterm.css";
   import { toBase64 } from "$lib/encoding";
+  import { LogCapture } from "$lib/logCapture";
   import { subscribeClosed, subscribeData, releaseSession } from "$lib/sessionBus";
 
   let {
@@ -13,9 +14,30 @@
     onclosed,
   }: { sessionId: string; active: boolean; onclosed: (id: string) => void } = $props();
 
+  // Workspace opens every session at 80x24; the first real fit may match it.
+  const PROVISIONAL = { cols: 80, rows: 24 };
+
   let host: HTMLDivElement;
   let term: Terminal | undefined;
   let fit: FitAddon | undefined;
+  let lastCols = PROVISIONAL.cols;
+  let lastRows = PROVISIONAL.rows;
+
+  /** Fits the terminal to its box and tells the PTY, but only when the size really
+   * changed: every resize makes ConPTY repaint the whole screen. */
+  function syncSize() {
+    if (!active || !term || !fit) return; // a hidden tab has no valid dimensions
+    try {
+      fit.fit();
+    } catch {
+      return; // no size yet
+    }
+    const { cols, rows } = term;
+    if (cols === lastCols && rows === lastRows) return;
+    lastCols = cols;
+    lastRows = rows;
+    void invoke("session_resize", { id: sessionId, cols, rows });
+  }
 
   onMount(() => {
     // The canvas renderer is used deliberately: the WebGL addon can fail to
@@ -33,17 +55,28 @@
     t.loadAddon(f);
     t.open(host);
 
-    const resize = () => {
-      if (!active) return; // a hidden tab has no valid dimensions
-      try {
-        f.fit();
-        void invoke("session_resize", { id: sessionId, cols: t.cols, rows: t.rows });
-      } catch {
-        // no size yet
-      }
+    // Session log: plain text built from what this terminal displays (see
+    // logCapture.ts). Calls are chained so the text reaches the file in order.
+    let logQueue: Promise<unknown> = Promise.resolve();
+    const logCall = (cmd: string, args: Record<string, unknown>) => {
+      logQueue = logQueue.then(() => invoke(cmd, args)).catch(() => {});
     };
-    resize();
-    const observer = new ResizeObserver(resize);
+    const capture = new LogCapture(t, (text) => logCall("session_log_append", { id: sessionId, text }));
+    let logFinished = false;
+    const finishLog = () => {
+      if (logFinished) return;
+      logFinished = true;
+      capture.finish(); // sends the last lines, including the unfinished one
+      logCall("session_log_close", { id: sessionId });
+    };
+
+    syncSize();
+    // Dragging the window fires many events: wait until the size settles.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(syncSize, 80);
+    });
     observer.observe(host);
 
     t.onData((data) => {
@@ -55,27 +88,29 @@
 
     const cleanups = [
       subscribeData(sessionId, (bytes) => t.write(bytes)),
-      subscribeClosed(sessionId, () => onclosed(sessionId)),
+      subscribeClosed(sessionId, () => {
+        // xterm parses writes asynchronously: wait until the last output is in the
+        // buffer before the log is closed and the tab is dropped.
+        t.write("", () => {
+          finishLog();
+          onclosed(sessionId);
+        });
+      }),
     ];
 
     return () => {
       cleanups.forEach((fn) => fn());
       releaseSession(sessionId);
+      clearTimeout(timer);
       observer.disconnect();
+      finishLog();
       t.dispose();
     };
   });
 
   // When a tab becomes active the pane has dimensions again: refit.
   $effect(() => {
-    if (active && fit && term) {
-      try {
-        fit.fit();
-        void invoke("session_resize", { id: sessionId, cols: term.cols, rows: term.rows });
-      } catch {
-        // ignore: the observer will retry
-      }
-    }
+    if (active) syncSize();
   });
 </script>
 

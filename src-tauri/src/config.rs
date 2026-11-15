@@ -11,18 +11,26 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_LANGUAGE: &str = "en";
 
+/// What goes into the per-session log file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogMode {
+    /// Plain text of what the terminal shows (default). Built in the frontend from
+    /// the xterm.js buffer, so redraws sent by ConPTY never repeat lines.
+    Screen,
+    /// The bytes of the PTY exactly as received, escape codes included. For
+    /// diagnostics only: ConPTY output is a stream of screen redraws.
+    Raw,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)] // missing fields take their default value
 pub struct Config {
     pub language: String,
-    /// Write terminal output to the per-session log file (default true).
+    /// Write a log file per session (default true).
     pub log_output: bool,
-    /// Also write typed input to the log file (default false: keeps secrets out).
-    pub log_input: bool,
-    /// Strip special characters from the log file — ANSI/escape sequences and
-    /// other control characters (carriage returns, bell, backspace, …) — leaving
-    /// readable text (default true). Set to false to keep the raw byte stream.
-    pub strip_special: bool,
+    /// Kind of log (default: plain text of the screen).
+    pub log_mode: LogMode,
 }
 
 impl Default for Config {
@@ -30,8 +38,7 @@ impl Default for Config {
         Self {
             language: DEFAULT_LANGUAGE.to_string(),
             log_output: true,
-            log_input: false,
-            strip_special: true,
+            log_mode: LogMode::Screen,
         }
     }
 }
@@ -94,20 +101,27 @@ mod tests {
         let cfg = Config::load(&path);
         assert_eq!(cfg.language, "es");
         assert!(cfg.log_output);
-        assert!(!cfg.log_input);
-        assert!(cfg.strip_special);
+        assert_eq!(cfg.log_mode, LogMode::Screen);
         assert!(!dir.path().join("config.toml.tmp").exists());
     }
 
     #[test]
-    fn logging_fields_default_off_for_secrets() {
+    fn logging_defaults() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
         fs::write(&path, "language = \"es\"\n").unwrap();
         let cfg = Config::load(&path);
-        assert!(cfg.log_output); // output on by default
-        assert!(!cfg.log_input); // never log typed input by default
-        assert!(cfg.strip_special); // special characters stripped by default
+        assert!(cfg.log_output);
+        assert_eq!(cfg.log_mode, LogMode::Screen);
+    }
+
+    #[test]
+    fn log_mode_is_read_from_the_file_and_old_fields_are_ignored() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // `strip_special` and `log_input` existed before: they must not break loading
+        fs::write(&path, "log_mode = \"raw\"\nstrip_special = true\nlog_input = false\n").unwrap();
+        assert_eq!(Config::load(&path).log_mode, LogMode::Raw);
     }
 
     #[test]

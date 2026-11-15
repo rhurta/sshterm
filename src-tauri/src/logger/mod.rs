@@ -1,245 +1,216 @@
-//! Per-session terminal logging (M3).
+//! Per-session logging (M3).
 //!
-//! One file per session, named `logs/<connection>_<timestamp>.log` next to the
-//! exe. Only terminal bytes are written: the header plus the bytes that flow
-//! through the PTY. The metadata diagnostics in `session/mod.rs::log_line`
-//! (which never logs secrets or terminal contents) stay in `logs/sshterm.log`.
+//! One file per session: `logs/<connection>_<YYYYMMDD-HHMMSS>.log` next to the exe.
+//!
+//! The default log is plain text built in the frontend from what the terminal
+//! DISPLAYS (`src/lib/logCapture.ts`), not from the bytes of the PTY. ConPTY keeps
+//! its own copy of the screen and re-sends it (full repaints on resize and scroll,
+//! partial-line updates with cursor jumps). A log made by stripping the escape
+//! codes from that stream repeats the same screen many times and leaves text
+//! fragments, and it cannot be repaired afterwards because the cursor movements
+//! that explain the redraws are gone.
+//!
+//! `LogMode::Raw` keeps the old behaviour (bytes as received) for diagnostics.
+//! Typed input is never logged: commands already appear in the screen log next to
+//! the prompt, and a password typed at a prompt is not echoed, so it never shows.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::{Path, PathBuf};
 
-use crate::config::Config;
+use chrono::{DateTime, Local};
+
+use crate::config::{Config, LogMode};
 use crate::paths;
 
 /// Replaces characters that are illegal or awkward in Windows file names.
 fn sanitize(name: &str) -> String {
-    name.chars()
+    let cleaned: String = name
+        .chars()
         .map(|c| match c {
             '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
             c if c.is_control() => '_',
             c => c,
         })
-        .collect()
+        .collect();
+    // Windows does not allow names ending in a dot or a space.
+    let trimmed = cleaned.trim().trim_end_matches('.').chars().take(80).collect::<String>();
+    if trimmed.is_empty() { "session".to_string() } else { trimmed }
 }
 
-/// Minimal ANSI/escape stripper for log files. It removes CSI (`ESC [` ...),
-/// OSC (`ESC ]` ... BEL) and other two-byte escapes. It is not a full terminal
-/// emulator, only enough to keep the log readable.
-fn strip_ansi_sequences(input: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(input.len());
-    let mut i = 0;
-    while i < input.len() {
-        let b = input[i];
-        if b == 0x1b {
-            // An escape sequence starts here.
-            if i + 1 >= input.len() {
-                break;
-            }
-            let next = input[i + 1];
-            if next == b'[' {
-                // CSI: ESC [ params... final byte (0x40..=0x7e)
-                i += 2;
-                while i < input.len() && !(0x40..=0x7e).contains(&input[i]) {
-                    i += 1;
-                }
-                if i < input.len() {
-                    i += 1; // skip the final byte
-                }
-                continue;
-            } else if next == b']' {
-                // OSC: ESC ] ... BEL (0x07) or ST (ESC \)
-                i += 2;
-                while i < input.len() && input[i] != 0x07 {
-                    i += 1;
-                }
-                if i < input.len() {
-                    i += 1; // skip the BEL
-                }
-                continue;
-            } else {
-                // Other escapes (e.g. ESC ( B): consume ESC and the next byte.
-                i += 2;
-                continue;
-            }
-        }
-        out.push(b);
-        i += 1;
-    }
-    out
-}
-
-/// Removes stray control characters that make a plain-text log hard to read,
-/// while keeping the text itself. It drops carriage returns, bell, backspace
-/// and the rest of the C0 controls, plus DEL (0x7f). The line feed (0x0a) and
-/// horizontal tab (0x09) are kept so the log keeps its line breaks and
-/// indentation. Printable ASCII and UTF-8 (including multibyte) are preserved.
-fn strip_control_chars(input: &[u8]) -> Vec<u8> {
-    input
-        .iter()
-        .copied()
-        .filter(|&b| b == b'\n' || b == b'\t' || (b >= 0x20 && b != 0x7f))
-        .collect()
-}
-
-/// Collapses runs of consecutive blank lines into a single blank line so a log
-/// the remote host padded with many newlines (e.g. a centered banner) stays
-/// readable. A run of N newlines becomes at most two (one blank line).
-fn collapse_blank_lines(input: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(input.len());
-    for &b in input {
-        if b == b'\n' {
-            // Keep at most one blank line: allow a run of two newlines, drop the rest.
-            let len = out.len();
-            if len >= 2 && out[len - 1] == b'\n' && out[len - 2] == b'\n' {
-                continue;
-            }
-        }
-        out.push(b);
-    }
-    out
-}
-
-/// Cleans terminal bytes for the log file: first strips ANSI/escape sequences,
-/// then removes other control characters, then collapses runs of blank lines,
-/// leaving readable text.
-fn clean_for_log(input: &[u8]) -> Vec<u8> {
-    let no_ansi = strip_ansi_sequences(input);
-    let no_control = strip_control_chars(&no_ansi);
-    collapse_blank_lines(&no_control)
+fn stamp(now: DateTime<Local>) -> String {
+    now.format("%Y%m%d-%H%M%S").to_string()
 }
 
 pub struct SessionLogger {
     file: Option<File>,
-    log_input: bool,
-    strip_special: bool,
+    mode: LogMode,
 }
 
 impl SessionLogger {
-    /// Opens the per-session log file. Any failure is swallowed: a logging
-    /// problem must never break a session.
+    /// Opens the per-session log file. Any failure is swallowed: a logging problem
+    /// must never break a session.
     pub fn open(connection_name: &str, host: &str, user: &str, cfg: &Config) -> Self {
-        let mut logger = SessionLogger {
-            file: None,
-            log_input: cfg.log_input,
-            strip_special: cfg.strip_special,
-        };
-        logger.try_open(connection_name, host, user);
+        Self::open_in(&paths::logs_dir(), connection_name, host, user, cfg)
+    }
+
+    pub fn open_in(dir: &Path, connection_name: &str, host: &str, user: &str, cfg: &Config) -> Self {
+        let mut logger = SessionLogger { file: None, mode: cfg.log_mode };
+        if cfg.log_output {
+            logger.file = create_file(dir, connection_name, host, user);
+        }
         logger
     }
 
-    fn try_open(&mut self, connection_name: &str, host: &str, user: &str) {
-        let dir = paths::logs_dir();
-        if fs::create_dir_all(&dir).is_err() {
+    /// Plain text produced from the terminal screen (`LogMode::Screen`).
+    pub fn write_text(&mut self, text: &str) {
+        if self.mode != LogMode::Screen {
             return;
         }
-        let secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let name = format!("{}_{}.log", sanitize(connection_name), secs);
-        let path = dir.join(&name);
-        match OpenOptions::new().create(true).append(true).open(&path) {
+        self.write(text.as_bytes());
+    }
+
+    /// PTY bytes exactly as received (`LogMode::Raw`).
+    pub fn write_raw(&mut self, bytes: &[u8]) {
+        if self.mode != LogMode::Raw {
+            return;
+        }
+        self.write(bytes);
+    }
+
+    /// Writes the closing line and releases the file.
+    pub fn finish(&mut self) {
+        if self.file.is_some() {
+            let line = format!("---- ended: {}\n", Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false));
+            self.write(line.as_bytes());
+        }
+        self.file = None;
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        if let Some(f) = self.file.as_mut() {
+            let _ = f.write_all(bytes);
+            let _ = f.flush();
+        }
+    }
+}
+
+/// Creates a new file. Two sessions of the same connection that start within the
+/// same second get `_2`, `_3`... instead of sharing (and mixing) one file.
+fn create_file(dir: &Path, connection_name: &str, host: &str, user: &str) -> Option<File> {
+    std::fs::create_dir_all(dir).ok()?;
+    let now = Local::now();
+    let base = format!("{}_{}", sanitize(connection_name), stamp(now));
+    let mut path: PathBuf = dir.join(format!("{base}.log"));
+    for n in 2..100 {
+        match OpenOptions::new().create_new(true).append(true).open(&path) {
             Ok(mut f) => {
-                let _ = writeln!(f, "sshterm session log");
-                let _ = writeln!(f, "connection: {connection_name}");
-                let _ = writeln!(f, "user: {user}");
-                let _ = writeln!(f, "host: {host}");
-                let _ = writeln!(f, "started: {secs}");
-                let _ = writeln!(f, "----");
-                self.file = Some(f);
+                let _ = write!(
+                    f,
+                    "sshterm session log\nconnection: {connection_name}\nuser: {user}\nhost: {host}\nstarted: {}\n----\n",
+                    now.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+                );
+                return Some(f);
             }
-            Err(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                path = dir.join(format!("{base}_{n}.log"));
+            }
+            Err(_) => return None,
         }
     }
-
-    /// Writes terminal output to the log file (unless `log_output` was off, which
-    /// it never is here — the caller only builds a logger when logging is on).
-    pub fn log_output(&mut self, bytes: &[u8]) {
-        if self.file.is_none() {
-            return;
-        }
-        let data: Vec<u8> = if self.strip_special {
-            clean_for_log(bytes)
-        } else {
-            bytes.to_vec()
-        };
-        if let Some(f) = self.file.as_mut() {
-            let _ = f.write_all(&data);
-            let _ = f.flush();
-        }
-    }
-
-    /// Writes typed input, marked so the log stays readable. Respects the
-    /// `log_input` setting (off by default to keep secrets out).
-    pub fn log_input(&mut self, bytes: &[u8]) {
-        if !self.log_input || self.file.is_none() {
-            return;
-        }
-        if let Some(f) = self.file.as_mut() {
-            let _ = write!(f, "\x1b[2m← {}\x1b[0m", String::from_utf8_lossy(bytes));
-            let _ = f.flush();
-        }
-    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn cfg(mode: LogMode) -> Config {
+        Config { log_mode: mode, ..Config::default() }
+    }
+
+    fn only_log(dir: &Path) -> String {
+        let mut files: Vec<_> = fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).collect();
+        files.sort();
+        assert_eq!(files.len(), 1, "expected exactly one log file, got {files:?}");
+        fs::read_to_string(&files[0]).unwrap()
+    }
 
     #[test]
     fn sanitize_replaces_illegal_characters() {
         assert_eq!(sanitize("a/b:c*d?e\"f<g>h|i\\j"), "a_b_c_d_e_f_g_h_i_j");
         assert_eq!(sanitize("normal-name"), "normal-name");
+        assert_eq!(sanitize("  name. "), "name");
+        assert_eq!(sanitize("..."), "session");
+        assert_eq!(sanitize("").as_str(), "session");
+        assert_eq!(sanitize(&"x".repeat(200)).len(), 80);
     }
 
     #[test]
-    fn ansi_sequences_are_stripped() {
-        // ESC[32m is a green color; ESC[0m resets it.
-        let input = b"\x1b[32mgreen\x1b[0m text";
-        let out = strip_ansi_sequences(input);
-        assert_eq!(out, b"green text");
+    fn file_name_has_a_readable_timestamp() {
+        let dir = tempdir().unwrap();
+        let _ = SessionLogger::open_in(dir.path(), "server", "h", "u", &cfg(LogMode::Screen));
+        let name = fs::read_dir(dir.path()).unwrap().next().unwrap().unwrap().file_name();
+        let name = name.to_string_lossy().into_owned();
+        // server_YYYYMMDD-HHMMSS.log
+        let re_ok = name.starts_with("server_")
+            && name.ends_with(".log")
+            && name.len() == "server_20260101-120000.log".len()
+            && name.as_bytes()["server_".len() + 8] == b'-';
+        assert!(re_ok, "unexpected file name {name}");
     }
 
     #[test]
-    fn osc_title_sequences_are_stripped() {
-        // ESC]0;title BEL
-        let input = b"\x1b]0;my title\x07prompt$ ";
-        let out = strip_ansi_sequences(input);
-        assert_eq!(out, b"prompt$ ");
+    fn screen_mode_writes_text_and_ignores_raw_bytes() {
+        let dir = tempdir().unwrap();
+        let mut l = SessionLogger::open_in(dir.path(), "srv", "10.0.0.5", "olfo", &cfg(LogMode::Screen));
+        l.write_raw(b"\x1b[2J garbage that must not appear");
+        l.write_text("line one\nline two\n");
+        l.finish();
+        let log = only_log(dir.path());
+        assert!(log.starts_with("sshterm session log\nconnection: srv\nuser: olfo\nhost: 10.0.0.5\nstarted: "));
+        assert!(log.contains("----\nline one\nline two\n---- ended: "));
+        assert!(!log.contains("garbage"));
     }
 
     #[test]
-    fn plain_text_is_untouched() {
-        let input = b"hello world\r\n";
-        assert_eq!(strip_ansi_sequences(input), input);
+    fn raw_mode_writes_bytes_and_ignores_screen_text() {
+        let dir = tempdir().unwrap();
+        let mut l = SessionLogger::open_in(dir.path(), "srv", "u", "h", &cfg(LogMode::Raw));
+        l.write_text("screen text must not appear");
+        l.write_raw(b"raw bytes");
+        let log = only_log(dir.path());
+        assert!(log.contains("raw bytes"));
+        assert!(!log.contains("screen text"));
     }
 
     #[test]
-    fn control_characters_are_stripped() {
-        // CR (0x0d) and BEL (0x07) are removed; LF (0x0a) and printable kept.
-        let input = b"line1\r\nline2\x07done";
-        assert_eq!(clean_for_log(input), b"line1\nline2done");
+    fn log_output_false_creates_no_file() {
+        let dir = tempdir().unwrap();
+        let mut c = cfg(LogMode::Screen);
+        c.log_output = false;
+        let mut l = SessionLogger::open_in(dir.path(), "srv", "u", "h", &c);
+        l.write_text("x");
+        l.finish();
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 
     #[test]
-    fn special_characters_cleaned_keeps_text() {
-        // ANSI color plus a stray CR: both gone, readable text remains.
-        let input = b"\x1b[32mok\x1b[0m\r\n";
-        assert_eq!(clean_for_log(input), b"ok\n");
-    }
-
-    #[test]
-    fn blank_lines_collapse_to_one() {
-        // Three newlines (two blank lines) become two newlines (one blank line).
-        let input = b"line1\n\n\nline2";
-        assert_eq!(collapse_blank_lines(input), b"line1\n\nline2");
-    }
-
-    #[test]
-    fn many_blank_lines_collapse_to_one() {
-        // A run of seven newlines keeps a single blank line between the blocks.
-        let input = b"head\n\n\n\n\n\n\n\ntail";
-        assert_eq!(collapse_blank_lines(input), b"head\n\ntail");
+    fn two_sessions_in_the_same_second_do_not_share_a_file() {
+        let dir = tempdir().unwrap();
+        let mut a = SessionLogger::open_in(dir.path(), "srv", "u", "h", &cfg(LogMode::Screen));
+        let mut b = SessionLogger::open_in(dir.path(), "srv", "u", "h", &cfg(LogMode::Screen));
+        a.write_text("from a\n");
+        b.write_text("from b\n");
+        let mut contents: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| fs::read_to_string(e.unwrap().path()).unwrap())
+            .collect();
+        contents.sort();
+        assert_eq!(contents.len(), 2);
+        assert!(contents.iter().any(|c| c.contains("from a") && !c.contains("from b")));
+        assert!(contents.iter().any(|c| c.contains("from b") && !c.contains("from a")));
     }
 }

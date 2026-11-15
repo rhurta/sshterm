@@ -110,8 +110,19 @@ pub async fn session_open(
 
     let id = new_id();
 
-    // Per-session log file (M3): named after the connection so it is easy to
-    // find. Only terminal bytes are written here, never the password.
+    let mut transport = OpenSshTransport::new(askpass);
+    transport
+        .open(&cfg, PtySize { cols, rows })
+        .await
+        .map_err(|e| e.code.to_string())?;
+    let mut rx = transport
+        .output()
+        .ok_or_else(|| "no_output".to_string())?;
+
+    // Per-session log file (M3), created only once ssh has really started so a
+    // failed start leaves no empty file behind. In the default mode the text comes
+    // from the frontend (`session_log_append`); the PTY bytes are only written in
+    // `raw` mode. Typed input and passwords are never logged.
     let app_cfg = Config::load(&paths::config_path());
     let logger = Arc::new(tokio::sync::Mutex::new(SessionLogger::open(
         &name,
@@ -124,15 +135,6 @@ pub async fn session_open(
         .lock()
         .await
         .insert(id.clone(), Arc::clone(&logger));
-
-    let mut transport = OpenSshTransport::new(askpass);
-    transport
-        .open(&cfg, PtySize { cols, rows })
-        .await
-        .map_err(|e| e.code.to_string())?;
-    let mut rx = transport
-        .output()
-        .ok_or_else(|| "no_output".to_string())?;
 
     state
         .transports
@@ -175,7 +177,7 @@ pub async fn session_open(
             if chunks <= 3 {
                 log_line(&format!("data id={event_id} chunk={chunks} bytes={}", bytes.len()));
             }
-            logger.lock().await.log_output(&bytes);
+            logger.lock().await.write_raw(&bytes);
             let payload = DataEvent { id: event_id.clone(), data: STANDARD.encode(bytes) };
             if app.emit("session:data", payload).is_err() {
                 log_line(&format!("emit failed id={event_id}"));
@@ -196,14 +198,6 @@ pub async fn session_write(
     data: String,
 ) -> Result<(), String> {
     let bytes = STANDARD.decode(&data).map_err(|_| "bad_base64".to_string())?;
-    // Log typed input (only if enabled in config) before forwarding to the PTY.
-    let logger = {
-        let loggers = state.loggers.lock().await;
-        loggers.get(&id).cloned()
-    };
-    if let Some(logger) = logger {
-        logger.lock().await.log_input(&bytes);
-    }
     let mut sessions = state.transports.lock().await;
     let transport = sessions
         .get_mut(&id)
@@ -234,10 +228,8 @@ pub async fn session_close(state: State<'_, SessionState>, id: String) -> Result
     if let Some(mut transport) = sessions.remove(&id) {
         transport.close().await.map_err(|e| e.code.to_string())?;
     }
-    drop(sessions);
-    // Drop the map entry. The reader task still holds its own Arc clone, so the
-    // log file stays open until EOF is reached and then closes cleanly.
-    state.loggers.lock().await.remove(&id);
+    // The logger stays registered: the terminal sends the last lines of the screen
+    // after the session ends, and then calls `session_log_close`.
     Ok(())
 }
 
@@ -249,7 +241,30 @@ pub async fn session_close_all(state: State<'_, SessionState>) -> Result<(), Str
     for (_, mut transport) in sessions.drain() {
         let _ = transport.close().await;
     }
-    drop(sessions);
-    state.loggers.lock().await.clear();
+    Ok(())
+}
+
+/// Appends plain text that the terminal built from its screen (see
+/// `src/lib/logCapture.ts`). Ignored in `raw` mode or when logging is off.
+#[tauri::command]
+pub async fn session_log_append(
+    state: State<'_, SessionState>,
+    id: String,
+    text: String,
+) -> Result<(), String> {
+    let logger = state.loggers.lock().await.get(&id).cloned();
+    if let Some(logger) = logger {
+        logger.lock().await.write_text(&text);
+    }
+    Ok(())
+}
+
+/// Writes the closing line of the log and releases the file.
+#[tauri::command]
+pub async fn session_log_close(state: State<'_, SessionState>, id: String) -> Result<(), String> {
+    let logger = state.loggers.lock().await.remove(&id);
+    if let Some(logger) = logger {
+        logger.lock().await.finish();
+    }
     Ok(())
 }
