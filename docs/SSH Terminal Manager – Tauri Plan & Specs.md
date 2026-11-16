@@ -280,7 +280,7 @@ Security and routing behavior:
 
 The tree supports folders and connections, context-menu operations (open, edit, duplicate, create, rename and delete), F2/double-click rename, search and HTML drag-and-drop. Dragging is disabled while a search filter is active, because filtered indices cannot safely be mapped to the original tree indices. Dropping can move a node before/after another node, into a folder, or to the root. Backend validation rejects cycles and invalid destinations without removing the node first.
 
-Each workspace tab owns one independent SSH session and PTY. Hidden tabs continue running; only the active pane resizes the PTY. Opening a session and switching tabs focuses the terminal. The tab shows the expanded jump route and enabled-forward count; that count is configuration metadata, not a live listener health check.
+Each workspace tab owns one independent SSH session and PTY. Hidden tabs continue running; only the active pane resizes the PTY. Opening a session and switching tabs focuses the terminal. The session tab retains a tunnel indicator as a forwarding health check, not merely as a configured-forward count. Its intended states are pending while forwarding setup is being verified, healthy when every enabled forward has been accepted by OpenSSH, and failed when setup or a recognized forwarding diagnostic reports an error. A healthy indicator means the SSH forwarding setup is active; it does not guarantee that every application behind a forwarded destination is reachable.
 
 ## 8. Implemented feature specifications and planned work
 
@@ -354,7 +354,9 @@ Implemented:
 - ExitOnForwardFailure=yes tells OpenSSH to exit when a requested listener cannot be created.
 - Forwards start with the interactive SSH session and stop when that session closes.
 - Recognized local/reverse forwarding and connection failures are surfaced in the workspace error banner while the original SSH output remains in the terminal.
-- The tab displays the number of enabled saved forwards; it does not query the live state of each listener.
+- **Session-tab health indicator (retain):** the tab must expose forwarding health for the active session rather than presenting only a static count. It should show pending during SSH/forward setup, healthy only after all enabled forwards have been accepted, and failed when OpenSSH reports a forwarding setup/runtime error. Associate the status with its session so one tab's error cannot mark another tab's forwards unhealthy.
+- Use OpenSSH's `ExitOnForwardFailure=yes` as the initial setup guarantee, together with explicit status reporting. Do not mark forwards healthy merely because `session_open` spawned the process; it returns before the SSH handshake and forwarding setup have necessarily completed.
+- Health indicates that the SSH forwarding setup/listener is active. It is not an end-to-end probe of the application listening at the forwarded destination; destination reachability may still need a separate optional probe.
 - For a remote listener to accept connections from hosts other than the SSH server itself, the server-side sshd configuration may need to permit it with GatewayPorts.
 
 Not implemented:
