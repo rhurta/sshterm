@@ -90,7 +90,7 @@ fn build_command(cfg: &SshConfig, askpass: Option<(&str, &str)>) -> CommandBuild
     // multiple known-hosts files. Quote the value for its config parser; the
     // CommandBuilder still passes this as one argv item (no shell is involved).
     cmd.arg(format!(
-        "UserKnownHostsFile=\\"{}\\"",
+        "UserKnownHostsFile=\"{}\"",
         cfg.known_hosts.display()
     ));
     cmd.arg("-o");
