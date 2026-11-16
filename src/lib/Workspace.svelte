@@ -23,6 +23,8 @@
   let error = $state("");
   let settings = $state<TerminalSettings>({ ...DEFAULT_TERMINAL_SETTINGS });
   let settingsOpen = $state(false);
+  let multilinePaste = $state<{ lineCount: number } | null>(null);
+  let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
 
   let openIds = $derived(tabs.map((tab) => tab.connId));
 
@@ -60,6 +62,24 @@
       settings = previous;
       error = String(e);
     }
+  }
+
+  /** Requests confirmation before a terminal receives multi-line clipboard data. */
+  function requestMultilinePaste(text: string): Promise<boolean> {
+    // Do not stack confirmation dialogs if another paste is triggered while
+    // the first one is awaiting a decision.
+    if (multilinePasteResolver) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      multilinePasteResolver = resolve;
+      multilinePaste = { lineCount: text.split(/\\r\\n|\\r|\\n/).length };
+    });
+  }
+
+  function settleMultilinePaste(confirmed: boolean) {
+    const resolve = multilinePasteResolver;
+    multilinePasteResolver = null;
+    multilinePaste = null;
+    resolve?.(confirmed);
   }
 
   function resolveJumpNames(connection: ConnectionSummary, all: ConnectionSummary[]): string[] {
@@ -172,7 +192,10 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && settingsOpen) {
+    if (e.key === "Escape" && multilinePaste) {
+      e.preventDefault();
+      settleMultilinePaste(false);
+    } else if (e.key === "Escape" && settingsOpen) {
       e.preventDefault();
       settingsOpen = false;
     } else if (e.key === "Escape" && picker) {
@@ -262,6 +285,7 @@
               sessionId={tab.sessionId}
               active={activeId === tab.sessionId}
               onclosed={dropTab}
+              onmultilinepaste={requestMultilinePaste}
               {settings}
             />
           {/each}
@@ -289,7 +313,41 @@
         <label class="setting"><input type="checkbox" checked={settings.right_click_paste} onchange={(e) => setTerminalSetting("right_click_paste", e.currentTarget.checked)} />{t("settings.rightClickPaste")}</label>
         <label class="setting"><input type="checkbox" checked={settings.middle_click_paste} onchange={(e) => setTerminalSetting("middle_click_paste", e.currentTarget.checked)} />{t("settings.middleClickPaste")}</label>
         <label class="setting"><input type="checkbox" checked={settings.ctrl_c_copy} onchange={(e) => setTerminalSetting("ctrl_c_copy", e.currentTarget.checked)} />{t("settings.ctrlCCopy")}</label>
+        <label class="setting"><input type="checkbox" checked={settings.confirm_multiline_paste} onchange={(e) => setTerminalSetting("confirm_multiline_paste", e.currentTarget.checked)} />{t("settings.confirmMultilinePaste")}</label>
         <button class="ghost" onclick={() => (settingsOpen = false)}>{t("editor.cancel")}</button>
+      </section>
+    </div>
+  {/if}
+
+  {#if multilinePaste}
+    <div class="backdrop">
+      <button
+        class="scrim"
+        tabindex="-1"
+        aria-label={t("settings.multilinePasteCancel")}
+        onclick={() => settleMultilinePaste(false)}
+      ></button>
+      <section
+        class="dialog confirm-paste-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="multiline-paste-title"
+        aria-describedby="multiline-paste-warning"
+      >
+        <div class="dialog-head">
+          <h2 id="multiline-paste-title">{t("settings.multilinePasteTitle")}</h2>
+        </div>
+        <p id="multiline-paste-warning" class="hint">
+          {t("settings.multilinePasteWarning", { count: multilinePaste.lineCount })}
+        </p>
+        <div class="confirm-actions">
+          <button class="ghost" onclick={() => settleMultilinePaste(false)}>
+            {t("settings.multilinePasteCancel")}
+          </button>
+          <button class="confirm" onclick={() => settleMultilinePaste(true)}>
+            {t("settings.multilinePasteConfirm")}
+          </button>
+        </div>
       </section>
     </div>
   {/if}
@@ -579,6 +637,25 @@
     color: #dfe4ec;
     background: #222a36;
     border-color: #2f3847;
+  }
+  .confirm-paste-dialog .hint {
+    line-height: 1.5;
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+  }
+  .dialog button.confirm {
+    font: inherit;
+    font-size: 0.8rem;
+    color: #12161d;
+    background: #8fb4e8;
+    border: 1px solid #8fb4e8;
+    border-radius: 4px;
+    padding: 0.35rem 0.7rem;
+    cursor: pointer;
   }
   .picker-list {
     display: flex;
