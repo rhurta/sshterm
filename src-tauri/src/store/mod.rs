@@ -50,6 +50,28 @@ pub fn find(vault: &Vault, id: &str) -> Option<Connection> {
     vault.data.connections.get(id).cloned()
 }
 
+fn valid_jump_host(host: &str) -> bool {
+    let raw = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    if raw.contains(':') {
+        return raw.parse::<std::net::Ipv6Addr>().is_ok();
+    }
+    !raw.is_empty()
+        && !raw.starts_with('-')
+        && raw
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'))
+}
+
+fn valid_jump_user(user: &str) -> bool {
+    !user.is_empty()
+        && user.chars().all(|ch| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '+' | '\\')
+        })
+}
+
 /// Resolves the configured jump hosts into the exact OpenSSH traversal order.
 /// Nested jump configurations are flattened from the outermost host inward.
 /// Duplicate hops, missing IDs, cycles, and excessively deep chains are rejected
@@ -77,11 +99,7 @@ pub fn resolve_jump_chain(
             return Err("jump_too_deep");
         }
         let hop = connections.get(hop_id).ok_or("jump_not_found")?.clone();
-        if hop.port == 0
-            || hop.user.chars().any(|ch| ch.is_whitespace() || matches!(ch, ',' | '@' | ':'))
-            || hop.host.chars().any(|ch| ch.is_whitespace() || ch == ',')
-            || hop.host.is_empty()
-        {
+        if hop.port == 0 || !valid_jump_user(&hop.user) || !valid_jump_host(&hop.host) {
             return Err("jump_bad_address");
         }
         active.insert(hop_id.to_string());
@@ -568,6 +586,23 @@ mod tests {
 
         let chain = resolve_jump_chain(&connections, "target").unwrap();
         assert_eq!(chain.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), vec!["leaf", "middle"]);
+    }
+
+    #[test]
+    fn jump_chain_rejects_invalid_proxyjump_syntax() {
+        let mut connections = std::collections::BTreeMap::new();
+        connections.insert("target".into(), Connection {
+            id: "target".into(), name: "target".into(), host: "target".into(), user: "u".into(),
+            jump: vec!["bad".into()], ..Connection::default()
+        });
+        connections.insert("bad".into(), Connection {
+            id: "bad".into(), name: "bad".into(), host: "host,other".into(), user: "u".into(),
+            ..Connection::default()
+        });
+        assert_eq!(resolve_jump_chain(&connections, "target").unwrap_err(), "jump_bad_address");
+        connections.get_mut("bad").unwrap().host = "host.example".into();
+        connections.get_mut("bad").unwrap().user = "user@other".into();
+        assert_eq!(resolve_jump_chain(&connections, "target").unwrap_err(), "jump_bad_address");
     }
 
     #[test]
