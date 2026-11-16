@@ -14,6 +14,7 @@ export const es: Record<MessageKey, string> = {
   "window.resize": "Cambiar tamaño de ventana",
 
   "settings.title": "Configuración",
+  "settings.language": "Idioma",
   "settings.terminal": "Portapapeles y ratón del terminal",
   "settings.copyOnSelection": "Copiar automáticamente al seleccionar texto",
   "settings.rightClickCopy": "Clic derecho copia el texto seleccionado",
