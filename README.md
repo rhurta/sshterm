@@ -176,7 +176,7 @@ Session code calls this trait and never references `ssh.exe` or `russh` directly
 
 ### Password delivery (phase 1)
 
-`ssh.exe` is started with `SSH_ASKPASS` pointing to the app's own exe (run with `--askpass`) and `SSH_ASKPASS_REQUIRE=force`. The helper connects to a named pipe, presents a one-time token, receives the password for the host in ssh's prompt, and writes it to stdout. The password never appears on a command line or in an environment variable.
+`ssh.exe` is started with `SSH_ASKPASS` pointing to the app's own exe (run with `--askpass`) and `SSH_ASKPASS_REQUIRE=force`. The helper connects to a named pipe, presents a session-scoped random token, receives the password for the host identified by ssh's prompt, and writes it to stdout. Each route credential is delivered at most once. The password never appears on a command line or in an environment variable.
 
 ### Logging (M3)
 
