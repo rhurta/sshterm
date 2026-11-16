@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
+  import { subscribeSessionErrors } from "$lib/sessionBus";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionSidebar from "./ConnectionSidebar.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
@@ -34,21 +34,12 @@
     return detail ? `${base} — ${detail}` : base;
   }
 
-  onMount(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void listen<{ id: string; message: string }>("session:error", (event) => {
-      const tab = tabs.find((item) => item.sessionId === event.payload.id);
-      error = tab ? `${tab.name}: ${event.payload.message}` : event.payload.message;
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  });
+  onMount(() =>
+    subscribeSessionErrors((sessionId, message) => {
+      const tab = tabs.find((item) => item.sessionId === sessionId);
+      error = tab ? `${tab.name}: ${message}` : message;
+    }),
+  );
 
   function resolveJumpNames(connection: ConnectionSummary, all: ConnectionSummary[]): string[] {
     const byId = new Map(all.map((item) => [item.id, item]));
