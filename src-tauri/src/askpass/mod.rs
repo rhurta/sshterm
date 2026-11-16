@@ -8,6 +8,7 @@
 //!
 //! The password never appears on a command line or in a file.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -24,8 +25,24 @@ pub const TOKEN_ENV: &str = "SSHTERM_ASKPASS_TOKEN";
 #[derive(Serialize, Deserialize)]
 struct Request {
     token: String,
-    #[allow(dead_code)] // M5: the prompt will allow choosing per-host credentials
     prompt: String,
+}
+
+/// One credential that OpenSSH may request while opening a session. A password
+/// or key passphrase is kept out of command-line arguments and only delivered
+/// when the prompt identifies this exact host/user or key path.
+pub struct AskpassCredential {
+    pub user: String,
+    pub host: String,
+    pub key_path: Option<String>,
+    pub password: String,
+}
+
+struct StoredCredential {
+    user: String,
+    host: String,
+    key_path: Option<String>,
+    password: Zeroizing<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -52,7 +69,10 @@ pub struct AskpassServer {
 }
 
 impl AskpassServer {
-    pub fn start(password: String) -> Result<Self, &'static str> {
+    pub fn start(credentials: Vec<AskpassCredential>) -> Result<Self, &'static str> {
+        if credentials.is_empty() {
+            return Err("askpass_no_credentials");
+        }
         let pipe_name = format!(
             r"\\.\pipe\sshterm-askpass-{}-{}",
             std::process::id(),
@@ -60,8 +80,16 @@ impl AskpassServer {
         );
         let token = random_hex(32);
         let stop = Arc::new(AtomicBool::new(false));
-        let secret = Arc::new(Zeroizing::new(password));
-        start_pipe_server(pipe_name.clone(), token.clone(), secret, stop.clone())?;
+        let credentials = credentials
+            .into_iter()
+            .map(|c| StoredCredential {
+                user: c.user,
+                host: c.host,
+                key_path: c.key_path,
+                password: Zeroizing::new(c.password),
+            })
+            .collect();
+        start_pipe_server(pipe_name.clone(), token.clone(), credentials, stop.clone())?;
         Ok(Self { pipe_name, token, stop })
     }
 
@@ -120,6 +148,50 @@ fn is_host_key_prompt(prompt: &str) -> bool {
         || (p.contains("yes/no") && p.contains("host"))
 }
 
+fn normalize_host(host: &str) -> String {
+    host.trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase()
+}
+
+/// Select the one credential requested by OpenSSH. Password prompts identify
+/// the hop as "user@host's password"; key passphrase prompts identify a path.
+/// A generic "Password:" prompt is only safe to answer when there is exactly
+/// one credential in the whole session.
+fn credential_index(prompt: &str, credentials: &[StoredCredential]) -> Option<usize> {
+    let trimmed = prompt.trim().trim_end_matches(':').trim();
+    let lower = trimmed.to_ascii_lowercase();
+
+    if let Some(start) = lower.find("passphrase for key '") {
+        let path_start = start + "passphrase for key '".len();
+        let path_end = trimmed.get(path_start..)?.find('\'')? + path_start;
+        let requested = trimmed.get(path_start..path_end)?;
+        return credentials.iter().position(|c| {
+            c.key_path.as_deref().is_some_and(|path| {
+                path.replace('/', "\\").eq_ignore_ascii_case(&requested.replace('/', "\\"))
+            })
+        });
+    }
+
+    for suffix in ["'s password", " password"] {
+        if lower.ends_with(suffix) {
+            let identity = trimmed.get(..trimmed.len().saturating_sub(suffix.len()))?;
+            let (user, host) = identity.rsplit_once('@')?;
+            let user = user.trim().to_ascii_lowercase();
+            let host = normalize_host(host);
+            return credentials.iter().position(|c| {
+                c.user.eq_ignore_ascii_case(&user) && normalize_host(&c.host) == host
+            });
+        }
+    }
+
+    if lower == "password" && credentials.len() == 1 {
+        return Some(0);
+    }
+    None
+}
+
 /// Helper entry point. Returns an exit code; writes nothing to stdout except
 /// the password (ssh reads stdout and strips the trailing newline).
 #[cfg(windows)]
@@ -162,7 +234,7 @@ pub fn run_helper() -> i32 {
 fn start_pipe_server(
     name: String,
     token: String,
-    password: Arc<Zeroizing<String>>,
+    credentials: Vec<StoredCredential>,
     stop: Arc<AtomicBool>,
 ) -> Result<(), &'static str> {
     use std::time::Duration;
@@ -174,8 +246,10 @@ fn start_pipe_server(
     let mut server = acl::create_secure_pipe(&name, 4096, 4096, true, true)
         .map_err(|_| "askpass_acl")?;
 
-    // The token is single-use: the first valid request consumes it.
-    let used = Arc::new(AtomicBool::new(false));
+    // The session token authorizes requests to this private pipe. Each
+    // matching credential is delivered at most once, so a copied helper
+    // request cannot replay an already-used hop password.
+    let mut used = HashSet::<usize>::new();
 
     tauri::async_runtime::spawn(async move {
         loop {
@@ -196,14 +270,16 @@ fn start_pipe_server(
                 let _ = reader.read_line(&mut line).await;
             }
             let reply = match serde_json::from_str::<Request>(line.trim_end()) {
-                Ok(req)
-                    if req.token == token
-                        && !used.swap(true, Ordering::AcqRel) =>
-                {
-                    serde_json::to_string(&Response { password: password.as_str().to_string() })
-                        .unwrap_or_default()
+                Ok(req) if req.token == token => {
+                    match credential_index(&req.prompt, &credentials) {
+                        Some(index) if used.insert(index) => serde_json::to_string(&Response {
+                            password: credentials[index].password.as_str().to_string(),
+                        })
+                        .unwrap_or_default(),
+                        _ => String::new(), // unknown prompt or already-used credential
+                    }
                 }
-                _ => String::new(), // token absent, wrong, or already consumed
+                _ => String::new(), // token absent or wrong
             };
             let _ = server.write_all(format!("{reply}\n").as_bytes()).await;
             let _ = server.flush().await;
@@ -217,7 +293,7 @@ fn start_pipe_server(
 fn start_pipe_server(
     _name: String,
     _token: String,
-    _password: Arc<Zeroizing<String>>,
+    _credentials: Vec<StoredCredential>,
     _stop: Arc<AtomicBool>,
 ) -> Result<(), &'static str> {
     Err("askpass_windows_only")
@@ -234,6 +310,57 @@ mod tests {
         assert_eq!(a.len(), 64);
         assert_ne!(a, b);
         assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    fn credential(user: &str, host: &str, key_path: Option<&str>, password: &str) -> StoredCredential {
+        StoredCredential {
+            user: user.into(),
+            host: host.into(),
+            key_path: key_path.map(str::to_string),
+            password: Zeroizing::new(password.into()),
+        }
+    }
+
+    #[test]
+    fn password_prompt_selects_the_matching_jump_host() {
+        let credentials = vec![
+            credential("admin", "bastion.example", None, "bastion-secret"),
+            credential("deploy", "10.0.0.8", None, "target-secret"),
+        ];
+        assert_eq!(
+            credential_index("admin@bastion.example's password: ", &credentials),
+            Some(0)
+        );
+        assert_eq!(
+            credential_index("deploy@10.0.0.8's password: ", &credentials),
+            Some(1)
+        );
+        assert_eq!(credential_index("root@other-host's password: ", &credentials), None);
+    }
+
+    #[test]
+    fn key_passphrase_prompt_matches_the_configured_identity_file() {
+        let credentials = vec![credential(
+            "deploy",
+            "app.internal",
+            Some(r"C:\Users\me\.ssh\id_ed25519"),
+            "key-passphrase",
+        )];
+        assert_eq!(
+            credential_index(
+                "Enter passphrase for key 'C:\\Users\\me\\.ssh\\id_ed25519': ",
+                &credentials
+            ),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn generic_password_prompt_is_only_used_for_one_credential() {
+        let one = vec![credential("u", "h", None, "secret")];
+        let two = vec![credential("u", "h", None, "secret"), credential("v", "j", None, "other")];
+        assert_eq!(credential_index("Password: ", &one), Some(0));
+        assert_eq!(credential_index("Password: ", &two), None);
     }
 
     #[test]
@@ -266,7 +393,12 @@ mod tests {
         // start() and the spawned server loop both use Tauri's runtime, so the
         // pipe handle and the task share the same reactor.
         tauri::async_runtime::block_on(async {
-            let server = AskpassServer::start("s3cret".to_string())
+            let server = AskpassServer::start(vec![AskpassCredential {
+                user: "olfo".into(),
+                host: "192.168.1.2".into(),
+                key_path: None,
+                password: "s3cret".into(),
+            }])
                 .expect("AskpassServer::start must succeed");
             let pipe = server.pipe_name().to_string();
             let token = server.token().to_string();
