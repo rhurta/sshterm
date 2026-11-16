@@ -86,7 +86,13 @@ fn build_command(cfg: &SshConfig, askpass: Option<(&str, &str)>) -> CommandBuild
     cmd.arg("-p");
     cmd.arg(cfg.port.to_string());
     cmd.arg("-o");
-    cmd.arg(format!("UserKnownHostsFile={}", cfg.known_hosts.display()));
+    // OpenSSH treats whitespace in this option value as a separator between
+    // multiple known-hosts files. Quote the value for its config parser; the
+    // CommandBuilder still passes this as one argv item (no shell is involved).
+    cmd.arg(format!(
+        "UserKnownHostsFile=\\"{}\\"",
+        cfg.known_hosts.display()
+    ));
     cmd.arg("-o");
     // SSH_ASKPASS_REQUIRE=force makes ssh route *every* prompt through the
     // askpass helper, including the host-key "yes/no" question. The helper can
@@ -341,6 +347,17 @@ mod tests {
     /// to the helper, which answers with a password and ssh aborts with
     /// "Host key verification failed." The policy must be in place even when
     /// askpass is active.
+    #[test]
+    fn known_hosts_option_quotes_paths_containing_spaces() {
+        let mut config = cfg();
+        config.known_hosts = PathBuf::from(r"C:\Program Files\sshterm\known_hosts");
+        let args = argv(&build_command(&config, None));
+        assert!(args.windows(2).any(|w| {
+            w[0] == "-o"
+                && w[1] == r#"UserKnownHostsFile="C:\Program Files\sshterm\known_hosts""#
+        }));
+    }
+
     #[test]
     fn host_key_policy_survives_forced_askpass() {
         let args = argv(&build_command(&cfg(), Some(("pipe", "token"))));
