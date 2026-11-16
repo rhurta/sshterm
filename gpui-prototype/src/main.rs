@@ -2,7 +2,7 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use gpui_kit::{
-    Context, Entity, Render, SharedString, Subscription, Window, div, prelude::*, px,
+    Context, Entity, Render, SharedString, Subscription, Window, base::StyledExt, div, prelude::*, px,
     component::{
         ActiveTheme as _, Icon, IconName,
         button::{Button, ButtonVariants as _},
@@ -14,7 +14,7 @@ use gpui_kit::{
         tree::{tree, TreeItem, TreeState},
         TitleBar,
     },
-    gpui_kit::gpui_component::Sizable,
+    component::Sizable,
     *,
 };
 
@@ -267,7 +267,7 @@ impl Render for SshTermPrototype {
                 .child(h_flex().w_full().items_center().justify_between().px_3()
                     .child(h_flex().items_center().gap_2()
                         .child(Icon::new(IconName::Cpu).small())
-                        .child(div().font_weight_semibold().child("SSHTerm"))
+                        .child(div().font_semibold().child("SSHTerm"))
                         .child(div().text_xs().text_color(cx.theme().muted_foreground).child("GPUI prototype")))
                     .child(h_flex().items_center().gap_2()
                         .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Theme"))
@@ -281,7 +281,7 @@ impl Render for SshTermPrototype {
                 .child(div().w(px(300.0)).h_full().flex().flex_col().gap_2().p_3()
                     .bg(cx.theme().secondary).border_r_1().border_color(cx.theme().border)
                     .child(h_flex().items_center().justify_between()
-                        .child(div().text_sm().font_weight_semibold().child("CONNECTIONS"))
+                        .child(div().text_sm().font_semibold().child("CONNECTIONS"))
                         .child(div().text_xs().text_color(cx.theme().muted_foreground).child("DRAG TO MOVE")))
                     .child(gpui_kit::component::input::Input::new(&self.search).small().w_full())
                     .child(div().flex_1().min_h(px(0.0)).child(connections_tree))
@@ -360,7 +360,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{contains_id, subtree_contains, take_node, TreeNode};
     #[test]
     fn rejects_moving_a_folder_into_its_descendant() {
         let tree = vec![TreeNode::folder(1, "A", vec![TreeNode::folder(2, "B", vec![])])];
