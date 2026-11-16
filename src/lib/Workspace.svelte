@@ -6,7 +6,6 @@
   import ConnectionSidebar from "./ConnectionSidebar.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
-  import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
 
@@ -224,14 +223,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="app">
-  <header>
-    <span class="dir">{dir}</span>
-    <div class="header-right">
-      <LanguageSelect />
-      <button onclick={() => (settingsOpen = true)}>{t("settings.title")}</button>
-      <button onclick={onlock}>{t("home.lock")}</button>
-    </div>
-  </header>
+  <svelte:window on:sshterm:open-settings={() => (settingsOpen = true)} />
 
   {#if error}
     <p class="error" role="alert">{error}</p>
@@ -308,6 +300,8 @@
           <h2>{t("settings.title")}</h2>
           <button class="close" onclick={() => (settingsOpen = false)} title={t("workspace.close")}>&times;</button>
         </div>
+        <h3>{t("settings.language")}</h3>
+        <LanguageSelect />
         <h3>{t("settings.terminal")}</h3>
         <label class="setting"><input type="checkbox" checked={settings.copy_on_selection} onchange={(e) => setTerminalSetting("copy_on_selection", e.currentTarget.checked)} />{t("settings.copyOnSelection")}</label>
         <label class="setting"><input type="checkbox" checked={settings.right_click_copy} onchange={(e) => setTerminalSetting("right_click_copy", e.currentTarget.checked)} />{t("settings.rightClickCopy")}</label>
@@ -413,40 +407,6 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-  }
-  header {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.5rem 0.9rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-  }
-  .dir {
-    flex: 1;
-    font-size: 0.75rem;
-    color: var(--muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex: 0 0 auto;
-  }
-  header button {
-    font: inherit;
-    font-size: 0.8rem;
-    color: var(--text);
-    background: var(--surface-hover);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0.3rem 0.7rem;
-    cursor: pointer;
-    white-space: nowrap;
   }
   .error {
     margin: 0;
