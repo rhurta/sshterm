@@ -431,6 +431,7 @@ mod tests {
         assert!(ssh_failure_message("bind: Address already in use").is_some());
         assert!(ssh_failure_message("Warning: remote port forwarding failed for listen port 18080").is_some());
         assert!(ssh_failure_message("Could not request local forwarding.").is_some());
+        assert!(ssh_failure_message("Failed to add the host to the list of known hosts").is_some());
     }
 
     #[test]
