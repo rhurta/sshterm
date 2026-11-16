@@ -76,14 +76,15 @@
     }
   }
 
-  async function save(c: Connection, parentId: string | null) {
+  async function save(c: Connection, parentId: string | null): Promise<string | null> {
     try {
       await invoke("conn_upsert", { conn: c, parentId });
       editor = null;
       error = "";
       refreshToken += 1;
+      return null;
     } catch (e) {
-      error = errorText(String(e));
+      return String(e);
     }
   }
 
