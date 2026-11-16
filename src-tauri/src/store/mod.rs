@@ -491,6 +491,50 @@ mod tests {
     }
 
     #[test]
+    fn disabled_tunnels_are_saved_but_not_passed_to_ssh() {
+        let tunnels = vec![
+            Tunnel::Local {
+                bind: "127.0.0.1:15432".into(),
+                dest: "db.internal:5432".into(),
+                enabled: false,
+            },
+            Tunnel::Remote {
+                bind: "18080".into(),
+                dest: "127.0.0.1:8080".into(),
+                enabled: true,
+            },
+        ];
+        let forwards = resolve_forwards(&tunnels).unwrap();
+        assert_eq!(forwards, vec![PortForward::Remote {
+            bind: "18080".into(),
+            destination: "127.0.0.1:8080".into(),
+        }]);
+    }
+
+    #[test]
+    fn disabled_duplicate_tunnel_does_not_block_enabled_listener() {
+        let connection = normalize(Connection {
+            id: "tunnels".into(),
+            host: "server".into(),
+            user: "user".into(),
+            tunnels: vec![
+                Tunnel::Local {
+                    bind: "127.0.0.1:15432".into(),
+                    dest: "db-old:5432".into(),
+                    enabled: false,
+                },
+                Tunnel::Local {
+                    bind: "127.0.0.1:15432".into(),
+                    dest: "db-new:5432".into(),
+                    enabled: true,
+                },
+            ],
+            ..Connection::default()
+        }).unwrap();
+        assert_eq!(resolve_forwards(&connection.tunnels).unwrap().len(), 1);
+    }
+
+    #[test]
     fn rejects_invalid_or_duplicate_tunnel_listeners() {
         let invalid = normalize(Connection {
             id: "bad".into(), host: "server".into(), user: "user".into(),
@@ -605,6 +649,54 @@ mod tests {
 
         let chain = resolve_jump_chain(&connections, "target").unwrap();
         assert_eq!(chain.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), vec!["leaf", "middle"]);
+    }
+
+    #[test]
+    fn disabled_jump_hosts_are_omitted_from_the_route() {
+        let mut connections = std::collections::BTreeMap::new();
+        let first = Connection {
+            id: "first".into(), name: "first".into(), host: "first".into(), user: "u".into(),
+            ..Connection::default()
+        };
+        let second = Connection {
+            id: "second".into(), name: "second".into(), host: "second".into(), user: "u".into(),
+            ..Connection::default()
+        };
+        let target = Connection {
+            id: "target".into(), name: "target".into(), host: "target".into(), user: "u".into(),
+            jump: vec!["first".into(), "second".into()],
+            jump_disabled: vec!["first".into()],
+            ..Connection::default()
+        };
+        connections.insert(first.id.clone(), first);
+        connections.insert(second.id.clone(), second);
+        connections.insert(target.id.clone(), target);
+        let chain = resolve_jump_chain(&connections, "target").unwrap();
+        assert_eq!(chain.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), vec!["second"]);
+    }
+
+    #[test]
+    fn disabled_nested_jump_skips_its_entire_nested_route() {
+        let mut connections = std::collections::BTreeMap::new();
+        let gateway = Connection {
+            id: "gateway".into(), name: "gateway".into(), host: "gateway".into(), user: "u".into(),
+            ..Connection::default()
+        };
+        let bastion = Connection {
+            id: "bastion".into(), name: "bastion".into(), host: "bastion".into(), user: "u".into(),
+            jump: vec!["gateway".into()],
+            jump_disabled: vec!["gateway".into()],
+            ..Connection::default()
+        };
+        let target = Connection {
+            id: "target".into(), name: "target".into(), host: "target".into(), user: "u".into(),
+            jump: vec!["bastion".into()], ..Connection::default()
+        };
+        connections.insert(gateway.id.clone(), gateway);
+        connections.insert(bastion.id.clone(), bastion);
+        connections.insert(target.id.clone(), target);
+        let chain = resolve_jump_chain(&connections, "target").unwrap();
+        assert_eq!(chain.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), vec!["bastion"]);
     }
 
     #[test]
