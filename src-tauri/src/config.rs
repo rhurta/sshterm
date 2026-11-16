@@ -32,7 +32,6 @@ pub struct TerminalSettings {
     pub right_click_paste: bool,
     pub middle_click_paste: bool,
     pub ctrl_c_copy: bool,
-    pub ctrl_v_paste: bool,
 }
 
 impl Default for TerminalSettings {
@@ -44,7 +43,6 @@ impl Default for TerminalSettings {
             right_click_paste: true,
             middle_click_paste: true,
             ctrl_c_copy: true,
-            ctrl_v_paste: true,
         }
     }
 }
@@ -151,6 +149,36 @@ mod tests {
         // `strip_special` and `log_input` existed before: they must not break loading
         fs::write(&path, "log_mode = \"raw\"\nstrip_special = true\nlog_input = false\n").unwrap();
         assert_eq!(Config::load(&path).log_mode, LogMode::Raw);
+    }
+
+    #[test]
+    fn terminal_settings_default_on_and_old_config_gets_defaults() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "language = \"es\"\n").unwrap();
+        let cfg = Config::load(&path);
+        assert_eq!(cfg.terminal, TerminalSettings::default());
+        assert!(cfg.terminal.copy_on_selection);
+        assert!(cfg.terminal.right_click_copy);
+        assert!(cfg.terminal.middle_click_copy);
+        assert!(cfg.terminal.right_click_paste);
+        assert!(cfg.terminal.middle_click_paste);
+        assert!(cfg.terminal.ctrl_c_copy);
+    }
+
+    #[test]
+    fn terminal_settings_are_persisted_independently() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut cfg = Config::default();
+        cfg.terminal.copy_on_selection = false;
+        cfg.terminal.middle_click_paste = false;
+        cfg.save(&path).unwrap();
+        let loaded = Config::load(&path);
+        assert!(!loaded.terminal.copy_on_selection);
+        assert!(loaded.terminal.right_click_copy);
+        assert!(!loaded.terminal.middle_click_paste);
+        assert!(loaded.terminal.right_click_paste);
     }
 
     #[test]
