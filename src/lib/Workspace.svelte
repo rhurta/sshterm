@@ -6,17 +6,16 @@
   import ConnectionSidebar from "./ConnectionSidebar.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
 
   let {
     dir,
-    onlock,
     theme,
     settingsOpen = $bindable(false),
   }: {
     dir: string;
-    onlock: () => void;
     theme: AppTheme;
     settingsOpen?: boolean;
   } = $props();
