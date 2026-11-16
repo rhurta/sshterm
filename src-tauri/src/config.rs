@@ -32,6 +32,8 @@ pub struct TerminalSettings {
     pub right_click_paste: bool,
     pub middle_click_paste: bool,
     pub ctrl_c_copy: bool,
+    /// Ask before sending clipboard contents containing more than one line.
+    pub confirm_multiline_paste: bool,
 }
 
 impl Default for TerminalSettings {
@@ -43,6 +45,7 @@ impl Default for TerminalSettings {
             right_click_paste: true,
             middle_click_paste: true,
             ctrl_c_copy: true,
+            confirm_multiline_paste: true,
         }
     }
 }
@@ -164,6 +167,7 @@ mod tests {
         assert!(cfg.terminal.right_click_paste);
         assert!(cfg.terminal.middle_click_paste);
         assert!(cfg.terminal.ctrl_c_copy);
+        assert!(cfg.terminal.confirm_multiline_paste);
     }
 
     #[test]
@@ -173,12 +177,14 @@ mod tests {
         let mut cfg = Config::default();
         cfg.terminal.copy_on_selection = false;
         cfg.terminal.middle_click_paste = false;
+        cfg.terminal.confirm_multiline_paste = false;
         cfg.save(&path).unwrap();
         let loaded = Config::load(&path);
         assert!(!loaded.terminal.copy_on_selection);
         assert!(loaded.terminal.right_click_copy);
         assert!(!loaded.terminal.middle_click_paste);
         assert!(loaded.terminal.right_click_paste);
+        assert!(!loaded.terminal.confirm_multiline_paste);
     }
 
     #[test]
