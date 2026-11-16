@@ -1,5 +1,7 @@
 /** Shared TypeScript shapes. The Rust counterparts live in vault/model.rs. */
 
+export type AppTheme = "dark" | "light" | "nord";
+
 export interface TerminalSettings {
   copy_on_selection: boolean;
   right_click_copy: boolean;
