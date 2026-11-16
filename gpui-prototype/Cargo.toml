@@ -1,0 +1,13 @@
+[package]
+name = "sshterm-gpui-prototype"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "gpui-smoke"
+path = "src/bin/gpui_smoke.rs"
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", package = "gpui" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "125ca8672e928b19a62c2e4b761fb29fe2a34ae3", package = "gpui_platform" }
