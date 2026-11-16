@@ -12,7 +12,6 @@ export const es: Record<MessageKey, string> = {
   "settings.rightClickPaste": "Clic derecho pega cuando no hay texto seleccionado",
   "settings.middleClickPaste": "Clic central pega cuando no hay texto seleccionado",
   "settings.ctrlCCopy": "Ctrl+C copia el texto seleccionado (si no, envía Ctrl+C por SSH)",
-  "settings.ctrlVPaste": "Ctrl+V pega desde el portapapeles",
 
   "lock.title.unlock": "Vault bloqueado",
   "lock.title.create": "Crea tu contraseña maestra",
