@@ -417,6 +417,60 @@ mod tests {
         });
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn askpass_server_routes_multiple_hop_passwords_once_each() {
+        use std::time::Duration;
+
+        tauri::async_runtime::block_on(async {
+            let server = AskpassServer::start(vec![
+                AskpassCredential {
+                    user: "admin".into(),
+                    host: "bastion.internal".into(),
+                    key_path: None,
+                    password: "bastion-secret".into(),
+                },
+                AskpassCredential {
+                    user: "deploy".into(),
+                    host: "db.internal".into(),
+                    key_path: None,
+                    password: "database-secret".into(),
+                },
+            ])
+            .expect("multi-hop askpass server must start");
+            let pipe = server.pipe_name().to_string();
+            let token = server.token().to_string();
+
+            let pipe1 = pipe.clone();
+            let token1 = token.clone();
+            let first = tauri::async_runtime::spawn_blocking(move || {
+                exchange(&pipe1, &token1, "admin@bastion.internal's password: ")
+            })
+            .await
+            .expect("first askpass task panicked")
+            .expect("bastion credential was not returned");
+            assert_eq!(first, "bastion-secret");
+
+            let pipe2 = pipe.clone();
+            let token2 = token.clone();
+            let second = tauri::async_runtime::spawn_blocking(move || {
+                exchange(&pipe2, &token2, "deploy@db.internal's password: ")
+            })
+            .await
+            .expect("second askpass task panicked")
+            .expect("database credential was not returned");
+            assert_eq!(second, "database-secret");
+
+            let replay = tauri::async_runtime::spawn_blocking(move || {
+                exchange(&pipe, &token, "admin@bastion.internal's password: ")
+            })
+            .await
+            .expect("replay askpass task panicked");
+            assert!(replay.is_err(), "the same credential must not be delivered twice");
+            drop(server);
+        });
+    }
+
     /// Full helper walkthrough without launching a separate process: a server
     /// pipe in the tokio runtime serves `run_helper()` on a separate thread.
     #[cfg(windows)]
