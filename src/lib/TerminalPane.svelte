@@ -88,12 +88,17 @@
       if (!text || !navigator.clipboard?.writeText) return;
       void navigator.clipboard.writeText(text).catch(() => {});
     };
-    const copySelection = () => {
+    const copySelection = (clearAfterCopy = false) => {
       const selected = t.getSelection();
-      if (selected) copyText(selected);
+      if (!selected) return;
+      copyText(selected);
+      if (clearAfterCopy) t.clearSelection();
     };
     const pasteClipboard = () => {
       if (!navigator.clipboard?.readText) return;
+      // Clear before starting the asynchronous clipboard read so a previous
+      // terminal selection never remains highlighted after a paste gesture.
+      t.clearSelection();
       void navigator.clipboard.readText().then((value) => {
         if (value) t.paste(value);
       }).catch(() => {});
@@ -114,8 +119,9 @@
       if (!mod || event.altKey) return true;
       const key = event.key.toLowerCase();
       if (key === "c") {
+        event.preventDefault();
         if (t.hasSelection() && settings.ctrl_c_copy) {
-          copySelection();
+          copySelection(true);
         } else {
           // With no selection (or when copy-on-Ctrl+C is disabled), deliver
           // the interrupt directly to the remote PTY.
@@ -128,6 +134,9 @@
       }
       if (key === "v") {
         // Ctrl+V is intentionally unconditional and is not a user setting.
+        // Prevent WebView's native paste path: pasteClipboard() already feeds
+        // the clipboard text to xterm, otherwise both paths paste the same text.
+        event.preventDefault();
         pasteClipboard();
         return false;
       }
@@ -136,17 +145,19 @@
 
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault();
-      if (t.hasSelection()) {
-        if (settings.right_click_copy) copySelection();
+      if (t.hasSelection() && settings.right_click_copy) {
+        copySelection(true);
       } else if (settings.right_click_paste) {
+        // If copy is disabled, paste remains available and clears the
+        // current selection before sending the clipboard contents.
         pasteClipboard();
       }
     };
     const onMouseDown = (event: MouseEvent) => {
       if (event.button !== 1) return;
       event.preventDefault();
-      if (t.hasSelection()) {
-        if (settings.middle_click_copy) copySelection();
+      if (t.hasSelection() && settings.middle_click_copy) {
+        copySelection(true);
       } else if (settings.middle_click_paste) {
         pasteClipboard();
       }
