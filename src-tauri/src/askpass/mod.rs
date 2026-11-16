@@ -186,9 +186,9 @@ fn credential_index(prompt: &str, credentials: &[StoredCredential]) -> Option<us
         }
     }
 
-    if lower == "password" && credentials.len() == 1 {
-        return Some(0);
-    }
+    // A generic prompt cannot be tied to a particular hop, even when only
+    // one saved credential exists: another agent-authenticated hop may be
+    // prompting. Fail closed rather than send a password to the wrong host.
     None
 }
 
@@ -356,11 +356,10 @@ mod tests {
     }
 
     #[test]
-    fn generic_password_prompt_is_only_used_for_one_credential() {
+    fn generic_password_prompts_fail_closed() {
         let one = vec![credential("u", "h", None, "secret")];
-        let two = vec![credential("u", "h", None, "secret"), credential("v", "j", None, "other")];
-        assert_eq!(credential_index("Password: ", &one), Some(0));
-        assert_eq!(credential_index("Password: ", &two), None);
+        assert_eq!(credential_index("Password: ", &one), None);
+        assert_eq!(credential_index("Enter password: ", &one), None);
     }
 
     #[test]
