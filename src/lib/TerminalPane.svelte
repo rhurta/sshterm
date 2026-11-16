@@ -110,9 +110,13 @@
         if (!value) return;
         if (settings.confirm_multiline_paste && /[\r\n]/.test(value)) {
           const confirmed = await onmultilinepaste(value);
-          if (!confirmed) return;
+          if (!confirmed) {
+            t.focus();
+            return;
+          }
         }
         t.paste(value);
+        t.focus();
       }).catch(() => {});
     };
 
