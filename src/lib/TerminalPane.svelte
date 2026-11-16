@@ -7,12 +7,14 @@
   import { toBase64 } from "$lib/encoding";
   import { LogCapture } from "$lib/logCapture";
   import { subscribeClosed, subscribeData, releaseSession } from "$lib/sessionBus";
+  import type { TerminalSettings } from "$lib/types";
 
   let {
     sessionId,
     active,
     onclosed,
-  }: { sessionId: string; active: boolean; onclosed: (id: string) => void } = $props();
+    settings,
+  }: { sessionId: string; active: boolean; onclosed: (id: string) => void; settings: TerminalSettings } = $props();
 
   // Workspace opens every session at 80x24; the first real fit may match it.
   const PROVISIONAL = { cols: 80, rows: 24 };
@@ -82,6 +84,66 @@
     });
     observer.observe(host);
 
+    const copyText = (text: string) => {
+      if (!text || !navigator.clipboard?.writeText) return;
+      void navigator.clipboard.writeText(text).catch(() => {});
+    };
+    const copySelection = () => {
+      const selected = t.getSelection();
+      if (selected) copyText(selected);
+    };
+    const pasteClipboard = () => {
+      if (!navigator.clipboard?.readText) return;
+      void navigator.clipboard.readText().then((value) => {
+        if (value) t.paste(value);
+      }).catch(() => {});
+    };
+
+    // Automatic copy follows xterm's current selection. This is intentionally
+    // separate from the click and keyboard switches in application settings.
+    t.onSelectionChange(() => {
+      if (settings.copy_on_selection) copySelection();
+    });
+
+    // Ctrl+C copies only when a selection exists; without a selection xterm's
+    // normal key handling sends ETX (Ctrl+C) to the remote shell.
+    // Ctrl+V is handled explicitly so it works consistently in WebView2.
+    t.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const mod = event.ctrlKey || event.metaKey;
+      if (!mod || event.altKey) return true;
+      const key = event.key.toLowerCase();
+      if (key === "c" && t.hasSelection()) {
+        if (settings.ctrl_c_copy) copySelection();
+        return false;
+      }
+      if (key === "v") {
+        if (settings.ctrl_v_paste) pasteClipboard();
+        return false;
+      }
+      return true;
+    });
+
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      if (t.hasSelection()) {
+        if (settings.right_click_copy) copySelection();
+      } else if (settings.right_click_paste) {
+        pasteClipboard();
+      }
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 1) return;
+      event.preventDefault();
+      if (t.hasSelection()) {
+        if (settings.middle_click_copy) copySelection();
+      } else if (settings.middle_click_paste) {
+        pasteClipboard();
+      }
+    };
+    host.addEventListener("contextmenu", onContextMenu);
+    host.addEventListener("mousedown", onMouseDown);
+
     t.onData((data) => {
       void invoke("session_write", {
         id: sessionId,
@@ -103,6 +165,8 @@
 
     return () => {
       cleanups.forEach((fn) => fn());
+      host.removeEventListener("contextmenu", onContextMenu);
+      host.removeEventListener("mousedown", onMouseDown);
       releaseSession(sessionId);
       clearTimeout(timer);
       observer.disconnect();
