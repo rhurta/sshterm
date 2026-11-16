@@ -469,6 +469,14 @@
   }
   .add-tunnel {
     align-self: flex-start;
+    font: inherit;
+    font-size: 0.8rem;
+    color: #12161d;
+    background: #8fb4e8;
+    border: 0;
+    border-radius: 4px;
+    padding: 0.45rem 0.8rem;
+    cursor: pointer;
   }
   .validation {
     margin: 0;
