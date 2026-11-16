@@ -2,6 +2,15 @@
 // Every other language must provide exactly these keys (checked by TypeScript).
 export const en = {
   "language.label": "Language",
+  "theme.label": "Theme",
+  "theme.dark": "Dark",
+  "theme.light": "Light",
+  "theme.nord": "Nord",
+  "window.minimize": "Minimize",
+  "window.maximize": "Maximize",
+  "window.restore": "Restore",
+  "window.close": "Close",
+  "window.resize": "Resize window",
 
   "settings.title": "Settings",
   "settings.terminal": "Terminal clipboard and mouse",
