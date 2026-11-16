@@ -11,6 +11,21 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_LANGUAGE: &str = "en";
 
+/// Application appearance, available before the vault is unlocked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppTheme {
+    Dark,
+    Light,
+    Nord,
+}
+
+impl Default for AppTheme {
+    fn default() -> Self {
+        Self::Dark
+    }
+}
+
 /// What goes into the per-session log file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -54,6 +69,8 @@ impl Default for TerminalSettings {
 #[serde(default)] // missing fields take their default value
 pub struct Config {
     pub language: String,
+    /// UI theme; stored outside the encrypted vault so the lock screen can use it.
+    pub theme: AppTheme,
     /// Write a log file per session (default true).
     pub log_output: bool,
     /// Kind of log (default: plain text of the screen).
@@ -66,6 +83,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             language: DEFAULT_LANGUAGE.to_string(),
+            theme: AppTheme::default(),
             log_output: true,
             log_mode: LogMode::Screen,
             terminal: TerminalSettings::default(),
@@ -121,15 +139,17 @@ mod tests {
         let dir = tempdir().unwrap();
         let cfg = Config::load(&dir.path().join("config.toml"));
         assert_eq!(cfg.language, "en");
+        assert_eq!(cfg.theme, AppTheme::Dark);
     }
 
     #[test]
     fn save_and_load_roundtrip() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        Config { language: "es".into(), ..Default::default() }.save(&path).unwrap();
+        Config { language: "es".into(), theme: AppTheme::Nord, ..Default::default() }.save(&path).unwrap();
         let cfg = Config::load(&path);
         assert_eq!(cfg.language, "es");
+        assert_eq!(cfg.theme, AppTheme::Nord);
         assert!(cfg.log_output);
         assert_eq!(cfg.log_mode, LogMode::Screen);
         assert!(!dir.path().join("config.toml.tmp").exists());
