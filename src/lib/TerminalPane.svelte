@@ -14,7 +14,14 @@
     active,
     onclosed,
     settings,
-  }: { sessionId: string; active: boolean; onclosed: (id: string) => void; settings: TerminalSettings } = $props();
+    onmultilinepaste,
+  }: {
+    sessionId: string;
+    active: boolean;
+    onclosed: (id: string) => void;
+    settings: TerminalSettings;
+    onmultilinepaste: (text: string) => Promise<boolean>;
+  } = $props();
 
   // Workspace opens every session at 80x24; the first real fit may match it.
   const PROVISIONAL = { cols: 80, rows: 24 };
@@ -99,8 +106,13 @@
       // Clear before starting the asynchronous clipboard read so a previous
       // terminal selection never remains highlighted after a paste gesture.
       t.clearSelection();
-      void navigator.clipboard.readText().then((value) => {
-        if (value) t.paste(value);
+      void navigator.clipboard.readText().then(async (value) => {
+        if (!value) return;
+        if (settings.confirm_multiline_paste && /[\\r\\n]/.test(value)) {
+          const confirmed = await onmultilinepaste(value);
+          if (!confirmed) return;
+        }
+        t.paste(value);
       }).catch(() => {});
     };
 
