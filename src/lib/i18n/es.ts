@@ -78,6 +78,7 @@ export const es: Record<MessageKey, string> = {
   "editor.section.advanced": "Avanzado",
   "editor.section.jumps": "Hosts de salto",
   "editor.jumpHint": "Añade conexiones guardadas en el orden de conexión. La primera entrada es el salto SSH más externo.",
+  "editor.jumpAuthHint": "Los hosts de salto admiten contraseñas guardadas o el agente SSH. El motor OpenSSH todavía no admite una ruta de clave privada personalizada para cada salto.",
   "editor.jumpNone": "Sin hosts de salto. Conectar directamente a este host.",
   "editor.jumpAvailable": "Conexiones disponibles",
   "editor.jumpNoCandidates": "No hay otras conexiones guardadas disponibles.",
