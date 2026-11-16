@@ -115,6 +115,20 @@ pub fn config_set_language(language: String) -> Result<(), String> {
     cfg.save(&path).map_err(|e| e.to_string())
 }
 
+/// Theme is stored outside the vault so it is available on the lock screen.
+#[tauri::command]
+pub fn config_get_theme() -> config::AppTheme {
+    Config::load(&paths::config_path()).theme
+}
+
+#[tauri::command]
+pub fn config_set_theme(theme: config::AppTheme) -> Result<(), String> {
+    let path = paths::config_path();
+    let mut cfg = Config::load(&path);
+    cfg.theme = theme;
+    cfg.save(&path).map_err(|e| e.to_string())
+}
+
 
 /// Terminal clipboard and mouse preferences stored in config.toml.
 #[tauri::command]
