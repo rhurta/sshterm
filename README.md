@@ -21,7 +21,7 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
 | M6 | Tiling, broadcast, syntax highlighting | 📋 Planned |
-| M7 | Port-forwarding tunnels | 📋 Planned |
+| M7 | Local and reverse TCP forwarding (`-L` / `-R`) | 🟡 Partial |
 | M8 | Native SFTP (`russh-sftp`) | 📋 Planned |
 | M9 | Polish (colors, host-key UI, auto-reconnect) | 📋 Planned |
 | M10 | Native `russh` engine replaces phase 1 | 📋 Planned |
@@ -226,6 +226,14 @@ WinSSHTerm exports represent folders as nested `<Node Type="Container">` element
 Each tab owns an independent session. Opening a session or switching tabs focuses the xterm pane so typing reaches the remote host immediately.
 
 Scrollbars are styled thin (6px) and matched to the dark theme across all scrollable areas (sidebar, dialogs, terminal viewport). The connection picker opened from the `+` tab button can be dismissed with Escape, the × button, or click-outside.
+
+### Local and reverse SSH tunnels (M7, partial)
+
+The connection editor can store local (`-L`) and reverse (`-R`) TCP forwards. Each forward has a listen endpoint and a destination endpoint. Both accept `host:port`; a listen endpoint may also be a bare port (OpenSSH's loopback default). IPv6 addresses must be bracketed, for example `[::1]:5432`.
+
+Local forwarding listens on the client machine and connects to the destination from the SSH server. Reverse forwarding listens on the SSH server and connects to the destination from the client machine. Forwards are attached to the connection's interactive SSH process: they start with the terminal session and close when that session closes. Multiple forwards are passed as separate `-L` and `-R` arguments. `ExitOnForwardFailure=yes` makes OpenSSH terminate the connection if it cannot establish a requested listener (for example, a port is already in use).
+
+The session tab shows the number of configured forwards. This is a configuration indicator, not a live health check. A failed forward is reported through the SSH process output and session exit. Standalone tunnel-only sessions, start/stop controls independent of the terminal, structured active/failed status, and dynamic SOCKS forwarding (`-D`) remain future work.
 
 ### Jump hosts (M5)
 
