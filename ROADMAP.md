@@ -319,7 +319,8 @@ pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
 - Listen endpoints accept `[address:]port`; destinations require `host:port`. IPv6 literals use brackets, e.g. `[::1]:5432`.
 - The backend validates port ranges, malformed endpoints, and duplicate listeners before saving; session startup validates older vault entries again.
 - Forwards are passed as separate OpenSSH arguments. `ExitOnForwardFailure=yes` ensures SSH exits when a listener cannot be created.
-- Forwards run for the lifetime of the interactive SSH session and stop when that session closes. Tabs show the configured forward count.
+- Forwards run for the lifetime of the interactive SSH session and stop when that session closes. Tabs show the enabled forward count.
+- Recognized SSH diagnostics for unreachable jump hosts and failed local/reverse listeners are also emitted as workspace errors while terminal output is preserved.
 
 ### Deferred
 
