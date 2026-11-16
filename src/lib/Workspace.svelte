@@ -289,7 +289,6 @@
         <label class="setting"><input type="checkbox" checked={settings.right_click_paste} onchange={(e) => setTerminalSetting("right_click_paste", e.currentTarget.checked)} />{t("settings.rightClickPaste")}</label>
         <label class="setting"><input type="checkbox" checked={settings.middle_click_paste} onchange={(e) => setTerminalSetting("middle_click_paste", e.currentTarget.checked)} />{t("settings.middleClickPaste")}</label>
         <label class="setting"><input type="checkbox" checked={settings.ctrl_c_copy} onchange={(e) => setTerminalSetting("ctrl_c_copy", e.currentTarget.checked)} />{t("settings.ctrlCCopy")}</label>
-        <label class="setting"><input type="checkbox" checked={settings.ctrl_v_paste} onchange={(e) => setTerminalSetting("ctrl_v_paste", e.currentTarget.checked)} />{t("settings.ctrlVPaste")}</label>
         <button class="ghost" onclick={() => (settingsOpen = false)}>{t("editor.cancel")}</button>
       </section>
     </div>
