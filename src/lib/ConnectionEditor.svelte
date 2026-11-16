@@ -32,7 +32,7 @@
   onMount(() => {
     void invoke<ConnectionSummary[]>("conn_list")
       .then((items) => (connections = items))
-      .catch((error) => (connectionsError = String(error)));
+      .catch((error) => (connectionsError = errorText(String(error))));
   });
 
   function addJump(id: string) {
@@ -192,6 +192,7 @@
       </label>
     {:else}
       <p class="hint">{t("editor.jumpHint")}</p>
+      <p class="hint">{t("editor.jumpAuthHint")}</p>
       {#if form.jump.length > 0}
         <ol class="jump-chain">
           {#each form.jump as id, index (id)}
