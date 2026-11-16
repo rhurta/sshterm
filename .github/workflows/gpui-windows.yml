@@ -14,10 +14,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  windows-smoke:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build minimal GPUI smoke app
         run: cargo check --manifest-path gpui-prototype/Cargo.toml --bin gpui-smoke
+      - name: Build prototype
+        run: cargo check --manifest-path gpui-prototype/Cargo.toml --bin sshterm-gpui
+      - name: Test tree operations
+        run: cargo test --manifest-path gpui-prototype/Cargo.toml

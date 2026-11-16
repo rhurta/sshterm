@@ -5,6 +5,10 @@ edition = "2024"
 publish = false
 
 [[bin]]
+name = "sshterm-gpui"
+path = "src/main.rs"
+
+[[bin]]
 name = "gpui-smoke"
 path = "src/bin/gpui_smoke.rs"
 
