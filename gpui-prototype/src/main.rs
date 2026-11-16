@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use gpui_kit::{
     App, Context, Render, Window, WindowOptions, div, prelude::*, px,
-    component::{ListItem, h_flex, tree::{tree, TreeItem, TreeState}},
+    component::{h_flex, list::ListItem, tree::{tree, TreeItem, TreeState}},
     *,
 };
 
