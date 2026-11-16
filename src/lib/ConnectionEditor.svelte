@@ -271,6 +271,9 @@
                 {#if connections.find((candidate) => candidate.id === id)}
                   {@const hop = connections.find((candidate) => candidate.id === id)!}
                   <span class="hint">{hop.user}@{hop.host}:{hop.port}</span>
+                  {#if !isJumpEnabled(id)}
+                    <span class="state-disabled">{t("editor.disabled")}</span>
+                  {/if}
                 {:else}
                   <span class="validation">{t("editor.jumpMissing")}</span>
                 {/if}
@@ -306,7 +309,7 @@
             <small>{candidate.user}@{candidate.host}:{candidate.port}</small>
           </button>
         {:else}
-          <p class="hint">{t("editor.jumpNoCandidates")}</p>
+          <p class="hint">{jumpQuery.trim() ? t("editor.jumpNoSearchMatches") : t("editor.jumpNoCandidates")}</p>
         {/each}
       </div>
       {#if connectionsError}
