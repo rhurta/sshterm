@@ -60,7 +60,7 @@
   {#if ready}
     <div class="screen">
       {#if unlocked}
-        <Workspace {dir} {theme} onlock={lock} bind:settingsOpen />
+        <Workspace {dir} {theme} bind:settingsOpen />
       {:else}
         <LockScreen onunlocked={() => (unlocked = true)} />
       {/if}
