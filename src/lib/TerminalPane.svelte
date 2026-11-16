@@ -232,7 +232,9 @@
   });
 </script>
 
-<div class="pane" class:hidden={!active} bind:this={host}></div>
+<div class="pane" class:hidden={!active}>
+  <div class="terminal-host" bind:this={host}></div>
+</div>
 
 <style>
   .pane {
@@ -241,6 +243,12 @@
     padding: 0.5rem;
     box-sizing: border-box;
     overflow: hidden;
+  }
+  .terminal-host {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
   }
   .hidden {
     display: none;
