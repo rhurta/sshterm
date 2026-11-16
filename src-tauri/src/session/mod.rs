@@ -45,6 +45,50 @@ struct ClosedEvent {
     id: String,
 }
 
+#[derive(Clone, Serialize)]
+struct SessionErrorEvent {
+    id: String,
+    message: String,
+}
+
+/// Returns a useful SSH diagnostic line for connection, jump-host, or
+/// forwarding setup failures. PTY output is still sent unchanged to xterm;
+/// this second channel makes early failures visible in the workspace as well.
+fn ssh_failure_message(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let patterns = [
+        "stdio forwarding failed",
+        "could not request local forwarding",
+        "remote port forwarding failed",
+        "channel_setup_fwd_listener_tcpip",
+        "cannot listen to port",
+        "address already in use",
+        "open failed: administratively prohibited",
+        "connect failed",
+        "could not resolve hostname",
+        "connection timed out",
+        "operation timed out",
+        "connection refused",
+        "no route to host",
+        "permission denied",
+        "connection closed by",
+        "host key verification failed",
+        "remote host identification has changed",
+    ];
+    if patterns.iter().any(|pattern| lower.contains(pattern)) {
+        let message = line
+            .chars()
+            .filter(|ch| !ch.is_control())
+            .take(500)
+            .collect::<String>();
+        let message = message.trim().to_string();
+        if !message.is_empty() {
+            return Some(message);
+        }
+    }
+    None
+}
+
 fn new_id() -> String {
     let mut bytes = [0u8; 8];
     OsRng.fill_bytes(&mut bytes);
@@ -176,7 +220,7 @@ pub async fn session_open(
     transport
         .open(&cfg, PtySize { cols, rows })
         .await
-        .map_err(|e| e.code.to_string())?;
+        .map_err(|e| format!("{}: {}", e.code, e.detail))?;
     let mut rx = transport
         .output()
         .ok_or_else(|| "no_output".to_string())?;
@@ -233,12 +277,44 @@ pub async fn session_open(
     tauri::async_runtime::spawn(async move {
         let mut chunks = 0u64;
         let mut total = 0u64;
+        let mut diagnostic_buffer = String::new();
+        let mut emitted_errors = std::collections::HashSet::new();
         while let Some(bytes) = rx.recv().await {
             // Empty chunk = EOF sentinel from the transport's child watchdog.
             // ConPTY does not always close the output pipe when ssh.exe exits.
             if bytes.is_empty() {
+                if let Some(message) = ssh_failure_message(&diagnostic_buffer) {
+                    if emitted_errors.insert(message.to_ascii_lowercase()) {
+                        let _ = app.emit(
+                            "session:error",
+                            SessionErrorEvent { id: event_id.clone(), message },
+                        );
+                    }
+                }
                 log_line(&format!("ssh exited id={event_id} chunks={chunks} bytes={total}"));
                 break;
+            }
+            diagnostic_buffer.push_str(&String::from_utf8_lossy(&bytes));
+            while let Some(newline) = diagnostic_buffer.find('\n') {
+                let line = diagnostic_buffer.drain(..=newline).collect::<String>();
+                if let Some(message) = ssh_failure_message(line.trim()) {
+                    if emitted_errors.insert(message.to_ascii_lowercase()) {
+                        let _ = app.emit(
+                            "session:error",
+                            SessionErrorEvent { id: event_id.clone(), message },
+                        );
+                    }
+                }
+            }
+            // Keep partial output bounded while retaining incomplete final lines.
+            if diagnostic_buffer.len() > 4096 {
+                let keep_from = diagnostic_buffer.len().saturating_sub(2048);
+                let boundary = diagnostic_buffer
+                    .char_indices()
+                    .find(|(index, _)| *index >= keep_from)
+                    .map(|(index, _)| index)
+                    .unwrap_or(0);
+                diagnostic_buffer.drain(..boundary);
             }
             chunks += 1;
             total += bytes.len() as u64;
