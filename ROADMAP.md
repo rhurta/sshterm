@@ -307,14 +307,24 @@ pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
 
 ---
 
-## 📋 M7 — Tunnels
+## 🟡 M7 — Tunnels (partial)
 
-**Done when:** `-L`, `-R`, `-D` saved per connection and started with the session or on demand.
+### Implemented in phase 1
 
-- Tunnels stored in the vault per connection.
-- Phase 1: passed as `-L`/`-R`/`-D` flags, or a background `ssh -N` process.
-- Status display: active / failed / port-in-use.
-- UI: tunnel manager panel (list, start, stop, status).
+- Local (`-L`) and reverse (`-R`) TCP forwards are saved in the existing per-connection `tunnels` vault field; no vault migration is required.
+- The connection editor can add/remove forwards and select local or reverse direction.
+- Listen endpoints accept `[address:]port`; destinations require `host:port`. IPv6 literals use brackets, e.g. `[::1]:5432`.
+- The backend validates port ranges, malformed endpoints, and duplicate listeners before saving; session startup validates older vault entries again.
+- Forwards are passed as separate OpenSSH arguments. `ExitOnForwardFailure=yes` ensures SSH exits when a listener cannot be created.
+- Forwards run for the lifetime of the interactive SSH session and stop when that session closes. Tabs show the configured forward count.
+
+### Deferred
+
+- Standalone tunnel-only sessions and on-demand start/stop without opening an interactive terminal.
+- Structured active / failed / port-in-use status and a dedicated tunnel manager panel. At present, listener failures are reported by OpenSSH in the terminal output and by the session ending.
+- Dynamic SOCKS forwarding (`-D`).
+
+The vault model already contains a `Dynamic` variant for forward compatibility, but it is not enabled in the UI or phase-1 transport.
 
 ---
 
@@ -365,7 +375,7 @@ pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
 | M4 | Session tree + multi-tab | `bbb2c6c` / m4 | ✅ |
 | M5 | Jump hosts | `main` | ✅ |
 | M6 | Tiling + broadcast + highlighting | — | 📋 |
-| M7 | Tunnels | — | 📋 |
+| M7 | Local / reverse forwards (`-L` / `-R`) | `main` | 🟡 Partial |
 | M8 | Native SFTP | — | 📋 |
 | M9 | Polish | — | 📋 |
 | M10 | Native `russh` engine | — | 📋 |
