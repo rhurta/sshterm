@@ -85,3 +85,15 @@ This is a qualitative architecture comparison, not a benchmark. Compare startup 
 - [GPUI Kit installation and getting started](https://gpui-kit.com/docs/)
 - [GPUI Kit crate documentation](https://docs.rs/gpui-kit/latest/gpui_kit/)
 - [GPUI Kit source repository](https://github.com/longbridge/gpui-kit)
+
+
+## Workspace UI additions
+
+- The workspace uses GPUI Kit's `TitleBar`, `TabBar` / `Tab`, and themed `Input` components.
+- Selecting a connection opens or activates its terminal tab. Tabs can be switched and closed; they remain preview placeholders until an SSH session and terminal emulator are integrated.
+- The connection search filters the tree while preserving matching parent folders.
+- Five upstream GPUI Kit theme packs are bundled under `themes/`: Tokyo Night, Ayu, Catppuccin, Gruvbox, and Solarized. The theme registry loads them from `gpui-prototype/themes`; use the title-bar theme button to cycle through dark variants.
+- Theme JSON files are sourced from [longbridge/gpui-kit themes](https://github.com/longbridge/gpui-kit/tree/main/themes). They retain their upstream contents and licenses.
+- The window uses `TitleBar::window_options()` so the custom title bar integrates with platform window controls and drag behavior.
+
+These features are a UI prototype only: session tabs do not start SSH processes, and theme preferences are not persisted between launches.
