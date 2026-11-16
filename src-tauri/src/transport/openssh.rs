@@ -108,6 +108,16 @@ fn build_command(cfg: &SshConfig, askpass: Option<(&str, &str)>) -> CommandBuild
         cmd.arg("-i");
         cmd.arg(key.display().to_string());
     }
+    if !cfg.jump_hosts.is_empty() {
+        cmd.arg("-J");
+        cmd.arg(
+            cfg.jump_hosts
+                .iter()
+                .map(|hop| hop.proxy_spec())
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
     cmd.arg(format!("{}@{}", cfg.user, cfg.host));
 
     if let Some((pipe, token)) = askpass {
@@ -291,6 +301,7 @@ mod tests {
             user: "admin".into(),
             keepalive_secs: 45,
             key_path: None,
+            jump_hosts: Vec::new(),
         }
     }
 
@@ -340,6 +351,37 @@ mod tests {
         let args = argv(&build_command(&config, None));
         assert!(args.windows(2).any(|w| w[0] == "-i" && w[1] == "C:/keys/id_ed25519"));
         assert_eq!(args.last().map(String::as_str), Some("admin@10.0.0.5"));
+    }
+
+    #[test]
+    fn jump_chain_is_passed_to_openssh_in_order() {
+        let mut config = cfg();
+        config.jump_hosts = vec![
+            super::super::JumpHost {
+                user: "bastion".into(),
+                host: "gateway.example".into(),
+                port: 2201,
+            },
+            super::super::JumpHost {
+                user: "relay".into(),
+                host: "10.0.0.8".into(),
+                port: 22,
+            },
+        ];
+        let args = argv(&build_command(&config, None));
+        let jump = args.windows(2).find(|w| w[0] == "-J").unwrap();
+        assert_eq!(jump[1], "bastion@gateway.example:2201,relay@10.0.0.8:22");
+        assert_eq!(args.last().map(String::as_str), Some("admin@10.0.0.5"));
+    }
+
+    #[test]
+    fn proxyjump_brackets_ipv6_hosts() {
+        let hop = super::super::JumpHost {
+            user: "admin".into(),
+            host: "2001:db8::1".into(),
+            port: 2222,
+        };
+        assert_eq!(hop.proxy_spec(), "admin@[2001:db8::1]:2222");
     }
 
     #[test]
