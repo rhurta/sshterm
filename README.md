@@ -19,7 +19,7 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M2 | First SSH session over ConPTY + xterm.js | ✅ Complete |
 | M3 | Per-session log files | ✅ Complete |
 | M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
-| M5 | Jump hosts (`-J` chain, per-hop passwords) | 📋 Planned |
+| M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
 | M6 | Tiling, broadcast, syntax highlighting | 📋 Planned |
 | M7 | Port-forwarding tunnels | 📋 Planned |
 | M8 | Native SFTP (`russh-sftp`) | 📋 Planned |
@@ -227,6 +227,14 @@ Each tab owns an independent session. Opening a session or switching tabs focuse
 
 Scrollbars are styled thin (6px) and matched to the dark theme across all scrollable areas (sidebar, dialogs, terminal viewport). The connection picker opened from the `+` tab button can be dismissed with Escape, the × button, or click-outside.
 
+### Jump hosts (M5)
+
+Each connection can reference an ordered list of saved jump-host connection IDs. The connection editor lets the user add, reorder, and remove hops; the session tab shows the resolved route. The backend expands nested jump definitions into an outermost-to-target chain, validates missing IDs, duplicates and cycles, and passes the chain to Windows OpenSSH using `-J`.
+
+The session's secured askpass pipe holds only the credentials needed for its route. OpenSSH prompt text is matched to the exact `user@host` (or configured key path for the destination), and each matching credential is delivered at most once. This supports different saved passwords for different hops without putting passwords in arguments, environment variables, or files. A generic `Password:` prompt is answered only when there is a single credential, so ambiguous prompts fail closed.
+
+Current phase-1 limitations: a jump host that uses a saved custom private-key path is rejected with a clear error; use password or SSH-agent authentication for jump hops. Password-protected hops must have distinct `user@host` identities so OpenSSH prompts can be mapped unambiguously. Native per-hop key configuration and chained `direct-tcpip` channels remain part of M10.
+
 ## Configuration
 
 `config.toml` (next to the exe):
@@ -240,7 +248,7 @@ log_mode   = "screen"   # "screen" | "raw"
 ## Security notes
 
 - No secrets in logs, `config.toml`, or crash output.
-- The named askpass pipe is restricted to the current user; it accepts one token per session.
+- The named askpass pipe is restricted to the current user; a session-scoped token authorizes requests, and each matched hop credential is returned at most once.
 - `ssh.exe` child processes are killed when the app exits or the vault locks.
 - Private key files are stored by path only (the vault keeps the path, not the key content).
 - Host keys: trust-on-first-use; a changed key triggers a hard warning.
