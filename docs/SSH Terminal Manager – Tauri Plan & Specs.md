@@ -616,8 +616,10 @@ The main Tauri window uses `decorations = false` and remains resizable. A Svelte
 - Minimize, maximize/restore and close buttons using the Tauri window API.
 - Eight native resize hit-zones (four edges and four corners) using Tauri's resize-drag API; the window remains configured as resizable.
 - A theme selector available before vault unlock. The title bar and all application screens use the same active theme.
+- The data-folder path appears beside the application title; the separate workspace path/header row is removed.
+- Settings and Lock are in the title bar beside the theme selector. Language selection is grouped into the Settings dialog.
 
-The selected theme is stored as a non-secret `theme` field in `config.toml`; supported values are `dark` (default), `light` and `nord`. Older config files without this field continue to load with Dark. Changing the theme updates existing terminal panes as well as the surrounding UI. Terminal ANSI colors are adapted per theme; connection-specific custom foreground/background values remain a separate planned feature.
+The selected theme is stored as a non-secret `theme` field in `config.toml`; supported values are `dark` (default), `light` and `nord`. Older config files without this field continue to load with Dark. Changing the theme updates existing terminal panes as well as the surrounding UI. The terminal host is separated from its padded outer pane so FitAddon measures the actual drawable area and does not allocate a partially clipped final row. Terminal ANSI colors are adapted per theme; connection-specific custom foreground/background values remain a separate planned feature.
 
 The custom window commands are explicitly granted in `src-tauri/capabilities/default.json`. Keep `dragDropEnabled = false` unchanged so the HTML5 connection-tree drag-and-drop continues to work.
 
