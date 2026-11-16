@@ -23,6 +23,8 @@ pub struct ConnectionSummary {
     pub user: String,
     /// Saved connection IDs in the configured jump-host order.
     pub jump: Vec<String>,
+    /// Configured jump IDs currently disabled by the user.
+    pub jump_disabled: Vec<String>,
     pub tunnel_count: usize,
 }
 
@@ -35,7 +37,12 @@ impl From<&Connection> for ConnectionSummary {
             port: c.port,
             user: c.user.clone(),
             jump: c.jump.clone(),
-            tunnel_count: c.tunnels.len(),
+            jump_disabled: c.jump_disabled.clone(),
+            tunnel_count: c.tunnels.iter().filter(|t| match t {
+                Tunnel::Local { enabled, .. }
+                | Tunnel::Remote { enabled, .. }
+                | Tunnel::Dynamic { enabled, .. } => *enabled,
+            }).count(),
         }
     }
 }
@@ -104,6 +111,9 @@ pub fn resolve_jump_chain(
         }
         active.insert(hop_id.to_string());
         for nested in &hop.jump {
+            if hop.jump_disabled.iter().any(|disabled| disabled == nested) {
+                continue;
+            }
             append(connections, root_id, nested, active, included, output)?;
         }
         active.remove(hop_id);
@@ -116,6 +126,9 @@ pub fn resolve_jump_chain(
     let mut active = std::collections::HashSet::new();
     let mut included = std::collections::HashSet::new();
     for hop_id in &target.jump {
+        if target.jump_disabled.iter().any(|disabled| disabled == hop_id) {
+            continue;
+        }
         append(
             connections,
             connection_id,
@@ -212,17 +225,17 @@ fn normalize_tunnels(tunnels: &mut [Tunnel]) -> Result<(), &'static str> {
     let mut listeners = std::collections::HashSet::<(&str, String)>::new();
     for tunnel in tunnels {
         match tunnel {
-            Tunnel::Local { bind, dest } => {
+            Tunnel::Local { bind, dest, enabled } => {
                 *bind = normalize_endpoint(bind, true)?;
                 *dest = normalize_endpoint(dest, false)?;
-                if !listeners.insert(("local", bind.to_ascii_lowercase())) {
+                if *enabled && !listeners.insert(("local", bind.to_ascii_lowercase())) {
                     return Err("tunnel_duplicate_listener");
                 }
             }
-            Tunnel::Remote { bind, dest } => {
+            Tunnel::Remote { bind, dest, enabled } => {
                 *bind = normalize_endpoint(bind, true)?;
                 *dest = normalize_endpoint(dest, false)?;
-                if !listeners.insert(("remote", bind.to_ascii_lowercase())) {
+                if *enabled && !listeners.insert(("remote", bind.to_ascii_lowercase())) {
                     return Err("tunnel_duplicate_listener");
                 }
             }
@@ -239,9 +252,14 @@ pub fn resolve_forwards(tunnels: &[Tunnel]) -> Result<Vec<PortForward>, &'static
     normalize_tunnels(&mut normalized)?;
     Ok(normalized
         .into_iter()
+        .filter(|tunnel| match tunnel {
+            Tunnel::Local { enabled, .. }
+            | Tunnel::Remote { enabled, .. }
+            | Tunnel::Dynamic { enabled, .. } => *enabled,
+        })
         .map(|tunnel| match tunnel {
-            Tunnel::Local { bind, dest } => PortForward::Local { bind, destination: dest },
-            Tunnel::Remote { bind, dest } => PortForward::Remote { bind, destination: dest },
+            Tunnel::Local { bind, dest, .. } => PortForward::Local { bind, destination: dest },
+            Tunnel::Remote { bind, dest, .. } => PortForward::Remote { bind, destination: dest },
             Tunnel::Dynamic { .. } => unreachable!("dynamic tunnels rejected above"),
         })
         .collect())
@@ -322,6 +340,7 @@ pub fn conn_delete(state: State<'_, VaultState>, id: String) -> Result<(), Strin
     tree::unlink(&mut vault.data.tree, &id);
     for conn in vault.data.connections.values_mut() {
         conn.jump.retain(|hop| hop != &id);
+        conn.jump_disabled.retain(|hop| hop != &id);
     }
     tree::reconcile(&mut vault.data.tree, &vault.data.connections);
     vault.save().map_err(|e| e.code().to_string())
@@ -451,14 +470,14 @@ mod tests {
             host: "server".into(),
             user: "user".into(),
             tunnels: vec![
-                Tunnel::Local { bind: "127.0.0.1:015432".into(), dest: "db.internal:5432".into() },
-                Tunnel::Remote { bind: "18080".into(), dest: "[::1]:8080".into() },
+                Tunnel::Local { bind: "127.0.0.1:015432".into(), dest: "db.internal:5432".into(), enabled: true },
+                Tunnel::Remote { bind: "18080".into(), dest: "[::1]:8080".into(), enabled: true },
             ],
             ..Connection::default()
         }).unwrap();
         assert_eq!(connection.tunnels, vec![
-            Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db.internal:5432".into() },
-            Tunnel::Remote { bind: "18080".into(), dest: "[::1]:8080".into() },
+            Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db.internal:5432".into(), enabled: true },
+            Tunnel::Remote { bind: "18080".into(), dest: "[::1]:8080".into(), enabled: true },
         ]);
         let forwards = resolve_forwards(&connection.tunnels).unwrap();
         assert_eq!(forwards[0], PortForward::Local {
@@ -475,7 +494,7 @@ mod tests {
     fn rejects_invalid_or_duplicate_tunnel_listeners() {
         let invalid = normalize(Connection {
             id: "bad".into(), host: "server".into(), user: "user".into(),
-            tunnels: vec![Tunnel::Local { bind: "127.0.0.1:0".into(), dest: "db:5432".into() }],
+            tunnels: vec![Tunnel::Local { bind: "127.0.0.1:0".into(), dest: "db:5432".into(), enabled: true }],
             ..Connection::default()
         });
         assert_eq!(invalid.unwrap_err(), "tunnel_bad_endpoint");
@@ -483,8 +502,8 @@ mod tests {
         let duplicate = normalize(Connection {
             id: "duplicate".into(), host: "server".into(), user: "user".into(),
             tunnels: vec![
-                Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db1:5432".into() },
-                Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db2:5432".into() },
+                Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db1:5432".into(), enabled: true },
+                Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db2:5432".into(), enabled: true },
             ],
             ..Connection::default()
         });
