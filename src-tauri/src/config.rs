@@ -23,6 +23,32 @@ pub enum LogMode {
     Raw,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerminalSettings {
+    pub copy_on_selection: bool,
+    pub right_click_copy: bool,
+    pub middle_click_copy: bool,
+    pub right_click_paste: bool,
+    pub middle_click_paste: bool,
+    pub ctrl_c_copy: bool,
+    pub ctrl_v_paste: bool,
+}
+
+impl Default for TerminalSettings {
+    fn default() -> Self {
+        Self {
+            copy_on_selection: true,
+            right_click_copy: true,
+            middle_click_copy: true,
+            right_click_paste: true,
+            middle_click_paste: true,
+            ctrl_c_copy: true,
+            ctrl_v_paste: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)] // missing fields take their default value
 pub struct Config {
@@ -31,6 +57,8 @@ pub struct Config {
     pub log_output: bool,
     /// Kind of log (default: plain text of the screen).
     pub log_mode: LogMode,
+    /// Terminal clipboard and mouse behavior.
+    pub terminal: TerminalSettings,
 }
 
 impl Default for Config {
@@ -39,6 +67,7 @@ impl Default for Config {
             language: DEFAULT_LANGUAGE.to_string(),
             log_output: true,
             log_mode: LogMode::Screen,
+            terminal: TerminalSettings::default(),
         }
     }
 }
