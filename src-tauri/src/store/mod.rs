@@ -10,7 +10,8 @@ pub mod tree;
 use tauri::State;
 
 use crate::commands::VaultState;
-use crate::vault::{Auth, Connection, TreeNode, Vault};
+use crate::transport::PortForward;
+use crate::vault::{Auth, Connection, TreeNode, Tunnel, Vault};
 
 /// What the sidebar shows: never includes a password or key path.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -125,6 +126,98 @@ pub fn migrate(vault: &mut Vault) -> bool {
     changed
 }
 
+/// Parse and canonicalize a TCP endpoint. Listener endpoints may be a
+/// bare port (OpenSSH's loopback default) or host:port; destinations require
+/// host:port. IPv6 literals must use brackets, e.g. [::1]:5432.
+fn normalize_endpoint(value: &str, allow_port_only: bool) -> Result<String, &'static str> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().any(char::is_whitespace) {
+        return Err("tunnel_bad_endpoint");
+    }
+
+    if !value.contains(':') {
+        if !allow_port_only {
+            return Err("tunnel_bad_endpoint");
+        }
+        let port = value.parse::<u16>().map_err(|_| "tunnel_bad_endpoint")?;
+        if port == 0 {
+            return Err("tunnel_bad_endpoint");
+        }
+        return Ok(port.to_string());
+    }
+
+    let (host, port_text) = if let Some(bracketed) = value.strip_prefix('[') {
+        let end = bracketed.find(']').ok_or("tunnel_bad_endpoint")?;
+        let host = &bracketed[..end];
+        let tail = bracketed[end + 1..]
+            .strip_prefix(':')
+            .ok_or("tunnel_bad_endpoint")?;
+        let ip = host.parse::<std::net::IpAddr>().map_err(|_| "tunnel_bad_endpoint")?;
+        if !ip.is_ipv6() {
+            return Err("tunnel_bad_endpoint");
+        }
+        (format!("[{host}]"), tail)
+    } else {
+        let (host, port) = value.split_once(':').ok_or("tunnel_bad_endpoint")?;
+        if host.is_empty()
+            || host.chars().any(|ch| matches!(ch, '[' | ']' | ',' | '/' | ':'))
+            || host.starts_with('-')
+        {
+            return Err("tunnel_bad_endpoint");
+        }
+        (host.to_string(), port)
+    };
+
+    if port_text.is_empty() || port_text.contains(':') {
+        return Err("tunnel_bad_endpoint");
+    }
+    let port = port_text.parse::<u16>().map_err(|_| "tunnel_bad_endpoint")?;
+    if port == 0 {
+        return Err("tunnel_bad_endpoint");
+    }
+    Ok(format!("{host}:{port}"))
+}
+
+/// Validate and normalize the saved local/reverse tunnel definitions.
+fn normalize_tunnels(tunnels: &mut [Tunnel]) -> Result<(), &'static str> {
+    let mut listeners = std::collections::HashSet::<(&str, String)>::new();
+    for tunnel in tunnels {
+        match tunnel {
+            Tunnel::Local { bind, dest } => {
+                *bind = normalize_endpoint(bind, true)?;
+                *dest = normalize_endpoint(dest, false)?;
+                if !listeners.insert(("local", bind.to_ascii_lowercase())) {
+                    return Err("tunnel_duplicate_listener");
+                }
+            }
+            Tunnel::Remote { bind, dest } => {
+                *bind = normalize_endpoint(bind, true)?;
+                *dest = normalize_endpoint(dest, false)?;
+                if !listeners.insert(("remote", bind.to_ascii_lowercase())) {
+                    return Err("tunnel_duplicate_listener");
+                }
+            }
+            Tunnel::Dynamic { .. } => return Err("tunnel_dynamic_unsupported"),
+        }
+    }
+    Ok(())
+}
+
+/// Converts the stored tunnel model to the OpenSSH flags for session startup.
+/// This validates again because older vaults may contain unvalidated entries.
+pub fn resolve_forwards(tunnels: &[Tunnel]) -> Result<Vec<PortForward>, &'static str> {
+    let mut normalized = tunnels.to_vec();
+    normalize_tunnels(&mut normalized)?;
+    Ok(normalized
+        .into_iter()
+        .map(|tunnel| match tunnel {
+            Tunnel::Local { bind, dest } => PortForward::Local { bind, destination: dest },
+            Tunnel::Remote { bind, dest } => PortForward::Remote { bind, destination: dest },
+            Tunnel::Dynamic { .. } => unreachable!("dynamic tunnels rejected above"),
+        })
+        .collect())
+}
+
 fn normalize(mut c: Connection) -> Result<Connection, &'static str> {
     c.id = c.id.trim().to_string();
     c.name = c.name.trim().to_string();
@@ -139,6 +232,7 @@ fn normalize(mut c: Connection) -> Result<Connection, &'static str> {
     if c.keepalive_secs == 0 {
         c.keepalive_secs = 30;
     }
+    normalize_tunnels(&mut c.tunnels)?;
     // Consume a legacy password field if the editor sent one back unchanged.
     c.migrate_legacy();
     c.legacy_password = None;
@@ -318,6 +412,54 @@ mod tests {
         assert_eq!(c.host, "10.0.0.5");
         assert_eq!(c.keepalive_secs, 30);
         assert_eq!(c.password().as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn normalizes_local_and_reverse_tunnel_endpoints() {
+        let connection = normalize(Connection {
+            id: "tunnels".into(),
+            name: "tunnels".into(),
+            host: "server".into(),
+            user: "user".into(),
+            tunnels: vec![
+                Tunnel::Local { bind: "127.0.0.1:015432".into(), dest: "db.internal:5432".into() },
+                Tunnel::Remote { bind: "18080".into(), dest: "[::1]:8080".into() },
+            ],
+            ..Connection::default()
+        }).unwrap();
+        assert_eq!(connection.tunnels, vec![
+            Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db.internal:5432".into() },
+            Tunnel::Remote { bind: "18080".into(), dest: "[::1]:8080".into() },
+        ]);
+        let forwards = resolve_forwards(&connection.tunnels).unwrap();
+        assert_eq!(forwards[0], PortForward::Local {
+            bind: "127.0.0.1:15432".into(),
+            destination: "db.internal:5432".into(),
+        });
+        assert_eq!(forwards[1], PortForward::Remote {
+            bind: "18080".into(),
+            destination: "[::1]:8080".into(),
+        });
+    }
+
+    #[test]
+    fn rejects_invalid_or_duplicate_tunnel_listeners() {
+        let invalid = normalize(Connection {
+            id: "bad".into(), host: "server".into(), user: "user".into(),
+            tunnels: vec![Tunnel::Local { bind: "127.0.0.1:0".into(), dest: "db:5432".into() }],
+            ..Connection::default()
+        });
+        assert_eq!(invalid.unwrap_err(), "tunnel_bad_endpoint");
+
+        let duplicate = normalize(Connection {
+            id: "duplicate".into(), host: "server".into(), user: "user".into(),
+            tunnels: vec![
+                Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db1:5432".into() },
+                Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db2:5432".into() },
+            ],
+            ..Connection::default()
+        });
+        assert_eq!(duplicate.unwrap_err(), "tunnel_duplicate_listener");
     }
 
     #[test]
