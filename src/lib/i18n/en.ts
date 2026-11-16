@@ -33,6 +33,7 @@ export const en = {
   "error.jump_too_deep": "The jump-host route is too deeply nested.",
   "error.jump_key_auth_unsupported": "A jump host with a saved private-key path is not supported yet; use password or SSH agent authentication.",
   "error.jump_ambiguous_credentials": "Two hops use the same login and host, so their password prompts cannot be distinguished.",
+  "error.jump_bad_address": "A jump host has an invalid user, host, or port value.",
   "error.tunnel_bad_endpoint": "Tunnel endpoints must use a valid host:port or listen port.",
   "error.tunnel_duplicate_listener": "Two forwards of the same type cannot use the same listen endpoint.",
   "error.tunnel_dynamic_unsupported": "Dynamic SOCKS forwarding is not supported yet; remove that tunnel before saving.",
