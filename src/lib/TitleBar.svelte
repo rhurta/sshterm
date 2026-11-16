@@ -47,6 +47,28 @@
     }
   }
 
+  function dragWindow(event: MouseEvent) {
+    if (event.button !== 0 || event.buttons !== 1) return;
+    // Native hit-testing on the second mouse-down preserves double-click maximize.
+    if (event.detail === 2) {
+      void toggleMaximize();
+      return;
+    }
+    void appWindow.startDragging().catch((error) => console.error("Could not drag window", error));
+  }
+
+  function dragTouchOrPen(event: PointerEvent) {
+    if (event.pointerType === "mouse" || event.button !== 0) return;
+    void appWindow.startDragging().catch((error) => console.error("Could not drag window", error));
+  }
+
+  function onDragKeydown(event: KeyboardEvent) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      void toggleMaximize();
+    }
+  }
+
   async function resize(event: PointerEvent, direction: ResizeDirection) {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -82,13 +104,13 @@
   <button
     type="button"
     class="drag-area"
-    data-tauri-drag-region
-    tabindex="-1"
-    aria-label="Drag window; double-click to maximize or restore"
-    ondblclick={toggleMaximize}
+    aria-label="Window title bar; double-click or press Enter to maximize or restore"
+    onmousedown={dragWindow}
+    onpointerdown={dragTouchOrPen}
+    onkeydown={onDragKeydown}
   >
-    <span class="brand" data-tauri-drag-region>sshterm</span>
-    <span class="caption" data-tauri-drag-region>SSH Terminal Manager</span>
+    <span class="brand">sshterm</span>
+    <span class="caption">SSH Terminal Manager</span>
   </button>
 
   <div class="titlebar-actions">
@@ -134,14 +156,14 @@
 </header>
 
 <!-- Native resize gestures for the frameless window. -->
-<button class="resize-hit edge-top" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "North")}></button>
-<button class="resize-hit edge-bottom" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "South")}></button>
-<button class="resize-hit edge-left" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "West")}></button>
-<button class="resize-hit edge-right" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "East")}></button>
-<button class="resize-hit corner-top-left" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "NorthWest")}></button>
-<button class="resize-hit corner-top-right" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "NorthEast")}></button>
-<button class="resize-hit corner-bottom-left" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "SouthWest")}></button>
-<button class="resize-hit corner-bottom-right" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "SouthEast")}></button>
+<button type="button" class="resize-hit edge-top" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "North")}></button>
+<button type="button" class="resize-hit edge-bottom" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "South")}></button>
+<button type="button" class="resize-hit edge-left" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "West")}></button>
+<button type="button" class="resize-hit edge-right" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "East")}></button>
+<button type="button" class="resize-hit corner-top-left" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "NorthWest")}></button>
+<button type="button" class="resize-hit corner-top-right" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "NorthEast")}></button>
+<button type="button" class="resize-hit corner-bottom-left" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "SouthWest")}></button>
+<button type="button" class="resize-hit corner-bottom-right" aria-label={t("window.resize")} tabindex="-1" onpointerdown={(event) => resize(event, "SouthEast")}></button>
 
 <style>
   .titlebar {
@@ -285,9 +307,6 @@
   .corner-top-right { top: 0; right: 0; cursor: nesw-resize; }
   .corner-bottom-left { bottom: 0; left: 0; cursor: nesw-resize; }
   .corner-bottom-right { bottom: 0; right: 0; cursor: nwse-resize; }
-  :global([data-tauri-drag-region]) {
-    app-region: drag;
-  }
   @media (max-width: 520px) {
     .caption { display: none; }
     .titlebar { gap: 0.35rem; padding-left: 0.55rem; }
