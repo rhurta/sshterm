@@ -22,15 +22,23 @@
   const initial = untrack(() => ({
     ...conn,
     jump: [...(conn.jump ?? [])],
-    tunnels: [...(conn.tunnels ?? [])],
+    jump_disabled: [...(conn.jump_disabled ?? [])],
+    tunnels: (conn.tunnels ?? []).map((tunnel) => ({ ...tunnel, enabled: tunnel.enabled ?? true })),
   }));
   let form = $state(initial);
   let section = $state<Section>("general");
   let connections = $state<ConnectionSummary[]>([]);
   let connectionsError = $state("");
-  let jumpCandidates = $derived(
-    connections.filter((candidate) => candidate.id !== form.id && !form.jump.includes(candidate.id)),
-  );
+  let jumpQuery = $state("");
+  let jumpCandidates = $derived.by(() => {
+    const query = jumpQuery.trim().toLocaleLowerCase();
+    return connections.filter((candidate) => {
+      if (candidate.id === form.id || form.jump.includes(candidate.id)) return false;
+      if (!query) return true;
+      return [candidate.name, candidate.host, candidate.user]
+        .some((value) => value.toLocaleLowerCase().includes(query));
+    });
+  });
 
   onMount(() => {
     void invoke<ConnectionSummary[]>("conn_list")
@@ -40,6 +48,17 @@
 
   function addJump(id: string) {
     if (id !== form.id && !form.jump.includes(id)) form.jump = [...form.jump, id];
+    form.jump_disabled = form.jump_disabled.filter((item) => item !== id);
+  }
+
+  function isJumpEnabled(id: string): boolean {
+    return !form.jump_disabled.includes(id);
+  }
+
+  function toggleJump(id: string) {
+    form.jump_disabled = isJumpEnabled(id)
+      ? [...form.jump_disabled, id]
+      : form.jump_disabled.filter((item) => item !== id);
   }
 
   function moveJump(index: number, delta: number) {
@@ -52,6 +71,7 @@
 
   function removeJump(id: string) {
     form.jump = form.jump.filter((item) => item !== id);
+    form.jump_disabled = form.jump_disabled.filter((item) => item !== id);
   }
 
   function jumpName(id: string): string {
@@ -71,6 +91,7 @@
       kind: newTunnelKind,
       bind: tunnelBind.trim(),
       dest: tunnelDestination.trim(),
+      enabled: true,
     };
     form.tunnels = [...form.tunnels, tunnel];
     tunnelBind = newTunnelKind === "local" ? "127.0.0.1:15432" : "127.0.0.1:18080";
@@ -80,6 +101,12 @@
 
   function removeTunnel(index: number) {
     form.tunnels = form.tunnels.filter((_, i) => i !== index);
+  }
+
+  function toggleTunnel(index: number) {
+    form.tunnels = form.tunnels.map((tunnel, i) =>
+      i === index ? { ...tunnel, enabled: !tunnel.enabled } : tunnel,
+    );
   }
 
   function tunnelName(tunnel: Tunnel): string {
@@ -244,6 +271,13 @@
                   <span class="validation">{t("editor.jumpMissing")}</span>
                 {/if}
               </div>
+              <button
+                type="button"
+                class:enabled={isJumpEnabled(id)}
+                class="toggle-button"
+                aria-pressed={isJumpEnabled(id)}
+                onclick={() => toggleJump(id)}
+              >{isJumpEnabled(id) ? t("editor.disable") : t("editor.enable")}</button>
               <button type="button" class="icon-button" disabled={index === 0} aria-label={t("editor.jump.moveUp")} onclick={() => moveJump(index, -1)}>↑</button>
               <button type="button" class="icon-button" disabled={index === form.jump.length - 1} aria-label={t("editor.jump.moveDown")} onclick={() => moveJump(index, 1)}>↓</button>
               <button type="button" class="icon-button remove" aria-label={t("editor.jump.remove")} onclick={() => removeJump(id)}>×</button>
@@ -254,6 +288,13 @@
         <p class="hint">{t("editor.jumpNone")}</p>
       {/if}
       <h3 class="jump-heading">{t("editor.jumpAvailable")}</h3>
+      <input
+        class="jump-search"
+        bind:value={jumpQuery}
+        placeholder={t("editor.jumpSearch")}
+        aria-label={t("editor.jumpSearch")}
+        autocomplete="off"
+      />
       <div class="jump-candidates">
         {#each jumpCandidates as candidate (candidate.id)}
           <button type="button" class="jump-candidate" onclick={() => addJump(candidate.id)}>
@@ -275,6 +316,9 @@
             <li>
               <div class="jump-info">
                 <span class="jump-name">{tunnelName(tunnel)}</span>
+                {#if !tunnel.enabled}
+                  <span class="state-disabled">{t("editor.disabled")}</span>
+                {/if}
                 {#if tunnel.kind === "dynamic"}
                   <span class="hint">{t("editor.tunnel.dynamicUnsupported")}: {tunnel.bind}</span>
                 {:else}
@@ -282,6 +326,13 @@
                   <span class="hint">{t("editor.tunnel.destination")}: {tunnel.dest}</span>
                 {/if}
               </div>
+              <button
+                type="button"
+                class="toggle-button"
+                class:enabled={tunnel.enabled}
+                aria-pressed={tunnel.enabled}
+                onclick={() => toggleTunnel(index)}
+              >{tunnel.enabled ? t("editor.disable") : t("editor.enable")}</button>
               <button type="button" class="icon-button remove" aria-label={t("editor.tunnel.remove")} onclick={() => removeTunnel(index)}>×</button>
             </li>
           {/each}
@@ -445,6 +496,30 @@
   }
   .icon-button.remove {
     color: #f08a7a !important;
+  }
+  .jump-search {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .state-disabled {
+    color: #d7a56b;
+    font-size: 0.68rem;
+  }
+  .toggle-button {
+    flex: 0 0 auto;
+    padding: 0.25rem 0.45rem;
+    color: #d7a56b;
+    background: #30291f;
+    border: 1px solid #59452d;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 0.68rem;
+    cursor: pointer;
+  }
+  .toggle-button.enabled {
+    color: #83c9a7;
+    background: #1d3029;
+    border-color: #315844;
   }
   .jump-candidates {
     max-height: 10rem;
