@@ -3,6 +3,15 @@ import type { MessageKey } from "./en";
 // Si falta una clave o sobra una, TypeScript lo marca (npm run check).
 export const es: Record<MessageKey, string> = {
   "language.label": "Idioma",
+  "theme.label": "Tema",
+  "theme.dark": "Oscuro",
+  "theme.light": "Claro",
+  "theme.nord": "Nord",
+  "window.minimize": "Minimizar",
+  "window.maximize": "Maximizar",
+  "window.restore": "Restaurar",
+  "window.close": "Cerrar",
+  "window.resize": "Cambiar tamaño de ventana",
 
   "settings.title": "Configuración",
   "settings.terminal": "Portapapeles y ratón del terminal",
