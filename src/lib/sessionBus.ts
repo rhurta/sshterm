@@ -10,10 +10,13 @@ import { fromBase64 } from "$lib/encoding";
 
 type DataHandler = (bytes: Uint8Array) => void;
 type ClosedHandler = () => void;
+type SessionErrorHandler = (id: string, message: string) => void;
 
 const dataHandlers = new Map<string, Set<DataHandler>>();
 const closedHandlers = new Map<string, Set<ClosedHandler>>();
 const buffered = new Map<string, Uint8Array[]>();
+const sessionErrorHandlers = new Set<SessionErrorHandler>();
+const bufferedSessionErrors: Array<{ id: string; message: string }> = [];
 const MAX_BUFFERED_BYTES = 256 * 1024;
 
 let started = false;
@@ -40,6 +43,24 @@ export function startSessionBus(): void {
     const id = event.payload.id;
     for (const handler of closedHandlers.get(id) ?? []) handler();
   });
+
+  // Errors can arrive before the Workspace or its tabs have mounted. Buffer
+  // them just like PTY output so a fast SSH failure is never lost.
+  void listen<{ id: string; message: string }>("session:error", (event) => {
+    const { id, message } = event.payload;
+    if (sessionErrorHandlers.size > 0) {
+      for (const handler of sessionErrorHandlers) handler(id, message);
+    } else if (bufferedSessionErrors.length < 64) {
+      bufferedSessionErrors.push({ id, message });
+    }
+  });
+}
+
+export function subscribeSessionErrors(handler: SessionErrorHandler): () => void {
+  sessionErrorHandlers.add(handler);
+  const pending = bufferedSessionErrors.splice(0);
+  for (const event of pending) handler(event.id, event.message);
+  return () => sessionErrorHandlers.delete(handler);
 }
 
 export function subscribeData(id: string, handler: DataHandler): () => void {
@@ -73,4 +94,7 @@ export function releaseSession(id: string): void {
   dataHandlers.delete(id);
   closedHandlers.delete(id);
   buffered.delete(id);
+  for (let i = bufferedSessionErrors.length - 1; i >= 0; i--) {
+    if (bufferedSessionErrors[i].id === id) bufferedSessionErrors.splice(i, 1);
+  }
 }
