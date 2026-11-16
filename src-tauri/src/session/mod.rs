@@ -412,3 +412,28 @@ pub async fn session_log_close(state: State<'_, SessionState>, id: String) -> Re
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ssh_failure_message;
+
+    #[test]
+    fn recognizes_jump_host_connection_failures() {
+        let line = "stdio forwarding failed";
+        assert_eq!(ssh_failure_message(line).as_deref(), Some(line));
+        assert!(ssh_failure_message("ssh: connect to host bastion port 22: Connection timed out").is_some());
+    }
+
+    #[test]
+    fn recognizes_local_and_reverse_forward_failures() {
+        assert!(ssh_failure_message("bind: Address already in use").is_some());
+        assert!(ssh_failure_message("Warning: remote port forwarding failed for listen port 18080").is_some());
+        assert!(ssh_failure_message("Could not request local forwarding.").is_some());
+    }
+
+    #[test]
+    fn ignores_non_error_terminal_output() {
+        assert!(ssh_failure_message("Welcome to Ubuntu 24.04").is_none());
+        assert!(ssh_failure_message("Last login: Mon Nov 16 09:00:00").is_none());
+    }
+}
