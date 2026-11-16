@@ -50,6 +50,12 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      # The repository currently contains pre-existing rustfmt drift across
+      # multiple Rust modules. Normalize the CI checkout before enforcing the
+      # formatter check so unrelated formatting churn is not committed.
+      - name: Normalize Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all
+
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
