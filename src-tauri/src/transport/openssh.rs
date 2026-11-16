@@ -118,6 +118,16 @@ fn build_command(cfg: &SshConfig, askpass: Option<(&str, &str)>) -> CommandBuild
                 .join(","),
         );
     }
+    if !cfg.forwards.is_empty() {
+        // Ask ssh.exe to fail instead of leaving a session open with a silently
+        // missing local or remote listener (for example, when a port is busy).
+        cmd.arg("-o");
+        cmd.arg("ExitOnForwardFailure=yes");
+        for forward in &cfg.forwards {
+            cmd.arg(forward.option());
+            cmd.arg(forward.argument());
+        }
+    }
     cmd.arg(format!("{}@{}", cfg.user, cfg.host));
 
     if let Some((pipe, token)) = askpass {
@@ -302,6 +312,7 @@ mod tests {
             keepalive_secs: 45,
             key_path: None,
             jump_hosts: Vec::new(),
+            forwards: Vec::new(),
         }
     }
 
@@ -372,6 +383,25 @@ mod tests {
         let jump = args.windows(2).find(|w| w[0] == "-J").unwrap();
         assert_eq!(jump[1], "bastion@gateway.example:2201,relay@10.0.0.8:22");
         assert_eq!(args.last().map(String::as_str), Some("admin@10.0.0.5"));
+    }
+
+    #[test]
+    fn local_and_reverse_forwards_are_passed_as_separate_argv_values() {
+        let mut config = cfg();
+        config.forwards = vec![
+            super::super::PortForward::Local {
+                bind: "127.0.0.1:15432".into(),
+                destination: "db.internal:5432".into(),
+            },
+            super::super::PortForward::Remote {
+                bind: "127.0.0.1:18080".into(),
+                destination: "127.0.0.1:8080".into(),
+            },
+        ];
+        let args = argv(&build_command(&config, None));
+        assert!(args.contains(&"ExitOnForwardFailure=yes".to_string()));
+        assert!(args.windows(2).any(|w| w[0] == "-L" && w[1] == "127.0.0.1:15432:db.internal:5432"));
+        assert!(args.windows(2).any(|w| w[0] == "-R" && w[1] == "127.0.0.1:18080:127.0.0.1:8080"));
     }
 
     #[test]
