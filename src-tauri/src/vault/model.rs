@@ -347,6 +347,37 @@ mod tests {
     }
 
     #[test]
+    fn pre_toggle_vault_entries_deserialize_as_enabled() {
+        let raw = r#"{
+            "id": "target",
+            "name": "database",
+            "host": "db.internal",
+            "port": 22,
+            "user": "admin",
+            "jump": ["bastion"],
+            "tunnels": [
+                { "kind": "local", "bind": "127.0.0.1:15432", "dest": "db:5432" },
+                { "kind": "remote", "bind": "18080", "dest": "web:8080" }
+            ]
+        }"#;
+        let connection: Connection = serde_json::from_str(raw).unwrap();
+        assert!(connection.jump_disabled.is_empty());
+        assert_eq!(connection.jump, vec!["bastion"]);
+        assert!(matches!(
+            connection.tunnels[0],
+            Tunnel::Local { enabled: true, .. }
+        ));
+        assert!(matches!(
+            connection.tunnels[1],
+            Tunnel::Remote { enabled: true, .. }
+        ));
+
+        let saved = serde_json::to_value(&connection).unwrap();
+        assert_eq!(saved["tunnels"][0]["enabled"], true);
+        assert_eq!(saved["jump_disabled"], serde_json::json!([]));
+    }
+
+    #[test]
     fn auth_variants_serialize_as_tagged_json() {
         let key = Auth::Key { path: "C:/keys/id".into(), passphrase: None };
         assert_eq!(serde_json::to_string(&key).unwrap(), r#"{"type":"key","path":"C:/keys/id"}"#);
