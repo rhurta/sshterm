@@ -241,7 +241,7 @@ Each connection can reference an ordered list of saved jump-host connection IDs.
 
 The session's secured askpass pipe holds only the credentials needed for its route. OpenSSH prompt text is matched to the exact `user@host` (or configured key path for the destination), and each matching credential is delivered at most once. This supports different saved passwords for different hops without putting passwords in arguments, environment variables, or files. A generic `Password:` prompt is answered only when there is a single credential, so ambiguous prompts fail closed.
 
-Current phase-1 limitations: a jump host that uses a saved custom private-key path is rejected with a clear error; use password or SSH-agent authentication for jump hops. Password-protected hops must have distinct `user@host` identities so OpenSSH prompts can be mapped unambiguously. Native per-hop key configuration and chained `direct-tcpip` channels remain part of M10.
+Current phase-1 limitations: a jump host that uses a saved custom private-key path is rejected with a clear error; use password or SSH-agent authentication for jump hops. Every hop and the target must have a distinct `user@host` identity because OpenSSH prompts omit the port; this avoids assigning a password to the wrong route member. Native per-hop key configuration and chained `direct-tcpip` channels remain part of M10.
 
 ## Configuration
 
