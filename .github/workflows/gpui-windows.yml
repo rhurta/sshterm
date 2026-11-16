@@ -13,6 +13,9 @@ on:
       - ".github/workflows/gpui-windows.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -21,7 +24,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build minimal GPUI smoke app
         run: cargo check --manifest-path gpui-prototype/Cargo.toml --bin gpui-smoke
-      - name: Build prototype
-        run: cargo check --manifest-path gpui-prototype/Cargo.toml --bin sshterm-gpui
+      - name: Build optimized prototype executable
+        run: cargo build --release --manifest-path gpui-prototype/Cargo.toml --bin sshterm-gpui
       - name: Test tree operations
         run: cargo test --manifest-path gpui-prototype/Cargo.toml
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: sshterm-gpui-windows
+          path: gpui-prototype/target/release/sshterm-gpui.exe
+          if-no-files-found: error
+          retention-days: 14
