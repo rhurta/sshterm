@@ -2,7 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
-  import type { Auth, Connection, ConnectionSummary } from "$lib/types";
+  import type { Auth, Connection, ConnectionSummary, Tunnel } from "$lib/types";
 
   let {
     conn,
@@ -16,11 +16,14 @@
     oncancel: () => void;
   } = $props();
 
-  type Section = "general" | "auth" | "advanced" | "jumps";
+  type Section = "general" | "auth" | "advanced" | "jumps" | "tunnels";
 
-  // Snapshot the props once: the editor is a modal and its connection never
-  // changes while it is open. Clone the jump list because it is edited in-place.
-  const initial = untrack(() => ({ ...conn, jump: [...(conn.jump ?? [])] }));
+  // Snapshot the props once: clone mutable M5/M7 arrays before editing.
+  const initial = untrack(() => ({
+    ...conn,
+    jump: [...(conn.jump ?? [])],
+    tunnels: [...(conn.tunnels ?? [])],
+  }));
   let form = $state(initial);
   let section = $state<Section>("general");
   let connections = $state<ConnectionSummary[]>([]);
@@ -54,6 +57,37 @@
   function jumpName(id: string): string {
     return connections.find((candidate) => candidate.id === id)?.name ?? id;
   }
+
+  let newTunnelKind = $state<"local" | "remote">("local");
+  let tunnelBind = $state("127.0.0.1:15432");
+  let tunnelDestination = $state("127.0.0.1:5432");
+
+  function addTunnel() {
+    if (!tunnelBind.trim() || !tunnelDestination.trim()) {
+      validation = t("editor.tunnelRequired");
+      return;
+    }
+    const tunnel: Tunnel = {
+      kind: newTunnelKind,
+      bind: tunnelBind.trim(),
+      dest: tunnelDestination.trim(),
+    };
+    form.tunnels = [...form.tunnels, tunnel];
+    tunnelBind = newTunnelKind === "local" ? "127.0.0.1:15432" : "127.0.0.1:18080";
+    tunnelDestination = newTunnelKind === "local" ? "127.0.0.1:5432" : "127.0.0.1:8080";
+    validation = "";
+  }
+
+  function removeTunnel(index: number) {
+    form.tunnels = form.tunnels.filter((_, i) => i !== index);
+  }
+
+  function tunnelName(tunnel: Tunnel): string {
+    if (tunnel.kind === "local") return t("editor.tunnel.local");
+    if (tunnel.kind === "remote") return t("editor.tunnel.remote");
+    return t("editor.tunnel.dynamic");
+  }
+
   let authType = $state<Auth["type"]>(initial.auth.type);
   let password = $state(initial.auth.type === "password" ? initial.auth.password : "");
   let keyPath = $state(initial.auth.type === "key" ? initial.auth.path : "");
@@ -114,6 +148,7 @@
     if (failure) {
       validation = errorText(failure);
       if (failure.startsWith("jump_")) section = "jumps";
+      if (failure.startsWith("tunnel_")) section = "tunnels";
     }
   }
 </script>
@@ -134,6 +169,9 @@
       </button>
       <button type="button" class:current={section === "jumps"} onclick={() => (section = "jumps")}>
         {t("editor.section.jumps")}
+      </button>
+      <button type="button" class:current={section === "tunnels"} onclick={() => (section = "tunnels")}>
+        {t("editor.section.tunnels")}
       </button>
     </div>
 
@@ -190,7 +228,7 @@
         <input type="checkbox" bind:checked={form.protected} />
         {t("editor.protected")}
       </label>
-    {:else}
+    {:else if section === "jumps"}
       <p class="hint">{t("editor.jumpHint")}</p>
       <p class="hint">{t("editor.jumpAuthHint")}</p>
       {#if form.jump.length > 0}
@@ -229,6 +267,47 @@
       {#if connectionsError}
         <p class="validation" role="alert">{connectionsError}</p>
       {/if}
+    {:else}
+      <p class="hint">{t("editor.tunnelHint")}</p>
+      {#if form.tunnels.length > 0}
+        <ol class="jump-chain">
+          {#each form.tunnels as tunnel, index (index)}
+            <li>
+              <div class="jump-info">
+                <span class="jump-name">{tunnelName(tunnel)}</span>
+                {#if tunnel.kind === "dynamic"}
+                  <span class="hint">{t("editor.tunnel.dynamicUnsupported")}: {tunnel.bind}</span>
+                {:else}
+                  <span class="hint">{t("editor.tunnel.bind")}: {tunnel.bind}</span>
+                  <span class="hint">{t("editor.tunnel.destination")}: {tunnel.dest}</span>
+                {/if}
+              </div>
+              <button type="button" class="icon-button remove" aria-label={t("editor.tunnel.remove")} onclick={() => removeTunnel(index)}>×</button>
+            </li>
+          {/each}
+        </ol>
+      {:else}
+        <p class="hint">{t("editor.tunnelNone")}</p>
+      {/if}
+
+      <h3 class="jump-heading">{t("editor.tunnelAdd")}</h3>
+      <label>
+        {t("editor.tunnel.type")}
+        <select bind:value={newTunnelKind}>
+          <option value="local">{t("editor.tunnel.local")} (-L)</option>
+          <option value="remote">{t("editor.tunnel.remote")} (-R)</option>
+        </select>
+      </label>
+      <label>
+        {t("editor.tunnel.bind")}
+        <input bind:value={tunnelBind} placeholder="127.0.0.1:15432" autocomplete="off" spellcheck="false" />
+      </label>
+      <label>
+        {t("editor.tunnel.destination")}
+        <input bind:value={tunnelDestination} placeholder="127.0.0.1:5432" autocomplete="off" spellcheck="false" />
+      </label>
+      <p class="hint">{newTunnelKind === "local" ? t("editor.tunnel.localHint") : t("editor.tunnel.remoteHint")}</p>
+      <button type="button" class="add-tunnel" onclick={addTunnel}>{t("editor.tunnel.add")}</button>
     {/if}
 
     {#if validation}
@@ -387,6 +466,9 @@
   .jump-candidate small {
     color: #8d97a8;
     font-weight: 400;
+  }
+  .add-tunnel {
+    align-self: flex-start;
   }
   .validation {
     margin: 0;
