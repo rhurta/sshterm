@@ -96,7 +96,7 @@ export const en = {
   "editor.tunnel.add": "Add tunnel",
   "editor.tunnel.remove": "Remove tunnel",
   "editor.tunnelRequired": "Enter both a listen endpoint and a destination endpoint.",
-  "workspace.tunnelsConfigured": "{count} forwards configured for this session",
+  "workspace.tunnelsConfigured": "{count} enabled forwards for this session",
   "editor.jumpHint": "Add saved connections in connection order. The first entry is the outermost SSH hop.",
   "editor.jumpAuthHint": "Jump hosts support saved passwords or the SSH agent. A custom private-key path for an individual hop is not supported by the OpenSSH engine yet.",
   "editor.jumpNone": "No jump hosts. Connect directly to this host.",
