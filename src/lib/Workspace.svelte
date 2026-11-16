@@ -100,7 +100,13 @@
         cols: 80,
         rows: 24,
       });
-      tabs = [...tabs, { sessionId, connId: c.id, name: c.name, jumpNames }];
+      tabs = [...tabs, {
+        sessionId,
+        connId: c.id,
+        name: c.name,
+        jumpNames,
+        tunnelCount: c.tunnel_count ?? 0,
+      }];
       // The new pane mounts active; TerminalPane focuses xterm as soon as it
       // is visible, so typing starts in the terminal right away.
       activeId = sessionId;
@@ -188,6 +194,9 @@
                 <span>{tab.name}</span>
                 {#if tab.jumpNames.length > 0}
                   <small class="tab-chain">{tab.jumpNames.join(" → ")} → {tab.name}</small>
+                {/if}
+                {#if tab.tunnelCount > 0}
+                  <small class="tab-forwards">{t("workspace.tunnelsConfigured", { count: tab.tunnelCount })}</small>
                 {/if}
               </button>
               <button
@@ -379,6 +388,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     color: #8d97a8;
+    font-size: 0.62rem;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  .tab-forwards {
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #78bfa5;
     font-size: 0.62rem;
     font-weight: 400;
     white-space: nowrap;
