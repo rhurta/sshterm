@@ -39,6 +39,30 @@ impl std::fmt::Display for TransportError {
     }
 }
 
+/// One saved connection used as a ProxyJump hop. No credentials are passed
+/// to the process arguments; authentication is selected by the askpass prompt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JumpHost {
+    pub user: String,
+    pub host: String,
+    pub port: u16,
+}
+
+impl JumpHost {
+    /// OpenSSH ProxyJump syntax: [user@]host[:port]. Bracket IPv6 literals so
+    /// their colons cannot be mistaken for the port separator.
+    pub fn proxy_spec(&self) -> String {
+        let host = if self.host.contains(':')
+            && !(self.host.starts_with('[') && self.host.ends_with(']'))
+        {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
+        format!("{}@{}:{}", self.user, host, self.port)
+    }
+}
+
 /// Everything an engine needs to open the connection. Contains no secrets:
 /// the password travels via the askpass pipe, not through here.
 #[derive(Debug, Clone)]
@@ -53,6 +77,8 @@ pub struct SshConfig {
     /// Optional private key file (M4, `auth.type = key`). Only the path is
     /// stored in the vault; the file itself is read in place by ssh.exe.
     pub key_path: Option<PathBuf>,
+    /// Ordered ProxyJump chain, outermost hop first.
+    pub jump_hosts: Vec<JumpHost>,
 }
 
 #[async_trait]
