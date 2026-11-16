@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import { t } from "$lib/i18n/index.svelte";
-  import type { Auth, Connection } from "$lib/types";
+  import type { Auth, Connection, ConnectionSummary } from "$lib/types";
 
   let {
     conn,
@@ -15,13 +16,44 @@
     oncancel: () => void;
   } = $props();
 
-  type Section = "general" | "auth" | "advanced";
+  type Section = "general" | "auth" | "advanced" | "jumps";
 
   // Snapshot the props once: the editor is a modal and its connection never
-  // changes while it is open. `untrack` also keeps the initial state clean.
-  const initial = untrack(() => ({ ...conn }));
+  // changes while it is open. Clone the jump list because it is edited in-place.
+  const initial = untrack(() => ({ ...conn, jump: [...(conn.jump ?? [])] }));
   let form = $state(initial);
   let section = $state<Section>("general");
+  let connections = $state<ConnectionSummary[]>([]);
+  let connectionsError = $state("");
+  let jumpCandidates = $derived(
+    connections.filter((candidate) => candidate.id !== form.id && !form.jump.includes(candidate.id)),
+  );
+
+  onMount(() => {
+    void invoke<ConnectionSummary[]>("conn_list")
+      .then((items) => (connections = items))
+      .catch((error) => (connectionsError = String(error)));
+  });
+
+  function addJump(id: string) {
+    if (id !== form.id && !form.jump.includes(id)) form.jump = [...form.jump, id];
+  }
+
+  function moveJump(index: number, delta: number) {
+    const next = [...form.jump];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    form.jump = next;
+  }
+
+  function removeJump(id: string) {
+    form.jump = form.jump.filter((item) => item !== id);
+  }
+
+  function jumpName(id: string): string {
+    return connections.find((candidate) => candidate.id === id)?.name ?? id;
+  }
   let authType = $state<Auth["type"]>(initial.auth.type);
   let password = $state(initial.auth.type === "password" ? initial.auth.password : "");
   let keyPath = $state(initial.auth.type === "key" ? initial.auth.path : "");
@@ -69,6 +101,9 @@
       <button type="button" class:current={section === "advanced"} onclick={() => (section = "advanced")}>
         {t("editor.section.advanced")}
       </button>
+      <button type="button" class:current={section === "jumps"} onclick={() => (section = "jumps")}>
+        {t("editor.section.jumps")}
+      </button>
     </div>
 
     {#if section === "general"}
@@ -115,7 +150,7 @@
       {:else}
         <p class="hint">{t("editor.auth.agent")}</p>
       {/if}
-    {:else}
+    {:else if section === "advanced"}
       <label>
         {t("editor.keepalive")}
         <input type="number" min="1" max="3600" bind:value={form.keepalive_secs} />
@@ -124,6 +159,44 @@
         <input type="checkbox" bind:checked={form.protected} />
         {t("editor.protected")}
       </label>
+    {:else}
+      <p class="hint">{t("editor.jumpHint")}</p>
+      {#if form.jump.length > 0}
+        <ol class="jump-chain">
+          {#each form.jump as id, index (id)}
+            <li>
+              <div class="jump-info">
+                <span class="jump-name">{index + 1}. {jumpName(id)}</span>
+                {#if connections.find((candidate) => candidate.id === id)}
+                  {@const hop = connections.find((candidate) => candidate.id === id)!}
+                  <span class="hint">{hop.user}@{hop.host}:{hop.port}</span>
+                {:else}
+                  <span class="validation">{t("editor.jumpMissing")}</span>
+                {/if}
+              </div>
+              <button type="button" class="icon-button" disabled={index === 0} aria-label={t("editor.jump.moveUp")} onclick={() => moveJump(index, -1)}>↑</button>
+              <button type="button" class="icon-button" disabled={index === form.jump.length - 1} aria-label={t("editor.jump.moveDown")} onclick={() => moveJump(index, 1)}>↓</button>
+              <button type="button" class="icon-button remove" aria-label={t("editor.jump.remove")} onclick={() => removeJump(id)}>×</button>
+            </li>
+          {/each}
+        </ol>
+      {:else}
+        <p class="hint">{t("editor.jumpNone")}</p>
+      {/if}
+      <h3 class="jump-heading">{t("editor.jumpAvailable")}</h3>
+      <div class="jump-candidates">
+        {#each jumpCandidates as candidate (candidate.id)}
+          <button type="button" class="jump-candidate" onclick={() => addJump(candidate.id)}>
+            <span>{candidate.name}</span>
+            <small>{candidate.user}@{candidate.host}:{candidate.port}</small>
+          </button>
+        {:else}
+          <p class="hint">{t("editor.jumpNoCandidates")}</p>
+        {/each}
+      </div>
+      {#if connectionsError}
+        <p class="validation" role="alert">{connectionsError}</p>
+      {/if}
     {/if}
 
     {#if validation}
@@ -167,6 +240,7 @@
   }
   .sections {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.35rem;
     border-bottom: 1px solid #2f3847;
     padding-bottom: 0.5rem;
@@ -212,6 +286,75 @@
     margin: 0;
     font-size: 0.75rem;
     color: #8d97a8;
+  }
+  .jump-heading {
+    margin: 0.35rem 0 0;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #b6bfcd;
+  }
+  .jump-chain {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .jump-chain li {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.35rem;
+    border: 1px solid #2f3847;
+    border-radius: 4px;
+    background: #171d26;
+  }
+  .jump-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .jump-name {
+    color: #dfe4ec;
+    font-size: 0.8rem;
+  }
+  .icon-button {
+    flex: 0 0 auto;
+    padding: 0.2rem 0.4rem !important;
+    color: #b6bfcd !important;
+    background: #222a36 !important;
+    border: 1px solid #2f3847 !important;
+  }
+  .icon-button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .icon-button.remove {
+    color: #f08a7a !important;
+  }
+  .jump-candidates {
+    max-height: 10rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .jump-candidate {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    text-align: left;
+    color: #dfe4ec !important;
+    background: #222a36 !important;
+    border: 1px solid #2f3847 !important;
+  }
+  .jump-candidate small {
+    color: #8d97a8;
+    font-weight: 400;
   }
   .validation {
     margin: 0;
