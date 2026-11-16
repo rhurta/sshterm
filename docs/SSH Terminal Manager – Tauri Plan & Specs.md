@@ -74,7 +74,9 @@ The connection tree uses browser HTML5 drag-and-drop. Tauri's native webview dra
         "title": "sshterm",
         "width": 800,
         "height": 600,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "decorations": false,
+        "resizable": true
       }
     ]
   }
