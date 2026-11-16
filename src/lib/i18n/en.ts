@@ -77,6 +77,7 @@ export const en = {
   "editor.section.advanced": "Advanced",
   "editor.section.jumps": "Jump hosts",
   "editor.jumpHint": "Add saved connections in connection order. The first entry is the outermost SSH hop.",
+  "editor.jumpAuthHint": "Jump hosts support saved passwords or the SSH agent. A custom private-key path for an individual hop is not supported by the OpenSSH engine yet.",
   "editor.jumpNone": "No jump hosts. Connect directly to this host.",
   "editor.jumpAvailable": "Available connections",
   "editor.jumpNoCandidates": "No other saved connections are available.",
