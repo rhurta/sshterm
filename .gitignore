@@ -16,4 +16,5 @@ logs/
 known_hosts
 config.toml
 highlight/
+/gpui-prototype/target/
 
