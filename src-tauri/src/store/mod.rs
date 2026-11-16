@@ -77,6 +77,13 @@ pub fn resolve_jump_chain(
             return Err("jump_too_deep");
         }
         let hop = connections.get(hop_id).ok_or("jump_not_found")?.clone();
+        if hop.port == 0
+            || hop.user.chars().any(|ch| ch.is_whitespace() || matches!(ch, ',' | '@' | ':'))
+            || hop.host.chars().any(|ch| ch.is_whitespace() || ch == ',')
+            || hop.host.is_empty()
+        {
+            return Err("jump_bad_address");
+        }
         active.insert(hop_id.to_string());
         for nested in &hop.jump {
             append(connections, root_id, nested, active, included, output)?;
@@ -162,7 +169,9 @@ fn normalize_endpoint(value: &str, allow_port_only: bool) -> Result<String, &'st
     } else {
         let (host, port) = value.split_once(':').ok_or("tunnel_bad_endpoint")?;
         if host.is_empty()
-            || host.chars().any(|ch| matches!(ch, '[' | ']' | ',' | '/' | ':'))
+            || host.chars().any(|ch| {
+                !ch.is_ascii_alphanumeric() && !matches!(ch, '.' | '-' | '_')
+            })
             || host.starts_with('-')
         {
             return Err("tunnel_bad_endpoint");
