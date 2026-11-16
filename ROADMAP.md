@@ -240,6 +240,8 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 ### Backend
 
 - The vault's existing ordered `jump: ["conn_id", …]` field is now active; no vault format or payload-version migration is needed.
+- Per-hop enable/disable state is stored separately in `jump_disabled`; older vaults default every configured hop to enabled.
+- The editor can search saved connections by name, host, or user when selecting a jump hop.
 - `store::resolve_jump_chain` expands nested chains into outermost-to-target order and rejects missing references, repeated hops, cycles and routes deeper than 16 hops.
 - `OpenSshTransport` emits one `-J` argument with comma-separated `user@host:port` entries; IPv6 literals are bracketed.
 - The askpass pipe matches password prompts against `user@host` and destination key-passphrase prompts against the configured identity-file path. Credentials are held in `Zeroizing<String>` and each match is served at most once.
@@ -312,7 +314,8 @@ pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
 ### Implemented in phase 1
 
 - Local (`-L`) and reverse (`-R`) TCP forwards are saved in the existing per-connection `tunnels` vault field; no vault migration is required.
-- The connection editor can add/remove forwards and select local or reverse direction.
+- The connection editor can add/remove forwards, select local or reverse direction, and enable/disable each saved forward independently.
+- Existing vault tunnel entries deserialize as enabled by default; no vault version bump or migration is needed.
 - Listen endpoints accept `[address:]port`; destinations require `host:port`. IPv6 literals use brackets, e.g. `[::1]:5432`.
 - The backend validates port ranges, malformed endpoints, and duplicate listeners before saving; session startup validates older vault entries again.
 - Forwards are passed as separate OpenSSH arguments. `ExitOnForwardFailure=yes` ensures SSH exits when a listener cannot be created.
