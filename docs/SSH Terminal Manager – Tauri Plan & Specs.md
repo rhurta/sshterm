@@ -395,7 +395,7 @@ Example rule-file direction (not currently loaded by the app):
 
 ```toml
 name = "linux"
-prompt = '^\\S+@\\S+:[^\\n]*[$#] '
+prompt = '^\S+@\S+:[^\n]*[$#] '
 
 [[rule]]
 name = "command"
