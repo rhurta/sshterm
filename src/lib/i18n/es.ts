@@ -34,6 +34,7 @@ export const es: Record<MessageKey, string> = {
   "error.jump_too_deep": "La ruta de hosts de salto tiene demasiados niveles.",
   "error.jump_key_auth_unsupported": "Todavía no se admite una ruta de clave privada guardada para un host de salto; usa contraseña o agente SSH.",
   "error.jump_ambiguous_credentials": "Dos saltos usan el mismo usuario y host, por lo que no se pueden distinguir sus solicitudes de contraseña.",
+  "error.jump_bad_address": "Un host de salto tiene un usuario, host o puerto no válido.",
   "error.tunnel_bad_endpoint": "Los extremos del túnel deben usar host:puerto o un puerto de escucha válido.",
   "error.tunnel_duplicate_listener": "Dos reenvíos del mismo tipo no pueden usar el mismo extremo de escucha.",
   "error.tunnel_dynamic_unsupported": "El reenvío SOCKS dinámico aún no está disponible; quita ese túnel antes de guardar.",
