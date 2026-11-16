@@ -91,6 +91,7 @@ pub async fn session_open(
             .ok_or_else(|| "connection_not_found".to_string())?;
         let hops = store::resolve_jump_chain(&vault.data.connections, &conn_id)
             .map_err(str::to_string)?;
+        let forwards = store::resolve_forwards(&conn.tunnels).map_err(str::to_string)?;
 
         let mut credentials = Vec::new();
         let mut prompt_targets = std::collections::HashSet::new();
@@ -142,6 +143,7 @@ pub async fn session_open(
                 host: hop.host.clone(),
                 port: hop.port,
             }).collect(),
+            forwards,
         };
         let jump_names = hops.iter().map(|hop| hop.name.clone()).collect::<Vec<_>>();
         (cfg, credentials, conn.name.clone(), jump_names)
