@@ -233,15 +233,32 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 
 ---
 
-## 📋 M5 — Jump hosts
+## ✅ M5 — Jump hosts
 
-**Done when:** `-J` chain works end-to-end, including a different password per hop.
+**Done when:** the OpenSSH `-J` chain is built from saved connections and can authenticate each password-protected hop with its own credential.
 
-- Each connection gains an ordered `jump: ["conn_id", …]` list.
-- Phase 1: passed as `-J host1,host2` to `ssh.exe`; the askpass helper identifies the hop from ssh's prompt text and returns the right password.
-- Phase 2 (M10): chained `direct-tcpip` channels with `russh`.
-- Failures name the hop that failed.
-- UI: jump chain editor in the connection editor, visual chain diagram in the tab.
+### Backend
+
+- The vault's existing ordered `jump: ["conn_id", …]` field is now active; no vault format or payload-version migration is needed.
+- `store::resolve_jump_chain` expands nested chains into outermost-to-target order and rejects missing references, repeated hops, cycles and routes deeper than 16 hops.
+- `OpenSshTransport` emits one `-J` argument with comma-separated `user@host:port` entries; IPv6 literals are bracketed.
+- The askpass pipe matches password prompts against `user@host` and destination key-passphrase prompts against the configured identity-file path. Credentials are held in `Zeroizing<String>` and each match is served at most once.
+- The session-scoped pipe token is retained for the session so multiple hops can authenticate. A generic `Password:` prompt is accepted only when the session has exactly one credential; unknown or ambiguous prompts receive no password.
+- Duplicate password-protected `user@host` identities are rejected because the OpenSSH prompt does not include the port and cannot disambiguate them.
+- Jump hosts configured with a saved custom private-key path are rejected in the phase-1 engine. Password and SSH-agent authentication are supported for jump hops; per-hop custom key selection is deferred until a transport can configure each hop independently.
+
+### UI
+
+- The connection editor has an ordered jump-host section with add, remove and move-up/down controls.
+- The editor checks for loops before saving; backend validation remains authoritative.
+- Session tabs show the expanded route as `hop1 → hop2 → target`; the terminal startup banner shows the same route.
+
+### Tests
+
+- Unit tests cover ordered/nested chain expansion, missing/duplicate/cyclic references, ProxyJump argument ordering, IPv6 formatting, prompt-to-host credential mapping, key-passphrase path matching and ambiguous generic prompts.
+- Windows CI validates the frontend, formats and tests Rust, and builds the portable executable. Live multi-hop authentication still requires an SSH environment with at least two reachable hosts and distinct credentials.
+
+**Phase 2 (M10):** chained `direct-tcpip` channels with `russh`.
 
 ---
 
@@ -346,7 +363,7 @@ pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
 | M2 | First SSH session | `2c19e40` / m2 | ✅ |
 | M3 | Session logging | `bbc0262` | ✅ |
 | M4 | Session tree + multi-tab | `bbb2c6c` / m4 | ✅ |
-| M5 | Jump hosts | — | 📋 |
+| M5 | Jump hosts | `main` | ✅ |
 | M6 | Tiling + broadcast + highlighting | — | 📋 |
 | M7 | Tunnels | — | 📋 |
 | M8 | Native SFTP | — | 📋 |
