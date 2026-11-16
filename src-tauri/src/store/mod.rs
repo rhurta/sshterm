@@ -20,6 +20,8 @@ pub struct ConnectionSummary {
     pub host: String,
     pub port: u16,
     pub user: String,
+    /// Saved connection IDs in the configured jump-host order.
+    pub jump: Vec<String>,
 }
 
 impl From<&Connection> for ConnectionSummary {
@@ -30,6 +32,7 @@ impl From<&Connection> for ConnectionSummary {
             host: c.host.clone(),
             port: c.port,
             user: c.user.clone(),
+            jump: c.jump.clone(),
         }
     }
 }
@@ -42,6 +45,68 @@ fn guard<'r>(state: &'r State<'r, VaultState>) -> std::sync::MutexGuard<'r, Opti
 
 pub fn find(vault: &Vault, id: &str) -> Option<Connection> {
     vault.data.connections.get(id).cloned()
+}
+
+/// Resolves the configured jump hosts into the exact OpenSSH traversal order.
+/// Nested jump configurations are flattened from the outermost host inward.
+/// Duplicate hops, missing IDs, cycles, and excessively deep chains are rejected
+/// before any child process is spawned.
+pub fn resolve_jump_chain(
+    connections: &std::collections::BTreeMap<String, Connection>,
+    connection_id: &str,
+) -> Result<Vec<Connection>, &'static str> {
+    let target = connections.get(connection_id).ok_or("connection_not_found")?;
+    fn append(
+        connections: &std::collections::BTreeMap<String, Connection>,
+        root_id: &str,
+        hop_id: &str,
+        active: &mut std::collections::HashSet<String>,
+        included: &mut std::collections::HashSet<String>,
+        output: &mut Vec<Connection>,
+    ) -> Result<(), &'static str> {
+        if hop_id == root_id || active.contains(hop_id) {
+            return Err("jump_cycle");
+        }
+        if included.contains(hop_id) {
+            return Err("jump_duplicate");
+        }
+        if active.len() >= 16 {
+            return Err("jump_too_deep");
+        }
+        let hop = connections.get(hop_id).ok_or("jump_not_found")?.clone();
+        active.insert(hop_id.to_string());
+        for nested in &hop.jump {
+            append(connections, root_id, nested, active, included, output)?;
+        }
+        active.remove(hop_id);
+        included.insert(hop_id.to_string());
+        output.push(hop);
+        Ok(())
+    }
+
+    let mut output = Vec::new();
+    let mut active = std::collections::HashSet::new();
+    let mut included = std::collections::HashSet::new();
+    for hop_id in &target.jump {
+        append(
+            connections,
+            connection_id,
+            hop_id,
+            &mut active,
+            &mut included,
+            &mut output,
+        )?;
+    }
+    Ok(output)
+}
+
+fn validate_jump_chains(
+    connections: &std::collections::BTreeMap<String, Connection>,
+) -> Result<(), &'static str> {
+    for id in connections.keys() {
+        resolve_jump_chain(connections, id)?;
+    }
+    Ok(())
 }
 
 /// Migrates M1-M3 payloads in memory: `password` becomes `auth::password` and
@@ -117,7 +182,10 @@ pub fn conn_upsert(
     let mut g = guard(&state);
     let vault = g.as_mut().ok_or("locked")?;
     let id = conn.id.clone();
-    vault.data.connections.insert(id.clone(), conn);
+    let mut candidate = vault.data.connections.clone();
+    candidate.insert(id.clone(), conn);
+    validate_jump_chains(&candidate).map_err(str::to_string)?;
+    vault.data.connections = candidate;
     tree::link(&mut vault.data.tree, &id, parent_id.as_deref());
     tree::reconcile(&mut vault.data.tree, &vault.data.connections);
     vault.save().map_err(|e| e.code().to_string())
@@ -313,6 +381,61 @@ mod tests {
         let json = serde_json::to_string(&summary).unwrap();
         assert!(!json.contains("secret"));
         assert!(!json.contains("password"));
+    }
+
+    #[test]
+    fn jump_chain_resolves_in_order_and_flattens_nested_hops() {
+        let mut connections = std::collections::BTreeMap::new();
+        let leaf = Connection {
+            id: "leaf".into(),
+            name: "edge".into(),
+            host: "edge.internal".into(),
+            user: "edge-user".into(),
+            ..Connection::default()
+        };
+        let middle = Connection {
+            id: "middle".into(),
+            name: "bastion".into(),
+            host: "bastion.internal".into(),
+            user: "bastion-user".into(),
+            jump: vec!["leaf".into()],
+            ..Connection::default()
+        };
+        let target = Connection {
+            id: "target".into(),
+            name: "database".into(),
+            host: "db.internal".into(),
+            user: "db-user".into(),
+            jump: vec!["middle".into()],
+            ..Connection::default()
+        };
+        connections.insert(leaf.id.clone(), leaf);
+        connections.insert(middle.id.clone(), middle);
+        connections.insert(target.id.clone(), target);
+
+        let chain = resolve_jump_chain(&connections, "target").unwrap();
+        assert_eq!(chain.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), vec!["leaf", "middle"]);
+    }
+
+    #[test]
+    fn jump_chain_rejects_missing_duplicate_and_cyclic_hops() {
+        let mut connections = std::collections::BTreeMap::new();
+        connections.insert("a".into(), Connection {
+            id: "a".into(), name: "a".into(), host: "a".into(), user: "u".into(),
+            jump: vec!["b".into()], ..Connection::default()
+        });
+        connections.insert("b".into(), Connection {
+            id: "b".into(), name: "b".into(), host: "b".into(), user: "u".into(),
+            jump: vec!["a".into()], ..Connection::default()
+        });
+        assert_eq!(resolve_jump_chain(&connections, "a").unwrap_err(), "jump_cycle");
+
+        connections.get_mut("a").unwrap().jump = vec!["missing".into()];
+        assert_eq!(resolve_jump_chain(&connections, "a").unwrap_err(), "jump_not_found");
+
+        connections.get_mut("a").unwrap().jump = vec!["b".into(), "b".into()];
+        connections.get_mut("b").unwrap().jump.clear();
+        assert_eq!(resolve_jump_chain(&connections, "a").unwrap_err(), "jump_duplicate");
     }
 
     #[test]
