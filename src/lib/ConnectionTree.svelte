@@ -381,7 +381,7 @@
     font: inherit;
     font-size: 0.8rem;
     text-align: left;
-    color: #dfe4ec;
+    color: var(--text);
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
@@ -390,14 +390,14 @@
     box-sizing: border-box;
   }
   .row:hover {
-    background: #222a36;
+    background: var(--surface-hover);
   }
   .row.selected {
-    border-color: #8fb4e8;
-    background: #222a36;
+    border-color: var(--accent);
+    background: var(--surface-hover);
   }
   .row.into {
-    border-color: #8fb4e8;
+    border-color: var(--accent);
     border-style: dashed;
   }
   .row.folder {
@@ -405,20 +405,20 @@
   }
   .chevron {
     width: 0.75rem;
-    color: #8d97a8;
+    color: var(--muted);
     flex: 0 0 0.75rem;
   }
   .folder-icon {
     width: 0.6rem;
     height: 0.5rem;
-    border: 1px solid #8fb4e8;
+    border: 1px solid var(--accent);
     border-radius: 2px;
     flex: 0 0 0.6rem;
   }
   .conn-icon {
     width: 0.4rem;
     height: 0.4rem;
-    border: 1px solid #8d97a8;
+    border: 1px solid var(--muted);
     border-radius: 50%;
     flex: 0 0 0.4rem;
   }
@@ -428,8 +428,8 @@
     white-space: nowrap;
   }
   .label :global(.hit) {
-    background: #6b5320;
-    color: #ffe6a3;
+    background: var(--warning-highlight);
+    color: var(--warning-highlight-text);
     border-radius: 2px;
   }
   .spacer {
@@ -437,7 +437,7 @@
   }
   .badge {
     font-size: 0.7rem;
-    color: #8d97a8;
+    color: var(--muted);
   }
   .conn {
     display: flex;
@@ -447,7 +447,7 @@
   }
   .detail {
     font-size: 0.7rem;
-    color: #8d97a8;
+    color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -458,16 +458,16 @@
     height: 0.4rem;
     margin-left: 0.35rem;
     border-radius: 50%;
-    background: #5dcaa5;
+    background: var(--success);
     vertical-align: middle;
   }
   .rename {
     width: 100%;
     font: inherit;
     font-size: 0.8rem;
-    color: #dfe4ec;
-    background: #161a22;
-    border: 1px solid #8fb4e8;
+    color: var(--text);
+    background: var(--app-bg);
+    border: 1px solid var(--accent);
     border-radius: 4px;
     padding: 0.2rem 0.35rem;
     box-sizing: border-box;
@@ -475,10 +475,10 @@
   .drop-line {
     height: 2px;
     margin-right: 0.5rem;
-    background: #8fb4e8;
+    background: var(--accent);
   }
   .empty {
-    color: #8d97a8;
+    color: var(--muted);
     font-size: 0.8rem;
     padding: 0.5rem 0.75rem;
     margin: 0;
@@ -495,8 +495,8 @@
     position: fixed;
     z-index: 41;
     width: 11rem;
-    background: #222a36;
-    border: 1px solid #2f3847;
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.25rem 0;
     display: flex;
@@ -506,7 +506,7 @@
     font: inherit;
     font-size: 0.78rem;
     text-align: left;
-    color: #dfe4ec;
+    color: var(--text);
     background: transparent;
     border: 0;
     padding: 0.35rem 0.7rem;
@@ -514,14 +514,14 @@
     white-space: normal;
   }
   .menu button:hover {
-    background: #2f3847;
+    background: var(--border);
   }
   .menu button.danger {
-    color: #f08a7a;
+    color: var(--danger);
   }
   .separator {
     height: 1px;
-    background: #2f3847;
+    background: var(--border);
     margin: 0.2rem 0;
   }
 </style>
