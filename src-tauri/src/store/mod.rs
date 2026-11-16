@@ -226,19 +226,26 @@ fn normalize_tunnels(tunnels: &mut [Tunnel]) -> Result<(), &'static str> {
     for tunnel in tunnels {
         match tunnel {
             Tunnel::Local { bind, dest, enabled } => {
+                if !*enabled {
+                    continue;
+                }
                 *bind = normalize_endpoint(bind, true)?;
                 *dest = normalize_endpoint(dest, false)?;
-                if *enabled && !listeners.insert(("local", bind.to_ascii_lowercase())) {
+                if !listeners.insert(("local", bind.to_ascii_lowercase())) {
                     return Err("tunnel_duplicate_listener");
                 }
             }
             Tunnel::Remote { bind, dest, enabled } => {
+                if !*enabled {
+                    continue;
+                }
                 *bind = normalize_endpoint(bind, true)?;
                 *dest = normalize_endpoint(dest, false)?;
-                if *enabled && !listeners.insert(("remote", bind.to_ascii_lowercase())) {
+                if !listeners.insert(("remote", bind.to_ascii_lowercase())) {
                     return Err("tunnel_duplicate_listener");
                 }
             }
+            Tunnel::Dynamic { enabled, .. } if !*enabled => continue,
             Tunnel::Dynamic { .. } => return Err("tunnel_dynamic_unsupported"),
         }
     }
@@ -509,6 +516,28 @@ mod tests {
             bind: "18080".into(),
             destination: "127.0.0.1:8080".into(),
         }]);
+    }
+
+    #[test]
+    fn disabled_invalid_or_deferred_tunnel_does_not_block_saving() {
+        let connection = normalize(Connection {
+            id: "disabled".into(),
+            host: "server".into(),
+            user: "user".into(),
+            tunnels: vec![
+                Tunnel::Local {
+                    bind: "not-a-port".into(),
+                    dest: "".into(),
+                    enabled: false,
+                },
+                Tunnel::Dynamic {
+                    bind: "127.0.0.1:1080".into(),
+                    enabled: false,
+                },
+            ],
+            ..Connection::default()
+        }).unwrap();
+        assert!(resolve_forwards(&connection.tunnels).unwrap().is_empty());
     }
 
     #[test]
