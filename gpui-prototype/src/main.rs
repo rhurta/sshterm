@@ -2,18 +2,19 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use gpui_kit::{
-    App, Context, Entity, Render, SharedString, Subscription, Window, div, prelude::*, px,
+    Context, Entity, Render, SharedString, Subscription, Window, div, prelude::*, px,
     component::{
         ActiveTheme as _, Icon, IconName,
         button::{Button, ButtonVariants as _},
         h_flex,
-        input::{Input, InputEvent, InputState},
+        input::{InputEvent, InputState},
         list::ListItem,
         tab::{Tab, TabBar},
         theme::{Theme, ThemeRegistry},
         tree::{tree, TreeItem, TreeState},
         TitleBar,
     },
+    gpui_component::Sizable,
     *,
 };
 
@@ -282,7 +283,7 @@ impl Render for SshTermPrototype {
                     .child(h_flex().items_center().justify_between()
                         .child(div().text_sm().font_weight_semibold().child("CONNECTIONS"))
                         .child(div().text_xs().text_color(cx.theme().muted_foreground).child("DRAG TO MOVE")))
-                    .child(Input::new(&self.search).small().w_full())
+                    .child(gpui_kit::component::input::Input::new(&self.search).small().w_full())
                     .child(div().flex_1().min_h(px(0.0)).child(connections_tree))
                     .child(div().id("root-drop-target").w_full().min_h(px(42.0)).mt_1().px_3().py_2()
                         .border_1().border_dashed().border_color(cx.theme().border).rounded_md()
@@ -293,7 +294,7 @@ impl Render for SshTermPrototype {
                     .child(tabs)
                     .child(div().flex_1().w_full().p_4().bg(cx.theme().background).rounded_md()
                         .border_1().border_color(cx.theme().border).text_sm().text_color(cx.theme().foreground)
-                        .child(terminal_text)))),
+                        .child(terminal_text))))
     }
 }
 
@@ -350,7 +351,7 @@ fn main() {
             if let Some(theme) = ThemeRegistry::global(cx).themes().get(&default_theme).cloned() {
                 Theme::update(cx, |current| current.apply_config(&theme));
             }
-        }) { tracing::error!("Failed to load bundled themes: {error}"); }
+        }) { eprintln!("Failed to load bundled themes: {error}"); }
         open_window(TitleBar::window_options(), cx, |window, cx| {
             cx.new(|cx| SshTermPrototype::new(window, cx))
         }).expect("open GPUI Kit prototype window");
