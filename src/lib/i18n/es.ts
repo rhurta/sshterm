@@ -97,7 +97,7 @@ export const es: Record<MessageKey, string> = {
   "editor.tunnel.add": "Añadir túnel",
   "editor.tunnel.remove": "Quitar túnel",
   "editor.tunnelRequired": "Escribe un extremo de escucha y un extremo de destino.",
-  "workspace.tunnelsConfigured": "{count} reenvíos configurados para esta sesión",
+  "workspace.tunnelsConfigured": "{count} reenvíos activos para esta sesión",
   "editor.jumpHint": "Añade conexiones guardadas en el orden de conexión. La primera entrada es el salto SSH más externo.",
   "editor.jumpAuthHint": "Los hosts de salto admiten contraseñas guardadas o el agente SSH. El motor OpenSSH todavía no admite una ruta de clave privada personalizada para cada salto.",
   "editor.jumpNone": "Sin hosts de salto. Conectar directamente a este host.",
