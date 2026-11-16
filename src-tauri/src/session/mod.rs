@@ -96,6 +96,12 @@ pub async fn session_open(
         let mut credentials = Vec::new();
         let mut prompt_targets = std::collections::HashSet::new();
         for hop in &hops {
+            // Prompts omit the SSH port, so even agent-authenticated hops must
+            // have distinct user@host identities from every other route member.
+            let key = (hop.user.to_ascii_lowercase(), hop.host.to_ascii_lowercase());
+            if !prompt_targets.insert(key) {
+                return Err("jump_ambiguous_credentials".to_string());
+            }
             // ProxyJump does not accept a separate -i value per hop. Password
             // and agent authentication work; a saved per-hop key path will be
             // supported when the native transport can configure each hop.
@@ -103,10 +109,6 @@ pub async fn session_open(
                 return Err("jump_key_auth_unsupported".to_string());
             }
             if let Some(password) = hop.password() {
-                let key = (hop.user.to_ascii_lowercase(), hop.host.to_ascii_lowercase());
-                if !prompt_targets.insert(key) {
-                    return Err("jump_ambiguous_credentials".to_string());
-                }
                 credentials.push(AskpassCredential {
                     user: hop.user.clone(),
                     host: hop.host.clone(),
@@ -115,11 +117,11 @@ pub async fn session_open(
                 });
             }
         }
+        let target_key = (conn.user.to_ascii_lowercase(), conn.host.to_ascii_lowercase());
+        if !prompt_targets.insert(target_key) {
+            return Err("jump_ambiguous_credentials".to_string());
+        }
         if let Some(password) = conn.password() {
-            let key = (conn.user.to_ascii_lowercase(), conn.host.to_ascii_lowercase());
-            if !prompt_targets.insert(key) {
-                return Err("jump_ambiguous_credentials".to_string());
-            }
             credentials.push(AskpassCredential {
                 user: conn.user.clone(),
                 host: conn.host.clone(),
