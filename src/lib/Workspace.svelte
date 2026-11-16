@@ -9,7 +9,17 @@
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
 
-  let { dir, onlock, theme }: { dir: string; onlock: () => void; theme: AppTheme } = $props();
+  let {
+    dir,
+    onlock,
+    theme,
+    settingsOpen = $bindable(false),
+  }: {
+    dir: string;
+    onlock: () => void;
+    theme: AppTheme;
+    settingsOpen?: boolean;
+  } = $props();
 
   let tabs = $state<Tab[]>([]);
   let activeId = $state<string | null>(null);
@@ -21,7 +31,6 @@
   let refreshToken = $state(0);
   let error = $state("");
   let settings = $state<TerminalSettings>({ ...DEFAULT_TERMINAL_SETTINGS });
-  let settingsOpen = $state(false);
   let multilinePaste = $state<{ lineCount: number } | null>(null);
   let multilinePasteCancelButton = $state<HTMLButtonElement | null>(null);
   let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
@@ -223,7 +232,6 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="app">
-  <svelte:window on:sshterm:open-settings={() => (settingsOpen = true)} />
 
   {#if error}
     <p class="error" role="alert">{error}</p>
