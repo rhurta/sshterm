@@ -63,6 +63,31 @@ impl JumpHost {
     }
 }
 
+/// A saved TCP port forward supplied to OpenSSH as a single argv value.
+/// Credentials and user-controlled text are never interpolated into a shell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PortForward {
+    Local { bind: String, destination: String },
+    Remote { bind: String, destination: String },
+}
+
+impl PortForward {
+    pub fn option(&self) -> &'static str {
+        match self {
+            Self::Local { .. } => "-L",
+            Self::Remote { .. } => "-R",
+        }
+    }
+
+    pub fn argument(&self) -> String {
+        match self {
+            Self::Local { bind, destination } | Self::Remote { bind, destination } => {
+                format!("{bind}:{destination}")
+            }
+        }
+    }
+}
+
 /// Everything an engine needs to open the connection. Contains no secrets:
 /// the password travels via the askpass pipe, not through here.
 #[derive(Debug, Clone)]
@@ -79,6 +104,8 @@ pub struct SshConfig {
     pub key_path: Option<PathBuf>,
     /// Ordered ProxyJump chain, outermost hop first.
     pub jump_hosts: Vec<JumpHost>,
+    /// Local (-L) and remote (-R) TCP forwards tied to this SSH session.
+    pub forwards: Vec<PortForward>,
 }
 
 #[async_trait]
