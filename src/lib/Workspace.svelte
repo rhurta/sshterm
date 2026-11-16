@@ -28,6 +28,27 @@
     return hasMessage(key) ? t(key) : t("lock.error.unexpected", { detail: code });
   }
 
+  function resolveJumpNames(connection: ConnectionSummary, all: ConnectionSummary[]): string[] {
+    const byId = new Map(all.map((item) => [item.id, item]));
+    const active = new Set<string>();
+    const visited = new Set<string>();
+    const names: string[] = [];
+
+    function append(id: string) {
+      if (active.has(id) || visited.has(id)) return;
+      const hop = byId.get(id);
+      if (!hop) return;
+      active.add(id);
+      for (const nested of hop.jump ?? []) append(nested);
+      active.delete(id);
+      visited.add(id);
+      names.push(hop.name);
+    }
+
+    for (const id of connection.jump ?? []) append(id);
+    return names;
+  }
+
   function blank(): Connection {
     return {
       id: crypto.randomUUID(),
@@ -69,13 +90,16 @@
   async function connect(c: ConnectionSummary) {
     error = "";
     try {
+      const jumpNames = c.jump?.length
+        ? resolveJumpNames(c, await invoke<ConnectionSummary[]>("conn_list"))
+        : [];
       // 80x24 is provisional: TerminalPane adjusts to the real size on open.
       const sessionId = await invoke<string>("session_open", {
         connId: c.id,
         cols: 80,
         rows: 24,
       });
-      tabs = [...tabs, { sessionId, connId: c.id, name: c.name }];
+      tabs = [...tabs, { sessionId, connId: c.id, name: c.name, jumpNames }];
       // The new pane mounts active; TerminalPane focuses xterm as soon as it
       // is visible, so typing starts in the terminal right away.
       activeId = sessionId;
@@ -155,8 +179,15 @@
         <div class="tabs">
           {#each tabs as tab (tab.sessionId)}
             <div class="tab" class:active={activeId === tab.sessionId}>
-              <button class="tab-name" onclick={() => (activeId = tab.sessionId)}>
-                {tab.name}
+              <button
+                class="tab-name"
+                onclick={() => (activeId = tab.sessionId)}
+                title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
+              >
+                <span>{tab.name}</span>
+                {#if tab.jumpNames.length > 0}
+                  <small class="tab-chain">{tab.jumpNames.join(" → ")} → {tab.name}</small>
+                {/if}
               </button>
               <button
                 class="tab-close"
@@ -334,6 +365,22 @@
     border: 0;
     padding: 0.3rem 0.55rem;
     cursor: pointer;
+  }
+  .tab .tab-name {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.12rem;
+    min-width: 0;
+  }
+  .tab-chain {
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #8d97a8;
+    font-size: 0.62rem;
+    font-weight: 400;
+    white-space: nowrap;
   }
   .tab-close {
     color: #8d97a8 !important;
