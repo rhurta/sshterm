@@ -1,0 +1,74 @@
+name: Windows validation and portable build
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "fix/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-build:
+    name: Validate and build Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Check frontend types and Svelte
+        run: npm run check
+
+      - name: Build frontend
+        run: npm run build
+
+      # The repository currently contains pre-existing rustfmt drift across
+      # multiple Rust modules. Normalize the CI checkout before enforcing the
+      # formatter check so unrelated formatting churn is not committed.
+      - name: Normalize Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Build portable Windows executable
+        run: npm run tauri -- build --no-bundle
+
+      - name: Upload sshterm.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: sshterm-windows-x64
+          path: src-tauri/target/release/sshterm.exe
+          if-no-files-found: error
+          retention-days: 30

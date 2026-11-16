@@ -52,6 +52,7 @@
   let renameText = $state("");
   let dragId = $state<string | null>(null);
   let drop = $state<{ id: string; position: DropPosition } | null>(null);
+  let rootDrop = $state(false);
 
   function isOpen(node: TreeNode): boolean {
     return query.trim() ? true : !!expanded[node.id];
@@ -107,6 +108,29 @@
     return null;
   }
 
+  function findLocation(
+    nodes: TreeNode[],
+    id: string,
+    parentId: string | null = null,
+  ): { parentId: string | null; index: number } | null {
+    for (let index = 0; index < nodes.length; index++) {
+      const node = nodes[index];
+      if (node.id === id) return { parentId, index };
+      if (node.type === "folder") {
+        const found = findLocation(node.children, id, node.id);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  function moveAt(id: string, parentId: string | null, index: number) {
+    const source = findLocation(tree, id);
+    const adjustedIndex =
+      source?.parentId === parentId && source.index < index ? index - 1 : index;
+    onmove(id, parentId, Math.max(0, adjustedIndex));
+  }
+
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
     node.select();
@@ -143,44 +167,82 @@
     return summaries[node.id] ?? null;
   }
 
+  function containsNode(node: TreeNode, id: string): boolean {
+    return node.id === id || (node.type === "folder" && node.children.some((child) => containsNode(child, id)));
+  }
+
   function onDragStart(event: DragEvent, node: TreeNode) {
+    if (query.trim()) {
+      event.preventDefault();
+      return;
+    }
     dragId = node.id;
     event.dataTransfer?.setData("text/plain", node.id);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
   }
 
   function onDragOver(event: DragEvent, node: TreeNode) {
+    if (query.trim() || !dragId) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    if (!dragId || dragId === node.id) return;
-    if (node.type === "folder") {
-      drop = { id: node.id, position: "into" };
+    const dragged = findNode(tree, dragId);
+    if (!dragged || containsNode(dragged, node.id)) {
+      drop = null;
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
       return;
     }
     const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    drop = {
-      id: node.id,
-      position: event.clientY < bounds.top + bounds.height / 2 ? "before" : "after",
-    };
+    const offset = event.clientY - bounds.top;
+    const edge = Math.min(10, bounds.height * 0.25);
+    let position: DropPosition;
+    if (node.type === "folder" && offset >= edge && offset <= bounds.height - edge) {
+      position = "into";
+    } else {
+      position = offset < bounds.height / 2 ? "before" : "after";
+    }
+    drop = { id: node.id, position };
+    rootDrop = false;
   }
 
   function onDrop(event: DragEvent, node: TreeNode, parentId: string | null, index: number) {
     event.preventDefault();
+    event.stopPropagation();
     const id = event.dataTransfer?.getData("text/plain") || dragId;
-    const position = drop?.position ?? "into";
+    const position = drop?.position;
     drop = null;
+    rootDrop = false;
     dragId = null;
-    if (!id || id === node.id) return;
-    if (node.type === "folder") {
-      onmove(id, node.id, node.children.length);
+    if (!id || !position) return;
+    if (position === "into" && node.type === "folder") {
+      moveAt(id, node.id, node.children.length);
     } else {
-      onmove(id, parentId, position === "after" ? index + 1 : index);
+      moveAt(id, parentId, index + (position === "after" ? 1 : 0));
     }
+  }
+
+  function onRootDragOver(event: DragEvent) {
+    if (query.trim() || !dragId) return;
+    // Rows handle their own drop positions; only the blank tree area means root.
+    if ((event.target as HTMLElement).closest(".line")) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    drop = null;
+    rootDrop = true;
+  }
+
+  function onRootDrop(event: DragEvent) {
+    if ((event.target as HTMLElement).closest(".line")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const id = event.dataTransfer?.getData("text/plain") || dragId;
+    if (id && !query.trim()) moveAt(id, null, tree.length);
+    clearDrag();
   }
 
   function clearDrag() {
     dragId = null;
     drop = null;
+    rootDrop = false;
   }
 
   // A newly created folder is put straight into inline rename mode.
@@ -204,7 +266,7 @@
     aria-selected={selectedId === node.id}
     tabindex="-1"
     style="padding-left: {depth * 14 + 8}px"
-    draggable={renaming !== node.id}
+    draggable={!query.trim() && renaming !== node.id}
     ondragstart={(event) => onDragStart(event, node)}
     ondragover={(event) => onDragOver(event, node)}
     ondrop={(event) => onDrop(event, node, parentId, index)}
@@ -262,13 +324,13 @@
     <div class="drop-line" style="margin-left: {depth * 14 + 8}px"></div>
   {/if}
   {#if node.type === "folder" && isOpen(node)}
-    {#each node.children as child, childIndex (child.id)}
+    {#each visible(node.children) as child, childIndex (child.id)}
       {@render row(child, node.id, childIndex, depth + 1)}
     {/each}
   {/if}
 {/snippet}
 
-<div class="tree">
+<div class="tree" class:root-drop={rootDrop} ondragover={onRootDragOver} ondrop={onRootDrop} ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) rootDrop = false; }}>
   {#each visible(tree) as node, index (node.id)}
     {@render row(node, null, index, 0)}
   {/each}

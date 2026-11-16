@@ -125,6 +125,20 @@ pub fn folder_mut<'a>(nodes: &'a mut [TreeNode], id: &str) -> Option<&'a mut Tre
     None
 }
 
+fn find_node<'a>(nodes: &'a [TreeNode], id: &str) -> Option<&'a TreeNode> {
+    for node in nodes {
+        if node.id() == id {
+            return Some(node);
+        }
+        if let TreeNode::Folder { children, .. } = node {
+            if let Some(found) = find_node(children, id) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
 pub fn take_node(nodes: &mut Vec<TreeNode>, id: &str) -> Option<TreeNode> {
     for i in 0..nodes.len() {
         if nodes[i].id() == id {
@@ -229,17 +243,20 @@ pub fn move_node(
     parent_id: Option<&str>,
     index: usize,
 ) -> Result<(), &'static str> {
-    let node = take_node(tree, id).ok_or("node_not_found")?;
+    // Validate the destination before removing the source. An invalid move
+    // must leave the original tree untouched (including its original parent).
+    let source = find_node(tree, id).ok_or("node_not_found")?;
     if let Some(parent) = parent_id {
-        if subtree_contains(&node, parent) {
-            tree.push(node); // restore in memory; the command does not save on error
+        if subtree_contains(source, parent) {
             return Err("cycle");
         }
+        if folder_mut(tree, parent).is_none() {
+            return Err("folder_not_found");
+        }
     }
-    let Some(children) = folder_children(tree, parent_id) else {
-        tree.push(node);
-        return Err("folder_not_found");
-    };
+    let node = take_node(tree, id).ok_or("node_not_found")?;
+    let children = folder_children(tree, parent_id)
+        .ok_or("folder_not_found")?;
     let at = index.min(children.len());
     children.insert(at, node);
     Ok(())
@@ -462,6 +479,23 @@ mod tests {
         assert!(contains_id(&tree, "f1"));
         assert!(contains_id(&tree, "f2"));
         assert_eq!(paths(&tree)["c1"], vec!["Production", "Edge"]);
+    }
+
+    #[test]
+    fn rejected_move_preserves_the_original_parent_and_position() {
+        let mut tree = vec![folder(
+            "f1",
+            "Production",
+            vec![folder("f2", "Edge", vec![link_to("c1")]), link_to("c2")],
+        )];
+        assert_eq!(move_node(&mut tree, "f1", Some("f2"), 0), Err("cycle"));
+        assert_eq!(move_node(&mut tree, "c2", Some("missing"), 0), Err("folder_not_found"));
+        assert_eq!(paths(&tree)["c1"], vec!["Production", "Edge"]);
+        assert_eq!(paths(&tree)["c2"], vec!["Production"]);
+        match &tree[0] {
+            TreeNode::Folder { children, .. } => assert_eq!(children[1].id(), "c2"),
+            _ => panic!("expected a root folder"),
+        }
     }
 
     #[test]
