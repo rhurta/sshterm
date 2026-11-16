@@ -393,8 +393,8 @@
     width: min(27rem, 92vw);
     max-height: 90vh;
     overflow-y: auto;
-    background: #1f2530;
-    border: 1px solid #2f3847;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.35rem;
     display: flex;
@@ -411,13 +411,13 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
-    border-bottom: 1px solid #2f3847;
+    border-bottom: 1px solid var(--border);
     padding-bottom: 0.5rem;
   }
   .sections button {
     font: inherit;
     font-size: 0.78rem;
-    color: #b6bfcd;
+    color: var(--text-secondary);
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
@@ -425,16 +425,16 @@
     cursor: pointer;
   }
   .sections button.current {
-    color: #dfe4ec;
-    background: #222a36;
-    border-color: #8fb4e8;
+    color: var(--text);
+    background: var(--surface-hover);
+    border-color: var(--accent);
   }
   label {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
     font-size: 0.82rem;
-    color: #b6bfcd;
+    color: var(--text-secondary);
   }
   label.check {
     flex-direction: row;
@@ -445,22 +445,22 @@
   select {
     font: inherit;
     font-size: 0.82rem;
-    color: #dfe4ec;
-    background: #161a22;
-    border: 1px solid #2f3847;
+    color: var(--text);
+    background: var(--app-bg);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.45rem 0.55rem;
   }
   .hint {
     margin: 0;
     font-size: 0.75rem;
-    color: #8d97a8;
+    color: var(--muted);
   }
   .jump-heading {
     margin: 0.35rem 0 0;
     font-size: 0.8rem;
     font-weight: 500;
-    color: #b6bfcd;
+    color: var(--text-secondary);
   }
   .jump-chain {
     list-style: none;
@@ -475,9 +475,9 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.35rem;
-    border: 1px solid #2f3847;
+    border: 1px solid var(--border);
     border-radius: 4px;
-    background: #171d26;
+    background: var(--surface-deep);
   }
   .jump-info {
     flex: 1;
@@ -487,46 +487,46 @@
     gap: 0.1rem;
   }
   .jump-name {
-    color: #dfe4ec;
+    color: var(--text);
     font-size: 0.8rem;
   }
   .icon-button {
     flex: 0 0 auto;
     padding: 0.2rem 0.4rem !important;
-    color: #b6bfcd !important;
-    background: #222a36 !important;
-    border: 1px solid #2f3847 !important;
+    color: var(--text-secondary) !important;
+    background: var(--surface-hover) !important;
+    border: 1px solid var(--border) !important;
   }
   .icon-button:disabled {
     opacity: 0.35;
     cursor: default;
   }
   .icon-button.remove {
-    color: #f08a7a !important;
+    color: var(--danger) !important;
   }
   .jump-search {
     width: 100%;
     box-sizing: border-box;
   }
   .state-disabled {
-    color: #d7a56b;
+    color: var(--warning);
     font-size: 0.68rem;
   }
   .toggle-button {
     flex: 0 0 auto;
     padding: 0.25rem 0.45rem;
-    color: #d7a56b;
-    background: #30291f;
-    border: 1px solid #59452d;
+    color: var(--warning);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-border);
     border-radius: 4px;
     font: inherit;
     font-size: 0.68rem;
     cursor: pointer;
   }
   .toggle-button.enabled {
-    color: #83c9a7;
-    background: #1d3029;
-    border-color: #315844;
+    color: var(--success);
+    background: var(--success-soft);
+    border-color: var(--success-border);
   }
   .jump-candidates {
     max-height: 10rem;
@@ -541,20 +541,20 @@
     align-items: flex-start;
     gap: 0.1rem;
     text-align: left;
-    color: #dfe4ec !important;
-    background: #222a36 !important;
-    border: 1px solid #2f3847 !important;
+    color: var(--text) !important;
+    background: var(--surface-hover) !important;
+    border: 1px solid var(--border) !important;
   }
   .jump-candidate small {
-    color: #8d97a8;
+    color: var(--muted);
     font-weight: 400;
   }
   .add-tunnel {
     align-self: flex-start;
     font: inherit;
     font-size: 0.8rem;
-    color: #12161d;
-    background: #8fb4e8;
+    color: var(--accent-contrast);
+    background: var(--accent);
     border: 0;
     border-radius: 4px;
     padding: 0.45rem 0.8rem;
@@ -563,7 +563,7 @@
   .validation {
     margin: 0;
     font-size: 0.78rem;
-    color: #f08a7a;
+    color: var(--danger);
   }
   .buttons {
     display: flex;
@@ -574,8 +574,8 @@
     font: inherit;
     font-size: 0.8rem;
     font-weight: 600;
-    color: #12161d;
-    background: #8fb4e8;
+    color: var(--accent-contrast);
+    background: var(--accent);
     border: 0;
     border-radius: 4px;
     padding: 0.5rem 0.9rem;
@@ -583,7 +583,7 @@
   }
   .buttons button.ghost {
     background: transparent;
-    color: #b6bfcd;
-    border: 1px solid #2f3847;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
   }
 </style>
