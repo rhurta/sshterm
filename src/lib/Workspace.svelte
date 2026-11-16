@@ -7,10 +7,10 @@
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import LanguageSelect from "./LanguageSelect.svelte";
-  import type { Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
+  import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
 
-  let { dir, onlock }: { dir: string; onlock: () => void } = $props();
+  let { dir, onlock, theme }: { dir: string; onlock: () => void; theme: AppTheme } = $props();
 
   let tabs = $state<Tab[]>([]);
   let activeId = $state<string | null>(null);
@@ -289,6 +289,7 @@
               onclosed={dropTab}
               onmultilinepaste={requestMultilinePaste}
               {settings}
+              {theme}
             />
           {/each}
         </div>
@@ -409,7 +410,7 @@
 
 <style>
   .app {
-    height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -420,18 +421,18 @@
     align-items: center;
     gap: 1rem;
     padding: 0.5rem 0.9rem;
-    border-bottom: 1px solid #2f3847;
-    background: #1a1f29;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
   }
   .brand {
     font-weight: 600;
-    color: #8fb4e8;
+    color: var(--accent);
     white-space: nowrap;
   }
   .dir {
     flex: 1;
     font-size: 0.75rem;
-    color: #8d97a8;
+    color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -445,9 +446,9 @@
   header button {
     font: inherit;
     font-size: 0.8rem;
-    color: #dfe4ec;
-    background: #222a36;
-    border: 1px solid #2f3847;
+    color: var(--text);
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.3rem 0.7rem;
     cursor: pointer;
@@ -456,8 +457,8 @@
   .error {
     margin: 0;
     padding: 0.5rem 0.9rem;
-    background: #3a2226;
-    color: #f08a7a;
+    background: var(--danger-bg);
+    color: var(--danger);
     font-size: 0.85rem;
   }
   .body {
@@ -470,30 +471,30 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    background: #161a22;
+    background: var(--app-bg);
   }
   .tabs {
     flex: 0 0 auto;
     display: flex;
     gap: 0.25rem;
     padding: 0.4rem;
-    border-bottom: 1px solid #2f3847;
-    background: #1a1f29;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
   }
   .tab {
     display: flex;
     align-items: center;
-    border: 1px solid #2f3847;
+    border: 1px solid var(--border);
     border-radius: 4px;
     overflow: hidden;
   }
   .tab.active {
-    border-color: #8fb4e8;
+    border-color: var(--accent);
   }
   .tab button {
     font: inherit;
     font-size: 0.8rem;
-    color: #dfe4ec;
+    color: var(--text);
     background: transparent;
     border: 0;
     padding: 0.3rem 0.55rem;
@@ -510,7 +511,7 @@
     max-width: 24rem;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #8d97a8;
+    color: var(--muted);
     font-size: 0.62rem;
     font-weight: 400;
     white-space: nowrap;
@@ -519,20 +520,20 @@
     max-width: 24rem;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #78bfa5;
+    color: var(--success);
     font-size: 0.62rem;
     font-weight: 400;
     white-space: nowrap;
   }
   .tab-close {
-    color: #8d97a8 !important;
+    color: var(--muted) !important;
   }
   .new-tab {
     font: inherit;
     font-size: 0.9rem;
-    color: #b6bfcd;
+    color: var(--text-secondary);
     background: transparent;
-    border: 1px solid #2f3847;
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.2rem 0.6rem;
     cursor: pointer;
@@ -549,7 +550,7 @@
   }
   .hint {
     margin: 0;
-    color: #8d97a8;
+    color: var(--muted);
     font-size: 0.9rem;
   }
   .backdrop {
@@ -576,8 +577,8 @@
     max-height: 80vh;
     /* Only the list scrolls, so the close button stays reachable. */
     overflow: hidden;
-    background: #1f2530;
-    border: 1px solid #2f3847;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.1rem;
     display: flex;
@@ -595,7 +596,7 @@
   .settings-dialog h3 {
     margin: 0.25rem 0;
     font-size: 0.85rem;
-    color: #8fb4e8;
+    color: var(--accent);
     font-weight: 600;
   }
   .setting {
@@ -603,11 +604,11 @@
     align-items: center;
     gap: 0.65rem;
     padding: 0.35rem 0;
-    color: #dfe4ec;
+    color: var(--text);
     font-size: 0.82rem;
   }
   .setting input {
-    accent-color: #8fb4e8;
+    accent-color: var(--accent);
   }
   .dialog-head {
     display: flex;
@@ -630,16 +631,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #b6bfcd;
+    color: var(--text-secondary);
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
     cursor: pointer;
   }
   button.close:hover {
-    color: #dfe4ec;
-    background: #222a36;
-    border-color: #2f3847;
+    color: var(--text);
+    background: var(--surface-hover);
+    border-color: var(--border);
   }
   .confirm-paste-dialog .hint {
     line-height: 1.5;
@@ -653,9 +654,9 @@
   .dialog button.confirm {
     font: inherit;
     font-size: 0.8rem;
-    color: #12161d;
-    background: #8fb4e8;
-    border: 1px solid #8fb4e8;
+    color: var(--accent-contrast);
+    background: var(--accent);
+    border: 1px solid var(--accent);
     border-radius: 4px;
     padding: 0.35rem 0.7rem;
     cursor: pointer;
@@ -672,9 +673,9 @@
     font: inherit;
     font-size: 0.82rem;
     text-align: left;
-    color: #dfe4ec;
-    background: #222a36;
-    border: 1px solid #2f3847;
+    color: var(--text);
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.45rem 0.6rem;
     cursor: pointer;
@@ -683,19 +684,19 @@
     gap: 0.15rem;
   }
   .picker-list button:hover {
-    border-color: #8fb4e8;
+    border-color: var(--accent);
   }
   .detail {
     font-size: 0.72rem;
-    color: #8d97a8;
+    color: var(--muted);
   }
   .dialog button.ghost {
     font: inherit;
     font-size: 0.8rem;
     align-self: flex-start;
-    color: #b6bfcd;
+    color: var(--text-secondary);
     background: transparent;
-    border: 1px solid #2f3847;
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.35rem 0.7rem;
     cursor: pointer;
