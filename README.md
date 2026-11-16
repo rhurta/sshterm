@@ -229,17 +229,17 @@ Scrollbars are styled thin (6px) and matched to the dark theme across all scroll
 
 ### Local and reverse SSH tunnels (M7, partial)
 
-The connection editor can store local (`-L`) and reverse (`-R`) TCP forwards. Each forward has a listen endpoint and a destination endpoint. Both accept `host:port`; a listen endpoint may also be a bare port (OpenSSH's loopback default). IPv6 addresses must be bracketed, for example `[::1]:5432`.
+The connection editor can store local (`-L`) and reverse (`-R`) TCP forwards. Each forward has a listen endpoint and a destination endpoint and its own enable/disable switch. Disabled forwards remain saved but are omitted from the SSH command line. Both accept `host:port`; a listen endpoint may also be a bare port (OpenSSH's loopback default). IPv6 addresses must be bracketed, for example `[::1]:5432`.
 
 Local forwarding listens on the client machine and connects to the destination from the SSH server. Reverse forwarding listens on the SSH server and connects to the destination from the client machine. Forwards are attached to the connection's interactive SSH process: they start with the terminal session and close when that session closes. Multiple forwards are passed as separate `-L` and `-R` arguments. `ExitOnForwardFailure=yes` makes OpenSSH terminate the connection if it cannot establish a requested listener (for example, a port is already in use). For a reverse listener to accept connections from machines other than the SSH server itself, the server's `sshd` configuration must permit it with `GatewayPorts`.
 
-The session tab shows the number of configured forwards. This is a configuration indicator, not a live health check. A failed forward is reported through the SSH process output and session exit. Standalone tunnel-only sessions, start/stop controls independent of the terminal, structured active/failed status, and dynamic SOCKS forwarding (`-D`) remain future work.
+The session tab shows the number of enabled forwards. This is a configuration indicator, not a live health check. SSH diagnostics for forwarding and connection failures are also surfaced in the workspace error banner while the original output remains visible in the terminal. Standalone tunnel-only sessions, start/stop controls independent of the terminal, structured active/failed status, and dynamic SOCKS forwarding (`-D`) remain future work.
 
 ### Jump hosts (M5)
 
-Each connection can reference an ordered list of saved jump-host connection IDs. The connection editor lets the user add, reorder, and remove hops; the session tab shows the resolved route. The backend expands nested jump definitions into an outermost-to-target chain, validates missing IDs, duplicates and cycles, and passes the chain to Windows OpenSSH using `-J`.
+Each connection can reference an ordered list of saved jump-host connection IDs. The connection editor lets the user add, reorder, and remove hops; the session tab shows the resolved route. The backend expands nested jump definitions into an outermost-to-target chain, validates missing IDs, duplicates and cycles, and passes the chain to Windows OpenSSH using `-J`. Each configured hop can be disabled without deleting it; disabled hops remain saved but are omitted from the active route. The jump-host picker has a search box for connection name, host, or user.
 
-The session's secured askpass pipe holds only the credentials needed for its route. OpenSSH prompt text is matched to the exact `user@host` (or configured key path for the destination), and each matching credential is delivered at most once. This supports different saved passwords for different hops without putting passwords in arguments, environment variables, or files. A generic `Password:` prompt is answered only when there is a single credential, so ambiguous prompts fail closed.
+The session's secured askpass pipe holds only the credentials needed for its active route. The app also reports recognized SSH connection and jump-host errors in the workspace error banner. OpenSSH prompt text is matched to the exact `user@host` (or configured key path for the destination), and each matching credential is delivered at most once. This supports different saved passwords for different hops without putting passwords in arguments, environment variables, or files. A generic `Password:` prompt is answered only when there is a single credential, so ambiguous prompts fail closed.
 
 Current phase-1 limitations: a jump host that uses a saved custom private-key path is rejected with a clear error; use password or SSH-agent authentication for jump hops. Every hop and the target must have a distinct `user@host` identity because OpenSSH prompts omit the port; this avoids assigning a password to the wrong route member. Native per-hop key configuration and chained `direct-tcpip` channels remain part of M10.
 
@@ -259,5 +259,5 @@ log_mode   = "screen"   # "screen" | "raw"
 - The named askpass pipe is restricted to the current user; a session-scoped token authorizes requests, and each matched hop credential is returned at most once.
 - `ssh.exe` child processes are killed when the app exits or the vault locks.
 - Private key files are stored by path only (the vault keeps the path, not the key content).
-- Host keys: trust-on-first-use; a changed key triggers a hard warning.
+- Host keys: trust-on-first-use; a changed key triggers a hard warning. The custom `UserKnownHostsFile` value is quoted so install paths containing spaces are interpreted as a single file path.
 - Clipboard cleared shortly after copying a password.
