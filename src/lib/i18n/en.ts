@@ -84,6 +84,7 @@ export const en = {
   "editor.jump.moveUp": "Move jump host earlier",
   "editor.jump.moveDown": "Move jump host later",
   "editor.jump.remove": "Remove jump host",
+  "editor.jumpCycleValidation": "This selection would create a jump-host loop.",
   "editor.authType": "Method",
   "editor.auth.password": "Password",
   "editor.auth.key": "Key file",
