@@ -48,7 +48,14 @@
 </script>
 
 <div class="window-shell" data-theme={theme}>
-  <TitleBar {theme} onchange={changeTheme} />
+  <TitleBar
+    {theme}
+    {dir}
+    {unlocked}
+    onchange={changeTheme}
+    onsettings={() => window.dispatchEvent(new Event("sshterm:open-settings"))}
+    onlock={lock}
+  />
   {#if ready}
     <div class="screen">
       {#if unlocked}
