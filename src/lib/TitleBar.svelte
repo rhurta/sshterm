@@ -6,10 +6,18 @@
 
   let {
     theme,
+    dir,
+    unlocked,
     onchange,
+    onsettings,
+    onlock,
   }: {
     theme: AppTheme;
+    dir: string;
+    unlocked: boolean;
     onchange: (theme: AppTheme) => void;
+    onsettings: () => void;
+    onlock: () => void;
   } = $props();
 
   const appWindow = getCurrentWindow();
@@ -111,6 +119,7 @@
   >
     <span class="brand">sshterm</span>
     <span class="caption">SSH Terminal Manager</span>
+    {#if dir}<span class="path" title={dir}>{dir}</span>{/if}
   </button>
 
   <div class="titlebar-actions">
@@ -125,6 +134,10 @@
       <option value="light">{t("theme.light")}</option>
       <option value="nord">{t("theme.nord")}</option>
     </select>
+    {#if unlocked}
+      <button type="button" class="action-button" onclick={onsettings}>{t("settings.title")}</button>
+      <button type="button" class="action-button" onclick={onlock}>{t("home.lock")}</button>
+    {/if}
 
     <div class="window-controls">
       <button type="button" class="window-button" onclick={minimize} aria-label={t("window.minimize")} title={t("window.minimize")}>
@@ -208,6 +221,17 @@
     color: var(--muted);
     font-size: 0.76rem;
     font-weight: 400;
+    flex: 0 0 auto;
+  }
+  .path {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 400;
+    margin-left: 0.35rem;
   }
   .titlebar-actions,
   .window-controls {
@@ -233,6 +257,19 @@
   .window-controls {
     gap: 0;
   }
+  .action-button {
+    font: inherit;
+    font-size: 0.72rem;
+    color: var(--text);
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.25rem 0.55rem;
+    margin-right: 0.35rem;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .action-button:hover { border-color: var(--accent); }
   .window-button {
     appearance: none;
     width: 2.85rem;
@@ -309,6 +346,7 @@
   .corner-bottom-right { bottom: 0; right: 0; cursor: nwse-resize; }
   @media (max-width: 520px) {
     .caption { display: none; }
+    .path { display: none; }
     .titlebar { gap: 0.35rem; padding-left: 0.55rem; }
     .window-button { width: 2.3rem; }
     .titlebar-actions { gap: 0.35rem; }
