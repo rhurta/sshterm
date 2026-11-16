@@ -51,6 +51,18 @@ fn new_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Normalize the same identity representation used by the askpass prompt
+/// matcher, which omits IPv6 brackets and does not include the port.
+fn prompt_identity(user: &str, host: &str) -> (String, String) {
+    (
+        user.to_ascii_lowercase(),
+        host.trim()
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_ascii_lowercase(),
+    )
+}
+
 /// Appends one diagnostic line to logs/sshterm.log next to the executable.
 /// Only metadata and byte counts are recorded, never terminal contents or
 /// credentials. Failures to write are ignored: logging must not break a session.
@@ -98,7 +110,7 @@ pub async fn session_open(
         for hop in &hops {
             // Prompts omit the SSH port, so even agent-authenticated hops must
             // have distinct user@host identities from every other route member.
-            let key = (hop.user.to_ascii_lowercase(), hop.host.to_ascii_lowercase());
+            let key = prompt_identity(&hop.user, &hop.host);
             if !prompt_targets.insert(key) {
                 return Err("jump_ambiguous_credentials".to_string());
             }
@@ -117,7 +129,7 @@ pub async fn session_open(
                 });
             }
         }
-        let target_key = (conn.user.to_ascii_lowercase(), conn.host.to_ascii_lowercase());
+        let target_key = prompt_identity(&conn.user, &conn.host);
         if !prompt_targets.insert(target_key) {
             return Err("jump_ambiguous_credentials".to_string());
         }
