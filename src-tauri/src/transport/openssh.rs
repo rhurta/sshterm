@@ -335,7 +335,7 @@ mod tests {
         assert_eq!(args[0], "ssh.exe");
         assert!(args.contains(&"-tt".to_string()));
         assert!(args.windows(2).any(|w| w[0] == "-p" && w[1] == "2222"));
-        assert!(args.contains(&"UserKnownHostsFile=known_hosts".to_string()));
+        assert!(args.contains(&r#"UserKnownHostsFile="known_hosts""#.to_string()));
         assert!(args.contains(&"StrictHostKeyChecking=accept-new".to_string()));
         assert!(args.contains(&"ServerAliveInterval=45".to_string()));
         assert!(args.contains(&"ServerAliveCountMax=3".to_string()));
