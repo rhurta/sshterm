@@ -13,6 +13,7 @@ export const en = {
   "window.resize": "Resize window",
 
   "settings.title": "Settings",
+  "settings.language": "Language",
   "settings.terminal": "Terminal clipboard and mouse",
   "settings.copyOnSelection": "Copy automatically when text is selected",
   "settings.rightClickCopy": "Right-click copies selected text",
