@@ -93,7 +93,7 @@ export const es: Record<MessageKey, string> = {
   "editor.tunnel.bind": "Dirección y puerto de escucha",
   "editor.tunnel.destination": "Dirección y puerto de destino",
   "editor.tunnel.localHint": "Local (-L): escucha en este equipo; conecta con el destino desde el servidor SSH.",
-  "editor.tunnel.remoteHint": "Inverso (-R): escucha en el servidor SSH; conecta con el destino desde este equipo.",
+  "editor.tunnel.remoteHint": "Inverso (-R): escucha en el servidor SSH; conecta con el destino desde este equipo. El acceso desde otros equipos también requiere que sshd permita GatewayPorts.",
   "editor.tunnel.add": "Añadir túnel",
   "editor.tunnel.remove": "Quitar túnel",
   "editor.tunnelRequired": "Escribe un extremo de escucha y un extremo de destino.",
