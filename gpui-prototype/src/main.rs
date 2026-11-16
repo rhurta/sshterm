@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use gpui_kit::{
     App, Context, Render, Window, WindowOptions, div, prelude::*, px,
-    component::{h_flex, list::ListItem, tree::{tree, TreeItem, TreeState}},
+    component::{h_flex, list::ListItem, tree::{tree, TreeItem, TreeState}, Icon, IconName},
     *,
 };
 
@@ -187,19 +187,29 @@ impl Render for SshTermPrototype {
                         .child(h_flex().gap_2().child("·").child(label));
                 };
 
-                let row_view = view.clone();
-                view.update(app, move |this, cx| {
-                    let row_label = if is_folder {
-                        format!("{}  {}", if is_expanded { "▾" } else { "▸" }, label)
+                view.update(app, move |_this, cx| {
+                    let (icon, icon_color) = if is_folder {
+                        (
+                            if is_expanded { IconName::FolderOpen } else { IconName::FolderClosed },
+                            gpui_kit::rgb(0xe5b567),
+                        )
                     } else {
-                        format!("◦  {}", label)
+                        (IconName::Cpu, gpui_kit::rgb(0x8fb9e8))
                     };
+                    let row_label = label.clone();
 
                     ListItem::new(ix)
                         .pl(px(12.0 + depth as f32 * 16.0))
                         .selected(selected)
                         .accessibility_label(row_label.clone())
-                        .child(h_flex().gap_2().child(row_label))
+                        .child(
+                            h_flex()
+                                .items_center()
+                                .gap_2()
+                                .text_color(gpui_kit::rgb(0xd7deea))
+                                .child(Icon::new(icon).small().text_color(icon_color))
+                                .child(row_label),
+                        )
                         .on_drag(
                             DragPayload { id: node_id },
                             |drag: &DragPayload, _window, _app, cx| cx.new(|_| *drag),
@@ -350,7 +360,7 @@ fn find_siblings_mut(nodes: &mut Vec<TreeNode>, target_id: u64) -> Option<&mut V
 }
 
 fn main() {
-    application().run(|cx| {
+    application().with_assets(gpui_kit::assets::Assets).run(|cx| {
         init(cx);
         open_window(WindowOptions::default(), cx, |_, cx| {
             cx.new(|cx| SshTermPrototype::new(cx))
