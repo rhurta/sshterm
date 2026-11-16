@@ -13,6 +13,7 @@
   const DEFAULT_THEME: AppTheme = "dark";
   let ready = $state(false); // avoid briefly showing the wrong locale or theme
   let unlocked = $state(false);
+  let settingsOpen = $state(false);
   let dir = $state("");
   let theme = $state<AppTheme>(DEFAULT_THEME);
 
@@ -53,13 +54,13 @@
     {dir}
     {unlocked}
     onchange={changeTheme}
-    onsettings={() => window.dispatchEvent(new Event("sshterm:open-settings"))}
+    onsettings={() => (settingsOpen = true)}
     onlock={lock}
   />
   {#if ready}
     <div class="screen">
       {#if unlocked}
-        <Workspace {dir} {theme} onlock={lock} />
+        <Workspace {dir} {theme} onlock={lock} bind:settingsOpen />
       {:else}
         <LockScreen onunlocked={() => (unlocked = true)} />
       {/if}
