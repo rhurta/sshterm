@@ -225,7 +225,6 @@
 
 <div class="app">
   <header>
-    <span class="brand">sshterm</span>
     <span class="dir">{dir}</span>
     <div class="header-right">
       <LanguageSelect />
@@ -423,11 +422,6 @@
     padding: 0.5rem 0.9rem;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
-  }
-  .brand {
-    font-weight: 600;
-    color: var(--accent);
-    white-space: nowrap;
   }
   .dir {
     flex: 1;
