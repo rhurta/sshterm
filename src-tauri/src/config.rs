@@ -1,7 +1,7 @@
 //! Non-secret settings, saved in `config.toml` next to the exe.
 //!
 //! They are kept outside the vault on purpose: they are needed before unlocking
-//! (for example, the lock screen language).
+//! (for example, the lock screen language and application theme).
 
 use std::fs::{self, File};
 use std::io::Write;
