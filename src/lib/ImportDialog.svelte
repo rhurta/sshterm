@@ -303,7 +303,7 @@
     color: var(--accent);
   }
   .warning {
-    color: #e3b341;
+    color: var(--warning);
   }
   .error {
     margin: 0;
