@@ -3,6 +3,16 @@
 export const en = {
   "language.label": "Language",
 
+  "settings.title": "Settings",
+  "settings.terminal": "Terminal clipboard and mouse",
+  "settings.copyOnSelection": "Copy automatically when text is selected",
+  "settings.rightClickCopy": "Right-click copies selected text",
+  "settings.middleClickCopy": "Middle-click copies selected text",
+  "settings.rightClickPaste": "Right-click pastes when there is no selection",
+  "settings.middleClickPaste": "Middle-click pastes when there is no selection",
+  "settings.ctrlCCopy": "Ctrl+C copies selected text (otherwise sends Ctrl+C to SSH)",
+  "settings.ctrlVPaste": "Ctrl+V pastes from the clipboard",
+
   "lock.title.unlock": "Vault locked",
   "lock.title.create": "Create your master password",
   "lock.hint.create":
