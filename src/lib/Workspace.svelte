@@ -7,7 +7,8 @@
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import LanguageSelect from "./LanguageSelect.svelte";
-  import type { Connection, ConnectionSummary, Tab } from "$lib/types";
+  import type { Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
+  import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
 
   let { dir, onlock }: { dir: string; onlock: () => void } = $props();
 
@@ -20,6 +21,8 @@
   let newTabButton = $state<HTMLButtonElement | null>(null);
   let refreshToken = $state(0);
   let error = $state("");
+  let settings = $state<TerminalSettings>({ ...DEFAULT_TERMINAL_SETTINGS });
+  let settingsOpen = $state(false);
 
   let openIds = $derived(tabs.map((tab) => tab.connId));
 
@@ -34,12 +37,30 @@
     return detail ? `${base} — ${detail}` : base;
   }
 
-  onMount(() =>
-    subscribeSessionErrors((sessionId, message) => {
+  onMount(() => {
+    void invoke<TerminalSettings>("config_get_terminal_settings")
+      .then((value) => (settings = value))
+      .catch(() => {});
+    return subscribeSessionErrors((sessionId, message) => {
       const tab = tabs.find((item) => item.sessionId === sessionId);
       error = tab ? `${tab.name}: ${message}` : message;
-    }),
-  );
+    });
+  });
+
+  async function setTerminalSetting<K extends keyof TerminalSettings>(
+    key: K,
+    value: TerminalSettings[K],
+  ) {
+    const previous = settings;
+    const next = { ...settings, [key]: value };
+    settings = next;
+    try {
+      await invoke("config_set_terminal_settings", { settings: next });
+    } catch (e) {
+      settings = previous;
+      error = String(e);
+    }
+  }
 
   function resolveJumpNames(connection: ConnectionSummary, all: ConnectionSummary[]): string[] {
     const byId = new Map(all.map((item) => [item.id, item]));
@@ -151,7 +172,10 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && picker) {
+    if (e.key === "Escape" && settingsOpen) {
+      e.preventDefault();
+      settingsOpen = false;
+    } else if (e.key === "Escape" && picker) {
       e.preventDefault();
       closePicker();
     }
@@ -180,6 +204,7 @@
     <span class="dir">{dir}</span>
     <div class="header-right">
       <LanguageSelect />
+      <button onclick={() => (settingsOpen = true)}>{t("settings.title")}</button>
       <button onclick={onlock}>{t("home.lock")}</button>
     </div>
   </header>
@@ -237,6 +262,7 @@
               sessionId={tab.sessionId}
               active={activeId === tab.sessionId}
               onclosed={dropTab}
+              {settings}
             />
           {/each}
         </div>
@@ -247,6 +273,27 @@
       {/if}
     </main>
   </div>
+
+  {#if settingsOpen}
+    <div class="backdrop">
+      <button class="scrim" tabindex="-1" aria-label={t("workspace.close")} onclick={() => (settingsOpen = false)}></button>
+      <section class="dialog settings-dialog" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
+        <div class="dialog-head">
+          <h2>{t("settings.title")}</h2>
+          <button class="close" onclick={() => (settingsOpen = false)} title={t("workspace.close")}>&times;</button>
+        </div>
+        <h3>{t("settings.terminal")}</h3>
+        <label class="setting"><input type="checkbox" checked={settings.copy_on_selection} onchange={(e) => setTerminalSetting("copy_on_selection", e.currentTarget.checked)} />{t("settings.copyOnSelection")}</label>
+        <label class="setting"><input type="checkbox" checked={settings.right_click_copy} onchange={(e) => setTerminalSetting("right_click_copy", e.currentTarget.checked)} />{t("settings.rightClickCopy")}</label>
+        <label class="setting"><input type="checkbox" checked={settings.middle_click_copy} onchange={(e) => setTerminalSetting("middle_click_copy", e.currentTarget.checked)} />{t("settings.middleClickCopy")}</label>
+        <label class="setting"><input type="checkbox" checked={settings.right_click_paste} onchange={(e) => setTerminalSetting("right_click_paste", e.currentTarget.checked)} />{t("settings.rightClickPaste")}</label>
+        <label class="setting"><input type="checkbox" checked={settings.middle_click_paste} onchange={(e) => setTerminalSetting("middle_click_paste", e.currentTarget.checked)} />{t("settings.middleClickPaste")}</label>
+        <label class="setting"><input type="checkbox" checked={settings.ctrl_c_copy} onchange={(e) => setTerminalSetting("ctrl_c_copy", e.currentTarget.checked)} />{t("settings.ctrlCCopy")}</label>
+        <label class="setting"><input type="checkbox" checked={settings.ctrl_v_paste} onchange={(e) => setTerminalSetting("ctrl_v_paste", e.currentTarget.checked)} />{t("settings.ctrlVPaste")}</label>
+        <button class="ghost" onclick={() => (settingsOpen = false)}>{t("editor.cancel")}</button>
+      </section>
+    </div>
+  {/if}
 
   {#if picker}
     <div class="backdrop">
@@ -480,6 +527,27 @@
   }
   .dialog:focus {
     outline: none;
+  }
+  .settings-dialog {
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .settings-dialog h3 {
+    margin: 0.25rem 0;
+    font-size: 0.85rem;
+    color: #8fb4e8;
+    font-weight: 600;
+  }
+  .setting {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.35rem 0;
+    color: #dfe4ec;
+    font-size: 0.82rem;
+  }
+  .setting input {
+    accent-color: #8fb4e8;
   }
   .dialog-head {
     display: flex;
