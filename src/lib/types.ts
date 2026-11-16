@@ -7,7 +7,6 @@ export interface TerminalSettings {
   right_click_paste: boolean;
   middle_click_paste: boolean;
   ctrl_c_copy: boolean;
-  ctrl_v_paste: boolean;
 }
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
@@ -17,7 +16,6 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   right_click_paste: true,
   middle_click_paste: true,
   ctrl_c_copy: true,
-  ctrl_v_paste: true,
 };
 
 export type Auth =
