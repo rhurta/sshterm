@@ -137,9 +137,13 @@
       if (!hop) return false;
       const next = new Set(seen);
       next.add(id);
-      return (hop.jump ?? []).some((nested) => reachesRoot(nested, next));
+      return (hop.jump ?? [])
+        .filter((nested) => !(hop.jump_disabled ?? []).includes(nested))
+        .some((nested) => reachesRoot(nested, next));
     }
-    return form.jump.some((id) => reachesRoot(id, new Set()));
+    return form.jump
+      .filter((id) => isJumpEnabled(id))
+      .some((id) => reachesRoot(id, new Set()));
   }
 
   async function submit(event: SubmitEvent) {
