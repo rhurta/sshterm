@@ -303,7 +303,7 @@
   {#if settingsOpen}
     <div class="backdrop">
       <button class="scrim" tabindex="-1" aria-label={t("workspace.close")} onclick={() => (settingsOpen = false)}></button>
-      <section class="dialog settings-dialog" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
+      <section class="dialog settings-dialog" role="dialog" aria-modal="true" aria-label={t("settings.title")} tabindex="-1">
         <div class="dialog-head">
           <h2>{t("settings.title")}</h2>
           <button class="close" onclick={() => (settingsOpen = false)} title={t("workspace.close")}>&times;</button>
@@ -335,6 +335,7 @@
         aria-modal="true"
         aria-labelledby="multiline-paste-title"
         aria-describedby="multiline-paste-warning"
+        tabindex="-1"
       >
         <div class="dialog-head">
           <h2 id="multiline-paste-title">{t("settings.multilinePasteTitle")}</h2>
