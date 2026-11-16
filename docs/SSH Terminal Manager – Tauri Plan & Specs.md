@@ -55,7 +55,7 @@ Actual path behavior:
 - sshterm.vault, config.toml, known_hosts, logs/, highlight/ and webview-data/ are derived from that directory.
 - WEBVIEW2_USER_DATA_FOLDER is set to webview-data/ before the Tauri builder creates the window.
 - SSH lookup order is bin/ssh.exe, %SystemRoot%\System32\OpenSSH\ssh.exe, then %SystemRoot%\System32\ssh.exe. If none exists, session startup returns ssh_not_found.
-- config.toml supports language, logging, and terminal clipboard/mouse preferences. Font and default-keepalive settings are not implemented there.
+- config.toml supports language, logging, terminal clipboard/mouse preferences, and optional multi-line paste confirmation. Font and default-keepalive settings are not implemented there.
 - known_hosts is maintained by OpenSSH through the configured UserKnownHostsFile; it is not currently populated from the known_hosts map in the vault payload.
 - highlight/ has a path helper and is ignored by Git, but the rule loader and rule files are not implemented.
 - logs/sshterm.log is a separate diagnostic log containing session metadata and byte counts. Per-session terminal logs are separate files.
@@ -586,8 +586,9 @@ Terminal clipboard behavior is configured independently in the application Setti
 | `right_click_paste` | `true` | Right-click pastes when there is no selection, or when a selection exists but right-click copy is disabled. Any selection is cleared before paste. |
 | `middle_click_paste` | `true` | Middle-click pastes when there is no selection, or when a selection exists but middle-click copy is disabled. Any selection is cleared before paste. |
 | `ctrl_c_copy` | `true` | Ctrl+C copies when text is selected and clears the selection. With no selection, Ctrl+C is sent to the remote shell as the interrupt character. If this setting is disabled, Ctrl+C is sent to the remote shell even when text is selected. |
+| `confirm_multiline_paste` | `true` | Ask for confirmation before pasting clipboard text containing a line break. The warning is optional and can be disabled in Settings. |
 
-Ctrl+V always pastes from the system clipboard and is not configurable. Its custom key handler prevents WebView's native paste handling so the same clipboard text is not inserted twice. Right- and middle-click prefer copy when a selection exists and their copy option is enabled; otherwise, their paste option can run and clears any existing selection first. Clipboard access is performed by the WebView clipboard API; unavailable or denied clipboard permissions fail without sending unintended terminal input.
+Ctrl+V always pastes from the system clipboard and is not configurable. Its custom key handler prevents WebView's native paste handling so the same clipboard text is not inserted twice. Right- and middle-click prefer copy when a selection exists and their copy option is enabled; otherwise, their paste option can run and clears any existing selection first. When multi-line confirmation is enabled, all paste entry points (Ctrl+V, right-click and middle-click) use the same warning before sending clipboard text to the terminal. The dialog reports the number of lines but does not display clipboard contents; Cancel, Escape or clicking outside the dialog cancels the paste. Single-line paste proceeds immediately. Clipboard access is performed by the WebView clipboard API; unavailable or denied clipboard permissions fail without sending unintended terminal input.
 
 Example:
 
@@ -599,4 +600,5 @@ middle_click_copy = true
 right_click_paste = true
 middle_click_paste = true
 ctrl_c_copy = true
+confirm_multiline_paste = true
 ```
