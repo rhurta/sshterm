@@ -5,6 +5,11 @@ export type Auth =
   | { type: "key"; path: string; passphrase?: string | null }
   | { type: "agent" };
 
+export type Tunnel =
+  | { kind: "local"; bind: string; dest: string }
+  | { kind: "remote"; bind: string; dest: string }
+  | { kind: "dynamic"; bind: string };
+
 export interface Colors {
   fg: string;
   bg: string;
@@ -22,7 +27,7 @@ export interface Connection {
   protected: boolean;
   /** Ordered saved connection IDs used as ProxyJump hops. */
   jump: string[];
-  tunnels: unknown[];
+  tunnels: Tunnel[];
   sftp?: unknown | null;
   highlight: string[];
 }
@@ -36,6 +41,7 @@ export interface ConnectionSummary {
   user: string;
   /** Ordered jump-host connection IDs; contains no credentials. */
   jump: string[];
+  tunnel_count: number;
 }
 
 export type TreeNode =
