@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { t } from "$lib/i18n/index.svelte";
+  import { hasMessage, t } from "$lib/i18n/index.svelte";
   import type { Auth, Connection, ConnectionSummary } from "$lib/types";
 
   let {
@@ -12,7 +12,7 @@
   }: {
     conn: Connection;
     isNew: boolean;
-    onsave: (c: Connection) => void;
+    onsave: (c: Connection) => Promise<string | null>;
     oncancel: () => void;
   } = $props();
 
@@ -61,9 +61,29 @@
     initial.auth.type === "key" ? (initial.auth.passphrase ?? "") : "",
   );
   let validation = $state("");
+  let saving = $state(false);
 
-  function submit(event: SubmitEvent) {
+  function errorText(code: string): string {
+    const key = `error.${code}`;
+    return hasMessage(key) ? t(key) : t("lock.error.unexpected", { detail: code });
+  }
+
+  function jumpWouldCycle(): boolean {
+    const byId = new Map(connections.map((candidate) => [candidate.id, candidate]));
+    function reachesRoot(id: string, seen: Set<string>): boolean {
+      if (id === form.id || seen.has(id)) return true;
+      const hop = byId.get(id);
+      if (!hop) return false;
+      const next = new Set(seen);
+      next.add(id);
+      return (hop.jump ?? []).some((nested) => reachesRoot(nested, next));
+    }
+    return form.jump.some((id) => reachesRoot(id, new Set()));
+  }
+
+  async function submit(event: SubmitEvent) {
     event.preventDefault();
+    if (saving) return;
     const port = Number(form.port);
     const keepalive = Number(form.keepalive_secs);
     if (
@@ -76,6 +96,11 @@
       validation = t("editor.validation");
       return;
     }
+    if (jumpWouldCycle()) {
+      validation = t("editor.jumpCycleValidation");
+      section = "jumps";
+      return;
+    }
     const auth: Auth =
       authType === "password"
         ? { type: "password", password }
@@ -83,7 +108,13 @@
           ? { type: "key", path: keyPath, passphrase: passphrase || null }
           : { type: "agent" };
     validation = "";
-    onsave({ ...form, port, keepalive_secs: keepalive, auth });
+    saving = true;
+    const failure = await onsave({ ...form, port, keepalive_secs: keepalive, auth });
+    saving = false;
+    if (failure) {
+      validation = errorText(failure);
+      if (failure.startsWith("jump_")) section = "jumps";
+    }
   }
 </script>
 
@@ -204,7 +235,7 @@
     {/if}
 
     <div class="buttons">
-      <button type="submit">{t("editor.save")}</button>
+      <button type="submit" disabled={saving}>{t("editor.save")}</button>
       <button type="button" class="ghost" onclick={oncancel}>{t("editor.cancel")}</button>
     </div>
   </form>
