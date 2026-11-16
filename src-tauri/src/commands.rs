@@ -114,3 +114,18 @@ pub fn config_set_language(language: String) -> Result<(), String> {
     cfg.language = language;
     cfg.save(&path).map_err(|e| e.to_string())
 }
+
+
+/// Terminal clipboard and mouse preferences stored in config.toml.
+#[tauri::command]
+pub fn config_get_terminal_settings() -> config::TerminalSettings {
+    Config::load(&paths::config_path()).terminal
+}
+
+#[tauri::command]
+pub fn config_set_terminal_settings(settings: config::TerminalSettings) -> Result<(), String> {
+    let path = paths::config_path();
+    let mut cfg = Config::load(&path);
+    cfg.terminal = settings;
+    cfg.save(&path).map_err(|e| e.to_string())
+}
