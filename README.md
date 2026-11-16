@@ -115,10 +115,13 @@ Run from the repository root:
 npm ci
 npm run check
 npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --all
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo test --manifest-path src-tauri/Cargo.toml --locked
 npm run tauri -- build --no-bundle
 ```
+
+The first `cargo fmt` command normalizes the Rust source before checking it. This matches the current CI workflow, which avoids committing unrelated repository-wide formatting changes while still ensuring the checked-out Rust code is formatted.
 
 ### Windows CI
 
@@ -145,7 +148,7 @@ The connection tree uses browser HTML5 drag-and-drop events. Tauri's own webview
 }
 ```
 
-Keep `dragDropEnabled: false` for the main window when using the frontend's HTML5 drag-and-drop implementation. This disables Tauri's native `DragDropEvent` handling for that webview; it does not disable the tree's HTML drag-and-drop. If native file-drop events are needed in the future, the app will need to handle those through Tauri's native event API instead of relying on browser drag events.
+Keep `dragDropEnabled: false` for the main window when using the frontend's HTML5 drag-and-drop implementation. This disables Tauri's native `DragDropEvent` handling for that webview; it does not disable the tree's HTML drag-and-drop. If native file-drop events are needed in the future, the app will need to handle those through Tauri's native event API instead of relying on browser drag events. See the [Tauri window configuration reference](https://v2.tauri.app/reference/config/#windowconfig).
 
 ## Architecture notes
 
