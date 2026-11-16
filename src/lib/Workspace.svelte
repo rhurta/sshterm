@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionSidebar from "./ConnectionSidebar.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
@@ -23,10 +24,31 @@
   let openIds = $derived(tabs.map((tab) => tab.connId));
 
   /** The backend sends short codes; here they are converted to messages. */
-  function errorText(code: string): string {
-    const key = `error.${code}`;
-    return hasMessage(key) ? t(key) : t("lock.error.unexpected", { detail: code });
+  function errorText(value: string): string {
+    const [code, ...detailParts] = value.split(":");
+    const key = `error.${code.trim()}`;
+    const base = hasMessage(key)
+      ? t(key)
+      : t("lock.error.unexpected", { detail: code.trim() });
+    const detail = detailParts.join(":").trim();
+    return detail ? `${base} — ${detail}` : base;
   }
+
+  onMount(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<{ id: string; message: string }>("session:error", (event) => {
+      const tab = tabs.find((item) => item.sessionId === event.payload.id);
+      error = tab ? `${tab.name}: ${event.payload.message}` : event.payload.message;
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
 
   function resolveJumpNames(connection: ConnectionSummary, all: ConnectionSummary[]): string[] {
     const byId = new Map(all.map((item) => [item.id, item]));
@@ -34,18 +56,20 @@
     const visited = new Set<string>();
     const names: string[] = [];
 
-    function append(id: string) {
-      if (active.has(id) || visited.has(id)) return;
+    function append(id: string, disabled: string[] = []) {
+      if (disabled.includes(id) || active.has(id) || visited.has(id)) return;
       const hop = byId.get(id);
       if (!hop) return;
       active.add(id);
-      for (const nested of hop.jump ?? []) append(nested);
+      for (const nested of hop.jump ?? []) append(nested, hop.jump_disabled ?? []);
       active.delete(id);
       visited.add(id);
       names.push(hop.name);
     }
 
-    for (const id of connection.jump ?? []) append(id);
+    for (const id of connection.jump ?? []) {
+      append(id, connection.jump_disabled ?? []);
+    }
     return names;
   }
 
@@ -61,6 +85,7 @@
       colors: null,
       protected: false,
       jump: [],
+      jump_disabled: [],
       tunnels: [],
       sftp: null,
       highlight: [],
