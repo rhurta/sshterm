@@ -163,6 +163,7 @@ mod tests {
         let cfg = Config::load(&path);
         assert!(cfg.log_output);
         assert_eq!(cfg.log_mode, LogMode::Screen);
+        assert_eq!(cfg.theme, AppTheme::Dark);
     }
 
     #[test]
