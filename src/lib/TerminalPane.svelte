@@ -113,12 +113,22 @@
       const mod = event.ctrlKey || event.metaKey;
       if (!mod || event.altKey) return true;
       const key = event.key.toLowerCase();
-      if (key === "c" && t.hasSelection()) {
-        if (settings.ctrl_c_copy) copySelection();
+      if (key === "c") {
+        if (t.hasSelection() && settings.ctrl_c_copy) {
+          copySelection();
+        } else {
+          // With no selection (or when copy-on-Ctrl+C is disabled), deliver
+          // the interrupt directly to the remote PTY.
+          void invoke("session_write", {
+            id: sessionId,
+            data: toBase64(new TextEncoder().encode("\u0003")),
+          });
+        }
         return false;
       }
       if (key === "v") {
-        if (settings.ctrl_v_paste) pasteClipboard();
+        // Ctrl+V is intentionally unconditional and is not a user setting.
+        pasteClipboard();
         return false;
       }
       return true;
