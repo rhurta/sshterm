@@ -7,19 +7,22 @@
   import { toBase64 } from "$lib/encoding";
   import { LogCapture } from "$lib/logCapture";
   import { subscribeClosed, subscribeData, releaseSession } from "$lib/sessionBus";
-  import type { TerminalSettings } from "$lib/types";
+  import type { AppTheme, TerminalSettings } from "$lib/types";
+  import { getTerminalTheme } from "$lib/theme";
 
   let {
     sessionId,
     active,
     onclosed,
     settings,
+    theme,
     onmultilinepaste,
   }: {
     sessionId: string;
     active: boolean;
     onclosed: (id: string) => void;
     settings: TerminalSettings;
+    theme: AppTheme;
     onmultilinepaste: (text: string) => Promise<boolean>;
   } = $props();
 
@@ -58,7 +61,7 @@
       fontSize: 14,
       cursorBlink: true,
       scrollback: 5000,
-      theme: { background: "#161a22", foreground: "#dfe4ec" },
+      theme: getTerminalTheme(theme),
     });
     term = t;
     const f = new FitAddon();
@@ -210,6 +213,12 @@
       finishLog();
       t.dispose();
     };
+  });
+
+  // Keep already-open terminals in sync when the application theme changes.
+  $effect(() => {
+    const palette = getTerminalTheme(theme);
+    if (mounted && term) term.options.theme = palette;
   });
 
   // M4: a newly opened session (or a tab switch) must take keyboard focus so
