@@ -74,6 +74,8 @@ fn ssh_failure_message(line: &str) -> Option<String> {
         "connection closed by",
         "host key verification failed",
         "remote host identification has changed",
+        "failed to add the host to the list of known hosts",
+        "could not add host to known hosts",
     ];
     if patterns.iter().any(|pattern| lower.contains(pattern)) {
         let message = line
