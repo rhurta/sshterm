@@ -13,13 +13,13 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 
-use crate::askpass::AskpassServer;
+use crate::askpass::{AskpassCredential, AskpassServer};
 use crate::commands::VaultState;
 use crate::config::Config;
 use crate::logger::SessionLogger;
 use crate::paths;
 use crate::store;
-use crate::transport::{openssh::OpenSshTransport, PtySize, SshConfig, Transport};
+use crate::transport::{openssh::OpenSshTransport, JumpHost, PtySize, SshConfig, Transport};
 
 #[derive(Default)]
 pub struct SessionState {
@@ -84,11 +84,49 @@ pub async fn session_open(
     cols: u16,
     rows: u16,
 ) -> Result<String, String> {
-    let (cfg, password, name) = {
+    let (cfg, credentials, name, jump_names) = {
         let g = vault_state.0.lock().unwrap_or_else(|e| e.into_inner());
         let vault = g.as_ref().ok_or_else(|| "locked".to_string())?;
         let conn = store::find(vault, &conn_id)
             .ok_or_else(|| "connection_not_found".to_string())?;
+        let hops = store::resolve_jump_chain(&vault.data.connections, &conn_id)
+            .map_err(str::to_string)?;
+
+        let mut credentials = Vec::new();
+        let mut prompt_targets = std::collections::HashSet::new();
+        for hop in &hops {
+            // ProxyJump does not accept a separate -i value per hop. Password
+            // and agent authentication work; a saved per-hop key path will be
+            // supported when the native transport can configure each hop.
+            if hop.key_path().is_some() {
+                return Err("jump_key_auth_unsupported".to_string());
+            }
+            if let Some(password) = hop.password() {
+                let key = (hop.user.to_ascii_lowercase(), hop.host.to_ascii_lowercase());
+                if !prompt_targets.insert(key) {
+                    return Err("jump_ambiguous_credentials".to_string());
+                }
+                credentials.push(AskpassCredential {
+                    user: hop.user.clone(),
+                    host: hop.host.clone(),
+                    key_path: None,
+                    password,
+                });
+            }
+        }
+        if let Some(password) = conn.password() {
+            let key = (conn.user.to_ascii_lowercase(), conn.host.to_ascii_lowercase());
+            if !prompt_targets.insert(key) {
+                return Err("jump_ambiguous_credentials".to_string());
+            }
+            credentials.push(AskpassCredential {
+                user: conn.user.clone(),
+                host: conn.host.clone(),
+                key_path: conn.key_path(),
+                password,
+            });
+        }
+
         let program = paths::ssh_program().map_err(|e| e.to_string())?;
         let cfg = SshConfig {
             program,
@@ -99,14 +137,21 @@ pub async fn session_open(
             user: conn.user.clone(),
             keepalive_secs: conn.keepalive_secs,
             key_path: conn.key_path().map(std::path::PathBuf::from),
+            jump_hosts: hops.iter().map(|hop| JumpHost {
+                user: hop.user.clone(),
+                host: hop.host.clone(),
+                port: hop.port,
+            }).collect(),
         };
-        (cfg, conn.password(), conn.name.clone())
+        let jump_names = hops.iter().map(|hop| hop.name.clone()).collect::<Vec<_>>();
+        (cfg, credentials, conn.name.clone(), jump_names)
     };
 
-    let has_password = password.is_some();
-    let askpass = match password {
-        Some(p) => Some(AskpassServer::start(p).map_err(|e| e.to_string())?),
-        None => None,
+    let has_password = !credentials.is_empty();
+    let askpass = if credentials.is_empty() {
+        None
+    } else {
+        Some(AskpassServer::start(credentials).map_err(|e| e.to_string())?)
     };
 
     let id = new_id();
@@ -144,18 +189,24 @@ pub async fn session_open(
         .insert(id.clone(), Box::new(transport));
 
     log_line(&format!(
-        "open id={id} host={} port={} user={} program={} askpass={has_password}",
+        "open id={id} host={} port={} user={} via={} program={} askpass={has_password}",
         cfg.host,
         cfg.port,
         cfg.user,
+        jump_names.join(","),
         cfg.program.display()
     ));
 
     // Immediate feedback in the terminal, even before ssh.exe emits anything.
     // The app-wide session bus buffers it until the pane subscribes.
+    let route = if jump_names.is_empty() {
+        String::new()
+    } else {
+        format!(" via {}", jump_names.join(" → "))
+    };
     let banner = format!(
-        "sshterm: connecting to {}@{}:{} ...\r\n",
-        cfg.user, cfg.host, cfg.port
+        "sshterm: connecting{} to {}@{}:{} ...\r\n",
+        route, cfg.user, cfg.host, cfg.port
     );
     let _ = app.emit(
         "session:data",
