@@ -71,7 +71,7 @@
     if (multilinePasteResolver) return Promise.resolve(false);
     return new Promise((resolve) => {
       multilinePasteResolver = resolve;
-      multilinePaste = { lineCount: text.split(/\\r\\n|\\r|\\n/).length };
+      multilinePaste = { lineCount: text.split(/\r\n|\r|\n/).length };
     });
   }
 
