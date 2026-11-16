@@ -14,7 +14,7 @@ use gpui_kit::{
         tree::{tree, TreeItem, TreeState},
         TitleBar,
     },
-    gpui_component::Sizable,
+    gpui_kit::gpui_component::Sizable,
     *,
 };
 
