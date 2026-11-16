@@ -24,6 +24,7 @@
   let settings = $state<TerminalSettings>({ ...DEFAULT_TERMINAL_SETTINGS });
   let settingsOpen = $state(false);
   let multilinePaste = $state<{ lineCount: number } | null>(null);
+  let multilinePasteCancelButton = $state<HTMLButtonElement | null>(null);
   let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
 
   let openIds = $derived(tabs.map((tab) => tab.connId));
@@ -72,6 +73,7 @@
     return new Promise((resolve) => {
       multilinePasteResolver = resolve;
       multilinePaste = { lineCount: text.split(/\r\n|\r|\n/).length };
+      void tick().then(() => multilinePasteCancelButton?.focus());
     });
   }
 
@@ -341,7 +343,7 @@
           {t("settings.multilinePasteWarning", { count: multilinePaste.lineCount })}
         </p>
         <div class="confirm-actions">
-          <button class="ghost" onclick={() => settleMultilinePaste(false)}>
+          <button bind:this={multilinePasteCancelButton} class="ghost" onclick={() => settleMultilinePaste(false)}>
             {t("settings.multilinePasteCancel")}
           </button>
           <button class="confirm" onclick={() => settleMultilinePaste(true)}>
