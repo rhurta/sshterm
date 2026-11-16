@@ -92,7 +92,7 @@ export const en = {
   "editor.tunnel.bind": "Listen address and port",
   "editor.tunnel.destination": "Destination address and port",
   "editor.tunnel.localHint": "Local (-L): listen on this computer; connect to the destination from the SSH server.",
-  "editor.tunnel.remoteHint": "Reverse (-R): listen on the SSH server; connect to the destination from this computer.",
+  "editor.tunnel.remoteHint": "Reverse (-R): listen on the SSH server; connect to the destination from this computer. Remote access beyond the server itself also requires sshd GatewayPorts permission.",
   "editor.tunnel.add": "Add tunnel",
   "editor.tunnel.remove": "Remove tunnel",
   "editor.tunnelRequired": "Enter both a listen endpoint and a destination endpoint.",
