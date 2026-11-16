@@ -22,6 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path gpui-prototype/Cargo.toml --all -- --check
       - name: Build minimal GPUI smoke app
         run: cargo check --manifest-path gpui-prototype/Cargo.toml --bin gpui-smoke
       - name: Build optimized prototype executable
