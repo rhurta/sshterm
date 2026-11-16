@@ -17,7 +17,7 @@ use gpui_kit::{
     *,
 };
 
-const THEME_NAMES: [&str; 12] = ["Tokyo Night", "Tokyo Storm", "Tokyo Moon", "Ayu Light", "Ayu Dark", "Catppuccin Latte", "Catppuccin Frappe", "Catppuccin Macchiato", "Catppuccin Mocha", "Gruvbox Light", "Gruvbox Dark", "Solarized Light"];
+const THEME_NAMES: [&str; 13] = ["Tokyo Night", "Tokyo Storm", "Tokyo Moon", "Ayu Light", "Ayu Dark", "Catppuccin Latte", "Catppuccin Frappe", "Catppuccin Macchiato", "Catppuccin Mocha", "Gruvbox Light", "Gruvbox Dark", "Solarized Light", "Solarized Dark"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NodeKind { Folder, Connection }
