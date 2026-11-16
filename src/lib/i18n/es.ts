@@ -103,6 +103,7 @@ export const es: Record<MessageKey, string> = {
   "editor.jumpNone": "Sin hosts de salto. Conectar directamente a este host.",
   "editor.jumpAvailable": "Conexiones disponibles",
   "editor.jumpNoCandidates": "No hay otras conexiones guardadas disponibles.",
+  "editor.jumpNoSearchMatches": "Ninguna conexión guardada coincide con esta búsqueda.",
   "editor.jumpMissing": "Conexión guardada inexistente",
   "editor.jump.moveUp": "Mover el host de salto antes",
   "editor.jump.moveDown": "Mover el host de salto después",
