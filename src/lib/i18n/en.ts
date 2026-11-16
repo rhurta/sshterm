@@ -11,6 +11,11 @@ export const en = {
   "settings.rightClickPaste": "Right-click pastes when there is no selection",
   "settings.middleClickPaste": "Middle-click pastes when there is no selection",
   "settings.ctrlCCopy": "Ctrl+C copies selected text (otherwise sends Ctrl+C to SSH)",
+  "settings.confirmMultilinePaste": "Confirm before pasting multiple lines",
+  "settings.multilinePasteTitle": "Confirm multi-line paste",
+  "settings.multilinePasteWarning": "The clipboard contains {count} lines. Pasting multiple lines may execute commands in the remote shell. Do you want to continue?",
+  "settings.multilinePasteCancel": "Cancel paste",
+  "settings.multilinePasteConfirm": "Paste anyway",
 
   "lock.title.unlock": "Vault locked",
   "lock.title.create": "Create your master password",
