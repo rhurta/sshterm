@@ -39,20 +39,20 @@
     min-width: 0;
     font: inherit;
     font-size: 0.8rem;
-    color: #dfe4ec;
-    background: #161a22;
-    border: 1px solid #2f3847;
+    color: var(--text);
+    background: var(--app-bg);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.4rem 0.5rem;
   }
   input:focus {
     outline: none;
-    border-color: #8fb4e8;
+    border-color: var(--accent);
   }
   .clear {
     font: inherit;
     font-size: 0.9rem;
-    color: #8d97a8;
+    color: var(--muted);
     background: transparent;
     border: 0;
     cursor: pointer;
@@ -60,7 +60,7 @@
   }
   .count {
     font-size: 0.68rem;
-    color: #8d97a8;
+    color: var(--muted);
     white-space: nowrap;
   }
 </style>
