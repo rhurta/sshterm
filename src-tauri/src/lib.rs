@@ -52,6 +52,8 @@ pub fn run() {
             commands::vault_change_password,
             commands::config_get_language,
             commands::config_set_language,
+            commands::config_get_terminal_settings,
+            commands::config_set_terminal_settings,
             store::conn_list,
             store::conn_get,
             store::conn_upsert,
