@@ -364,12 +364,12 @@ mod tests {
         assert!(connection.jump_disabled.is_empty());
         assert_eq!(connection.jump, vec!["bastion"]);
         assert!(matches!(
-            connection.tunnels[0],
-            Tunnel::Local { enabled: true, .. }
+            connection.tunnels.first(),
+            Some(Tunnel::Local { enabled: true, .. })
         ));
         assert!(matches!(
-            connection.tunnels[1],
-            Tunnel::Remote { enabled: true, .. }
+            connection.tunnels.get(1),
+            Some(Tunnel::Remote { enabled: true, .. })
         ));
 
         let saved = serde_json::to_value(&connection).unwrap();
