@@ -102,6 +102,7 @@ export const en = {
   "editor.jumpNone": "No jump hosts. Connect directly to this host.",
   "editor.jumpAvailable": "Available connections",
   "editor.jumpNoCandidates": "No other saved connections are available.",
+  "editor.jumpNoSearchMatches": "No saved connections match this search.",
   "editor.jumpMissing": "Missing saved connection",
   "editor.jump.moveUp": "Move jump host earlier",
   "editor.jump.moveDown": "Move jump host later",
