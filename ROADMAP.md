@@ -244,7 +244,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - `OpenSshTransport` emits one `-J` argument with comma-separated `user@host:port` entries; IPv6 literals are bracketed.
 - The askpass pipe matches password prompts against `user@host` and destination key-passphrase prompts against the configured identity-file path. Credentials are held in `Zeroizing<String>` and each match is served at most once.
 - The session-scoped pipe token is retained for the session so multiple hops can authenticate. A generic `Password:` prompt is accepted only when the session has exactly one credential; unknown or ambiguous prompts receive no password.
-- Duplicate password-protected `user@host` identities are rejected because the OpenSSH prompt does not include the port and cannot disambiguate them.
+- Duplicate `user@host` identities anywhere in the route are rejected because the OpenSSH prompt omits the port and cannot disambiguate them.
 - Jump hosts configured with a saved custom private-key path are rejected in the phase-1 engine. Password and SSH-agent authentication are supported for jump hops; per-hop custom key selection is deferred until a transport can configure each hop independently.
 
 ### UI
