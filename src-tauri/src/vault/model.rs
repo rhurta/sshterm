@@ -72,14 +72,34 @@ pub struct Colors {
     pub bg: String,
 }
 
+/// Existing vault tunnel entries without an explicit enabled field remain
+/// enabled when deserialized, preserving the behavior of older vaults.
+fn default_enabled() -> bool {
+    true
+}
+
 /// Forward declaration for M7. Kept in the payload now so no further vault
 /// migration is needed when tunnels are implemented.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Tunnel {
-    Local { bind: String, dest: String },
-    Remote { bind: String, dest: String },
-    Dynamic { bind: String },
+    Local {
+        bind: String,
+        dest: String,
+        #[serde(default = "default_enabled")]
+        enabled: bool,
+    },
+    Remote {
+        bind: String,
+        dest: String,
+        #[serde(default = "default_enabled")]
+        enabled: bool,
+    },
+    Dynamic {
+        bind: String,
+        #[serde(default = "default_enabled")]
+        enabled: bool,
+    },
 }
 
 /// Forward declaration for M8.
@@ -109,8 +129,11 @@ pub struct Connection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub colors: Option<Colors>,
     pub protected: bool,
-    /// Ordered jump chain (M5). Declared now for forward compatibility.
+    /// Ordered jump chain (M5).
     pub jump: Vec<String>,
+    /// IDs in jump that are configured but currently disabled.
+    #[serde(default)]
+    pub jump_disabled: Vec<String>,
     pub tunnels: Vec<Tunnel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sftp: Option<SftpOptions>,
@@ -135,6 +158,7 @@ impl Default for Connection {
             colors: None,
             protected: false,
             jump: Vec::new(),
+            jump_disabled: Vec::new(),
             tunnels: Vec::new(),
             sftp: None,
             highlight: Vec::new(),
