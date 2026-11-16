@@ -106,7 +106,8 @@
 
 <style>
   .lock {
-    min-height: 100vh;
+    height: 100%;
+    min-height: 0;
     display: flex;
     align-items: center;
     padding: 0 max(2rem, 8vw);
@@ -123,7 +124,7 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    border-left: 2px solid #8fb4e8;
+    border-left: 2px solid var(--accent);
     padding-left: 1.5rem;
   }
   .mark {
@@ -131,7 +132,7 @@
     font-size: 0.95rem;
     font-weight: 600;
     letter-spacing: 0.02em;
-    color: #8fb4e8;
+    color: var(--accent);
   }
   h1 {
     margin: 0;
@@ -141,7 +142,7 @@
   }
   .hint {
     margin: 0;
-    color: #8d97a8;
+    color: var(--muted);
     line-height: 1.5;
     font-size: 0.92rem;
   }
@@ -150,26 +151,26 @@
     flex-direction: column;
     gap: 0.35rem;
     font-size: 0.9rem;
-    color: #b6bfcd;
+    color: var(--text-secondary);
   }
   input {
     font: inherit;
-    color: #dfe4ec;
-    background: #1f2530;
-    border: 1px solid #2f3847;
+    color: var(--text);
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.6rem 0.7rem;
   }
   input:focus-visible,
   button:focus-visible {
-    outline: 2px solid #8fb4e8;
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
   button {
     font: inherit;
     font-weight: 600;
-    color: #12161d;
-    background: #8fb4e8;
+    color: var(--accent-contrast);
+    background: var(--accent);
     border: 0;
     border-radius: 4px;
     padding: 0.65rem 1rem;
@@ -181,7 +182,7 @@
   }
   .error {
     margin: 0;
-    color: #f08a7a;
+    color: var(--danger);
     font-size: 0.9rem;
   }
 </style>
