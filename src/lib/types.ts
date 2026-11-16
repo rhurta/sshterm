@@ -6,9 +6,9 @@ export type Auth =
   | { type: "agent" };
 
 export type Tunnel =
-  | { kind: "local"; bind: string; dest: string }
-  | { kind: "remote"; bind: string; dest: string }
-  | { kind: "dynamic"; bind: string };
+  | { kind: "local"; bind: string; dest: string; enabled: boolean }
+  | { kind: "remote"; bind: string; dest: string; enabled: boolean }
+  | { kind: "dynamic"; bind: string; enabled: boolean };
 
 export interface Colors {
   fg: string;
@@ -27,6 +27,7 @@ export interface Connection {
   protected: boolean;
   /** Ordered saved connection IDs used as ProxyJump hops. */
   jump: string[];
+  jump_disabled: string[];
   tunnels: Tunnel[];
   sftp?: unknown | null;
   highlight: string[];
@@ -41,6 +42,7 @@ export interface ConnectionSummary {
   user: string;
   /** Ordered jump-host connection IDs; contains no credentials. */
   jump: string[];
+  jump_disabled: string[];
   tunnel_count: number;
 }
 
