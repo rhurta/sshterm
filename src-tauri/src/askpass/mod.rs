@@ -420,8 +420,6 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn askpass_server_routes_multiple_hop_passwords_once_each() {
-        use std::time::Duration;
-
         tauri::async_runtime::block_on(async {
             let server = AskpassServer::start(vec![
                 AskpassCredential {
