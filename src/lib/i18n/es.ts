@@ -85,6 +85,7 @@ export const es: Record<MessageKey, string> = {
   "editor.jump.moveUp": "Mover el host de salto antes",
   "editor.jump.moveDown": "Mover el host de salto después",
   "editor.jump.remove": "Quitar host de salto",
+  "editor.jumpCycleValidation": "Esta selección crearía un bucle de hosts de salto.",
   "editor.authType": "Método",
   "editor.auth.password": "Contraseña",
   "editor.auth.key": "Archivo de clave",
