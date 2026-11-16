@@ -93,4 +93,6 @@ export interface Tab {
   name: string;
   /** Resolved display names for the visual jump route. */
   jumpNames: string[];
+  /** Configured local/reverse forwards owned by this SSH session. */
+  tunnelCount: number;
 }
