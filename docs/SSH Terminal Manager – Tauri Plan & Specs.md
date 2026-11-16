@@ -55,7 +55,7 @@ Actual path behavior:
 - sshterm.vault, config.toml, known_hosts, logs/, highlight/ and webview-data/ are derived from that directory.
 - WEBVIEW2_USER_DATA_FOLDER is set to webview-data/ before the Tauri builder creates the window.
 - SSH lookup order is bin/ssh.exe, %SystemRoot%\System32\OpenSSH\ssh.exe, then %SystemRoot%\System32\ssh.exe. If none exists, session startup returns ssh_not_found.
-- config.toml currently supports only language, log_output and log_mode. Font and default-keepalive settings are not implemented there.
+- config.toml supports language, logging, and terminal clipboard/mouse preferences. Font and default-keepalive settings are not implemented there.
 - known_hosts is maintained by OpenSSH through the configured UserKnownHostsFile; it is not currently populated from the known_hosts map in the vault payload.
 - highlight/ has a path helper and is ignored by Git, but the rule loader and rule files are not implemented.
 - logs/sshterm.log is a separate diagnostic log containing session metadata and byte counts. Per-session terminal logs are separate files.
@@ -180,7 +180,7 @@ The frontend calls the registered Tauri commands; it does not invoke Rust module
 | Module | Responsibility | Current commands / events | Status |
 | --- | --- | --- | --- |
 | vault / commands | Vault lifecycle and password change | vault_status, vault_create, vault_unlock, vault_lock, vault_change_password | ✅ Implemented |
-| config | Non-secret language and logging settings | config_get_language, config_set_language | ✅ Implemented; only language is currently exposed to the UI |
+| config | Non-secret language, logging, and terminal clipboard/mouse settings | config_get_language, config_set_language, config_get_terminal_settings, config_set_terminal_settings | ✅ Implemented |
 | store | Connection CRUD, nested tree, search and imports | conn_list, conn_get, conn_upsert, conn_delete, tree_get, folder_upsert, folder_delete, move_node, search, import_preview, import_apply | ✅ Implemented |
 | transport | Transport trait and OpenSSH/ConPTY implementation | Internal | ✅ OpenSSH only |
 | askpass | Session-scoped named-pipe credential delivery | Internal | ✅ Implemented on Windows |
@@ -581,13 +581,13 @@ Terminal clipboard behavior is configured independently in the application Setti
 | Setting | Default | Behavior |
 | --- | --- | --- |
 | `copy_on_selection` | `true` | Copy selected terminal text automatically. |
-| `right_click_copy` | `true` | Right-click copies when a selection exists. |
-| `middle_click_copy` | `true` | Middle-click copies when a selection exists. |
-| `right_click_paste` | `true` | Right-click pastes when there is no selection. |
-| `middle_click_paste` | `true` | Middle-click pastes when there is no selection. |
-| `ctrl_c_copy` | `true` | Ctrl+C copies when text is selected. With no selection, Ctrl+C is sent to the remote shell as the interrupt character. If this setting is disabled, Ctrl+C is sent to the remote shell even when text is selected. |
+| `right_click_copy` | `true` | Right-click copies selected text when enabled and a selection exists; the selection is cleared after copying. |
+| `middle_click_copy` | `true` | Middle-click copies selected text when enabled and a selection exists; the selection is cleared after copying. |
+| `right_click_paste` | `true` | Right-click pastes when there is no selection, or when a selection exists but right-click copy is disabled. Any selection is cleared before paste. |
+| `middle_click_paste` | `true` | Middle-click pastes when there is no selection, or when a selection exists but middle-click copy is disabled. Any selection is cleared before paste. |
+| `ctrl_c_copy` | `true` | Ctrl+C copies when text is selected and clears the selection. With no selection, Ctrl+C is sent to the remote shell as the interrupt character. If this setting is disabled, Ctrl+C is sent to the remote shell even when text is selected. |
 
-Ctrl+V always pastes from the system clipboard and is not configurable. Right- and middle-click use the selection state to choose between their independently configurable copy and paste actions. Clipboard access is performed by the WebView clipboard API; unavailable or denied clipboard permissions fail without sending unintended terminal input.
+Ctrl+V always pastes from the system clipboard and is not configurable. Its custom key handler prevents WebView's native paste handling so the same clipboard text is not inserted twice. Right- and middle-click prefer copy when a selection exists and their copy option is enabled; otherwise, their paste option can run and clears any existing selection first. Clipboard access is performed by the WebView clipboard API; unavailable or denied clipboard permissions fail without sending unintended terminal input.
 
 Example:
 
