@@ -20,7 +20,7 @@ export interface Connection {
   keepalive_secs: number;
   colors?: Colors | null;
   protected: boolean;
-  /** Forward-declared fields for M5-M8; not edited by the M4 UI. */
+  /** Ordered saved connection IDs used as ProxyJump hops. */
   jump: string[];
   tunnels: unknown[];
   sftp?: unknown | null;
@@ -34,6 +34,8 @@ export interface ConnectionSummary {
   host: string;
   port: number;
   user: string;
+  /** Ordered jump-host connection IDs; contains no credentials. */
+  jump: string[];
 }
 
 export type TreeNode =
@@ -83,4 +85,6 @@ export interface Tab {
   sessionId: string;
   connId: string;
   name: string;
+  /** Resolved display names for the visual jump route. */
+  jumpNames: string[];
 }
