@@ -56,28 +56,31 @@ webview-data/      WebView2 cache (WEBVIEW2_USER_DATA_FOLDER)
 
 ```
 sshterm/
-├── src/                        # Frontend (SvelteKit)
+├── .github/
+│   └── workflows/
+│       └── windows.yml          # Windows validation and portable build
+├── src/                         # Frontend (SvelteKit)
 │   ├── lib/
 │   │   ├── ConnectionTree.svelte   # Recursive folder/connection tree
 │   │   ├── ConnectionSidebar.svelte
 │   │   ├── SearchBox.svelte / ImportDialog.svelte
-│   │   ├── i18n/               # Translation dictionaries (en, es)
-│   │   ├── encoding.ts         # Base64 helpers
-│   │   ├── logCapture.ts       # Screen-buffer log capture
-│   │   └── sessionBus.ts       # session:data / session:closed event bus
-│   └── routes/                 # SvelteKit pages
-└── src-tauri/                  # Backend (Rust)
+│   │   ├── i18n/                 # Translation dictionaries (en, es)
+│   │   ├── encoding.ts           # Base64 helpers
+│   │   ├── logCapture.ts         # Screen-buffer log capture
+│   │   └── sessionBus.ts         # session:data / session:closed event bus
+│   └── routes/                   # SvelteKit pages
+└── src-tauri/                    # Backend (Rust)
     └── src/
-        ├── vault/              # Encrypt / decrypt credential store
-        ├── store/              # Connection + tree CRUD, search, imports
-        │   ├── tree.rs         # Pure tree algorithms
-        │   └── import/         # ssh config, PuTTY, WinSSHTerm parsers
-        ├── session/            # Open / close / resize sessions
-        ├── transport/          # Transport trait + openssh.rs (+ russh.rs in M10)
-        ├── askpass/            # Named-pipe password delivery to ssh.exe
-        ├── logger/             # Per-session log files
-        ├── config.rs           # config.toml model
-        └── paths.rs            # Portable path resolution
+        ├── vault/                # Encrypt / decrypt credential store
+        ├── store/                # Connection + tree CRUD, search, imports
+        │   ├── tree.rs           # Pure tree algorithms and move validation
+        │   └── import/           # ssh config, PuTTY, WinSSHTerm parsers
+        ├── session/              # Open / close / resize sessions
+        ├── transport/            # Transport trait + openssh.rs (+ russh.rs in M10)
+        ├── askpass/               # Named-pipe password delivery to ssh.exe
+        ├── logger/                # Per-session log files
+        ├── config.rs              # config.toml model
+        └── paths.rs               # Portable path resolution
 ```
 
 ## Development
@@ -85,14 +88,14 @@ sshterm/
 ### Prerequisites
 
 - Rust (stable, via rustup)
-- Node.js 18+ and npm
+- Node.js 22 and npm
 - Windows 11 — WebView2 and OpenSSH are pre-installed
 - Visual Studio Build Tools (MSVC toolchain)
 
 ### Run in dev mode
 
 ```bash
-npm install
+npm ci
 npm run tauri dev
 ```
 
@@ -104,14 +107,45 @@ npm run tauri build
 # MSI: src-tauri/target/release/bundle/msi/
 ```
 
-### Tests
+### Tests and validation
+
+Run from the repository root:
 
 ```bash
-cd src-tauri
-cargo test            # all unit tests
-cargo test logger     # logger module only
-cargo test vault      # vault module only
+npm ci
+npm run check
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+cargo test --manifest-path src-tauri/Cargo.toml --locked
+npm run tauri -- build --no-bundle
 ```
+
+### Windows CI
+
+The `.github/workflows/windows.yml` workflow runs on pushes to `main`, `feature/**` and `fix/**`, on pull requests, and when manually dispatched. It installs Node.js 22 and stable Rust for `x86_64-pc-windows-msvc`, validates the Svelte frontend, formats and tests the Rust backend, and builds the portable Windows executable.
+
+A successful run publishes the `sshterm-windows-x64` artifact containing `sshterm.exe`. Download it from the workflow run's **Artifacts** section on GitHub Actions. The artifact is retained for 30 days.
+
+### Windows HTML drag-and-drop requirement
+
+The connection tree uses browser HTML5 drag-and-drop events. Tauri's own webview drag-and-drop handler intercepts those events when enabled, so the frontend tree cannot receive them. On Windows, disable Tauri's handler in each window configuration in `src-tauri/tauri.conf.json`:
+
+```json
+{
+  "app": {
+    "windows": [
+      {
+        "title": "sshterm",
+        "width": 800,
+        "height": 600,
+        "dragDropEnabled": false
+      }
+    ]
+  }
+}
+```
+
+Keep `dragDropEnabled: false` for the main window when using the frontend's HTML5 drag-and-drop implementation. This disables Tauri's native `DragDropEvent` handling for that webview; it does not disable the tree's HTML drag-and-drop. If native file-drop events are needed in the future, the app will need to handle those through Tauri's native event API instead of relying on browser drag events.
 
 ## Architecture notes
 
@@ -175,21 +209,20 @@ New commands: `tree_get`, `folder_upsert`, `folder_delete`, `move_node`,
 confirms the preview; duplicates on `(host, port, user)` are skipped unless
 "import as copy" is selected.
 
-WinSSHTerm exports represent folders as nested `<Node Type="Container">`
-elements. Each candidate carries its full folder path, and the import recreates
-that hierarchy in the vault tree (reusing folders that already exist), so the
-source folder structure is preserved. WinSSHTerm passwords are encrypted with
-WinSSHTerm's own key and are never imported; those connections are created with
-agent auth and a warning, and must be edited to set credentials. Port forwards,
-login commands and jump hosts from the export are not imported.
+Tree drag-and-drop supports:
+- Moving a connection or folder before/after another node.
+- Dropping a node into a folder, including nested folders.
+- Reordering nodes within the same parent and moving nodes to the root.
+- Rejecting invalid destinations, including dropping a folder into itself or one of its descendants.
+- Disabling tree drag-and-drop while a search filter is active, because filtered display indices do not safely map to the underlying tree.
 
-Each tab owns an independent session. Opening a session or switching tabs
-focuses the xterm pane so typing reaches the remote host immediately.
+The Rust tree move operation validates the destination before removing the source node. A rejected move therefore leaves the original tree and node position intact. Regression coverage includes this rejected-move behavior.
 
-Scrollbars are styled thin (6px) and matched to the dark theme across all
-scrollable areas (sidebar, dialogs, terminal viewport). The connection picker
-opened from the `+` tab button can be dismissed with Escape, the × button, or
-click-outside.
+WinSSHTerm exports represent folders as nested `<Node Type="Container">` elements. Each candidate carries its full folder path, and the import recreates that hierarchy in the vault tree (reusing folders that already exist), so the source folder structure is preserved. WinSSHTerm passwords are encrypted with WinSSHTerm's own key and are never imported; those connections are created with agent auth and a warning, and must be edited to set credentials. Port forwards, login commands and jump hosts from the export are not imported.
+
+Each tab owns an independent session. Opening a session or switching tabs focuses the xterm pane so typing reaches the remote host immediately.
+
+Scrollbars are styled thin (6px) and matched to the dark theme across all scrollable areas (sidebar, dialogs, terminal viewport). The connection picker opened from the `+` tab button can be dismissed with Escape, the × button, or click-outside.
 
 ## Configuration
 
