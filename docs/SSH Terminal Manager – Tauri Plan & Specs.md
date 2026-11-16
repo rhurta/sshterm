@@ -38,7 +38,7 @@ Expected layout beside the executable:
 ```text
 sshterm.exe
 sshterm.vault      encrypted connection data and credentials
-config.toml        non-secret settings: language and logging
+config.toml        non-secret settings: language, theme, logging and terminal preferences
 known_hosts        plain-text OpenSSH host-key database
 bin/
   ssh.exe          optional bundled OpenSSH client
@@ -55,7 +55,7 @@ Actual path behavior:
 - sshterm.vault, config.toml, known_hosts, logs/, highlight/ and webview-data/ are derived from that directory.
 - WEBVIEW2_USER_DATA_FOLDER is set to webview-data/ before the Tauri builder creates the window.
 - SSH lookup order is bin/ssh.exe, %SystemRoot%\System32\OpenSSH\ssh.exe, then %SystemRoot%\System32\ssh.exe. If none exists, session startup returns ssh_not_found.
-- config.toml supports language, logging, terminal clipboard/mouse preferences, and optional multi-line paste confirmation. Font and default-keepalive settings are not implemented there.
+- config.toml supports language, application theme, logging, terminal clipboard/mouse preferences, and optional multi-line paste confirmation. Font and default-keepalive settings are not implemented there.
 - known_hosts is maintained by OpenSSH through the configured UserKnownHostsFile; it is not currently populated from the known_hosts map in the vault payload.
 - highlight/ has a path helper and is ignored by Git, but the rule loader and rule files are not implemented.
 - logs/sshterm.log is a separate diagnostic log containing session metadata and byte counts. Per-session terminal logs are separate files.
@@ -416,7 +416,8 @@ bold = true
 
 ### M9 — Polish and lifecycle (planned)
 
-- Apply per-connection foreground/background colors to xterm.js and tab accents; colors is currently only an optional stored field.
+- **Implemented:** app-wide Dark, Light and Nord themes are persisted in config.toml and apply before vault unlock. The palette covers the lock screen, title bar, workspace, connection UI, dialogs and all open xterm.js instances.
+- Still planned: per-connection foreground/background colors and tab accents; the vault's optional colors field is stored but not yet used.
 - Add a dedicated host-key management/confirmation UI. Current OpenSSH behavior is automatic first-use acceptance (accept-new) and refusal of changed keys, not a custom confirmation dialog.
 - Add automatic reconnect with backoff.
 - Add configurable idle locking. Current locking is manual and closes all active SSH sessions.
@@ -524,10 +525,10 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M6b | Syntax highlighting | 📋 Planned |
 | M7 | Local/reverse forwarding (-L / -R) | 🟡 Partial; bound to interactive sessions |
 | M8 | Native SFTP | 📋 Planned |
-| M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 📋 Planned |
+| M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
-The status reflects the source tree, not the aspirational feature descriptions. In particular, M5 is implemented, M7 is partial, and the colors, sftp, highlight, protected and dynamic data fields do not imply that their corresponding features are complete.
+The status reflects the source tree, not the aspirational feature descriptions. In particular, M5 is implemented, M7 is partial, global themes are implemented while per-connection coloring remains planned, and the sftp, highlight, protected and dynamic data fields do not imply that their corresponding features are complete.
 
 ## 12. Decisions, operational workflow and CI
 
@@ -540,6 +541,7 @@ The status reflects the source tree, not the aspirational feature descriptions. 
 - Private keys: store only the file path and optional passphrase; never copy key contents into the vault.
 - Host keys: OpenSSH manages the app-local known-hosts file with StrictHostKeyChecking=accept-new; a changed key is rejected.
 - Logging: screen-buffer capture is the default; raw PTY capture is an opt-in diagnostic mode.
+- Window chrome: use a frameless Tauri window with a custom Svelte title bar, theme selector and explicit window controls; keep native drag, maximize, minimize, close and resize behavior.
 - Imports: OpenSSH config, PuTTY registry sessions (Windows only) and WinSSHTerm connections.xml.
 - No code signing is configured at present.
 
@@ -601,4 +603,30 @@ right_click_paste = true
 middle_click_paste = true
 ctrl_c_copy = true
 confirm_multiline_paste = true
+```
+
+
+## 14. Custom window chrome and application themes (implemented)
+
+The main Tauri window uses `decorations = false` and remains resizable. A Svelte title bar is mounted above both the lock screen and unlocked workspace. It provides:
+
+- Window dragging from the title area and double-click to maximize/restore.
+- Minimize, maximize/restore and close buttons using the Tauri window API.
+- Eight native resize hit-zones (four edges and four corners) using Tauri's resize-drag API; the window remains configured as resizable.
+- A theme selector available before vault unlock. The title bar and all application screens use the same active theme.
+
+The selected theme is stored as a non-secret `theme` field in `config.toml`; supported values are `dark` (default), `light` and `nord`. Older config files without this field continue to load with Dark. Changing the theme updates existing terminal panes as well as the surrounding UI. Terminal ANSI colors are adapted per theme; connection-specific custom foreground/background values remain a separate planned feature.
+
+The custom window commands are explicitly granted in `src-tauri/capabilities/default.json`. Keep `dragDropEnabled = false` unchanged so the HTML5 connection-tree drag-and-drop continues to work.
+
+Example config:
+
+```toml
+language = "en"
+theme = "dark"       # "dark", "light" or "nord"
+log_output = true
+log_mode = "screen"
+
+[terminal]
+# Clipboard and paste preferences are documented in §13.
 ```
