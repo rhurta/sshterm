@@ -11,7 +11,6 @@ export const en = {
   "settings.rightClickPaste": "Right-click pastes when there is no selection",
   "settings.middleClickPaste": "Middle-click pastes when there is no selection",
   "settings.ctrlCCopy": "Ctrl+C copies selected text (otherwise sends Ctrl+C to SSH)",
-  "settings.ctrlVPaste": "Ctrl+V pastes from the clipboard",
 
   "lock.title.unlock": "Vault locked",
   "lock.title.create": "Create your master password",
