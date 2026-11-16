@@ -108,7 +108,7 @@
       t.clearSelection();
       void navigator.clipboard.readText().then(async (value) => {
         if (!value) return;
-        if (settings.confirm_multiline_paste && /[\\r\\n]/.test(value)) {
+        if (settings.confirm_multiline_paste && /[\r\n]/.test(value)) {
           const confirmed = await onmultilinepaste(value);
           if (!confirmed) return;
         }
