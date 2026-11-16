@@ -572,3 +572,31 @@ A successful workflow run therefore validates frontend checks/build, Rust format
 - The CI artifact is the portable sshterm.exe; because CI uses --no-bundle, it does not upload an MSI installer.
 - The runtime machine still needs WebView2 and OpenSSH, unless ssh.exe is supplied in the adjacent bin/ directory.
 - Keep dragDropEnabled: false on the main Tauri window while the connection tree uses HTML5 drag-and-drop.
+
+
+## 13. Terminal clipboard and mouse settings (implemented)
+
+Terminal clipboard behavior is configured independently in the application Settings dialog and persisted in `config.toml` under the `terminal` table. Missing fields in older config files use the defaults (enabled).
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `copy_on_selection` | `true` | Copy selected terminal text automatically. |
+| `right_click_copy` | `true` | Right-click copies when a selection exists. |
+| `middle_click_copy` | `true` | Middle-click copies when a selection exists. |
+| `right_click_paste` | `true` | Right-click pastes when there is no selection. |
+| `middle_click_paste` | `true` | Middle-click pastes when there is no selection. |
+| `ctrl_c_copy` | `true` | Ctrl+C copies when text is selected. With no selection, Ctrl+C is sent to the remote shell as the interrupt character. If this setting is disabled, Ctrl+C is sent to the remote shell even when text is selected. |
+
+Ctrl+V always pastes from the system clipboard and is not configurable. Right- and middle-click use the selection state to choose between their independently configurable copy and paste actions. Clipboard access is performed by the WebView clipboard API; unavailable or denied clipboard permissions fail without sending unintended terminal input.
+
+Example:
+
+```toml
+[terminal]
+copy_on_selection = true
+right_click_copy = true
+middle_click_copy = true
+right_click_paste = true
+middle_click_paste = true
+ctrl_c_copy = true
+```
