@@ -23,6 +23,7 @@ pub struct ConnectionSummary {
     pub user: String,
     /// Saved connection IDs in the configured jump-host order.
     pub jump: Vec<String>,
+    pub tunnel_count: usize,
 }
 
 impl From<&Connection> for ConnectionSummary {
@@ -34,6 +35,7 @@ impl From<&Connection> for ConnectionSummary {
             port: c.port,
             user: c.user.clone(),
             jump: c.jump.clone(),
+            tunnel_count: c.tunnels.len(),
         }
     }
 }
