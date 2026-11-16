@@ -17,19 +17,19 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.85rem;
-    color: #8d97a8;
+    color: var(--muted);
     white-space: nowrap;
   }
   select {
     font: inherit;
-    color: #dfe4ec;
-    background: #1f2530;
-    border: 1px solid #2f3847;
+    color: var(--text);
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.3rem 0.5rem;
   }
   select:focus-visible {
-    outline: 2px solid #8fb4e8;
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 </style>
