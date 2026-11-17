@@ -4,22 +4,26 @@ export type LayoutPreset = "single" | "left-right" | "top-bottom" | "grid";
 export type SplitPath = Array<"first" | "second">;
 
 export type SplitNode =
-  | { type: "leaf"; sessionId: string }
+  | { type: "leaf"; sessionId: string; sessionIds: string[] }
   | { type: "split"; axis: SplitAxis; ratio: number; first: SplitNode; second: SplitNode };
 
 export function leaf(sessionId: string): SplitNode {
-  return { type: "leaf", sessionId };
+  return { type: "leaf", sessionId, sessionIds: [sessionId] };
 }
 
 export function sessionsInTree(node: SplitNode | null): string[] {
   if (!node) return [];
-  if (node.type === "leaf") return [node.sessionId];
+  if (node.type === "leaf") return [...node.sessionIds];
   return [...sessionsInTree(node.first), ...sessionsInTree(node.second)];
 }
 
 export function removeSession(node: SplitNode | null, sessionId: string): SplitNode | null {
   if (!node) return null;
-  if (node.type === "leaf") return node.sessionId === sessionId ? null : node;
+  if (node.type === "leaf") {
+    if (!node.sessionIds.includes(sessionId)) return node;
+    const remaining = node.sessionIds.filter((id) => id !== sessionId);
+    return remaining.length ? { ...node, sessionIds: remaining } : null;
+  }
   const first = removeSession(node.first, sessionId);
   const second = removeSession(node.second, sessionId);
   if (!first) return second;
@@ -70,7 +74,28 @@ export function splitSession(node: SplitNode | null, targetId: string, sessionId
   return node;
 }
 
-/** Update exactly one split, identified by its path from the root. */
+
+/** Add a session as a tab in the pane containing the stable pane ID. */
+export function addSessionToPane(node: SplitNode | null, paneId: string, sessionId: string): SplitNode | null {
+  if (!node || !paneId || !sessionId || sessionsInTree(node).includes(sessionId)) return node;
+  if (node.type === "leaf") {
+    return node.sessionId === paneId
+      ? { ...node, sessionIds: [...node.sessionIds, sessionId] }
+      : node;
+  }
+  if (findPane(node.first, paneId)) {
+    return { ...node, first: addSessionToPane(node.first, paneId, sessionId) ?? node.first };
+  }
+  if (findPane(node.second, paneId)) {
+    return { ...node, second: addSessionToPane(node.second, paneId, sessionId) ?? node.second };
+  }
+  return node;
+}
+
+function findPane(node: SplitNode, paneId: string): boolean {
+  return node.type === "leaf" ? node.sessionId === paneId : findPane(node.first, paneId) || findPane(node.second, paneId);
+}
+\n/** Update exactly one split, identified by its path from the root. */
 export function setSplitRatioAtPath(node: SplitNode | null, path: SplitPath, ratio: number): SplitNode | null {
   if (!node || node.type === "leaf") return node;
   const bounded = Math.max(0.15, Math.min(0.85, ratio));
@@ -84,7 +109,7 @@ export function setSplitRatioAtPath(node: SplitNode | null, path: SplitPath, rat
 
 
 export type LayoutRect = { x: number; y: number; width: number; height: number };
-export type LayoutLeaf = { sessionId: string; rect: LayoutRect };
+export type LayoutLeaf = { sessionId: string; sessionIds: string[]; rect: LayoutRect };
 export type LayoutDivider = {
   path: SplitPath;
   axis: SplitAxis;
@@ -101,7 +126,7 @@ export function getLayoutGeometry(node: SplitNode | null): LayoutGeometry {
 
   function visit(current: SplitNode, rect: LayoutRect, path: SplitPath) {
     if (current.type === "leaf") {
-      leaves.push({ sessionId: current.sessionId, rect });
+      leaves.push({ sessionId: current.sessionId, sessionIds: [...current.sessionIds], rect });
       return;
     }
 
@@ -149,14 +174,14 @@ export function getLayoutGeometry(node: SplitNode | null): LayoutGeometry {
 export function setSplitRatio(node: SplitNode | null, targetId: string, ratio: number): SplitNode | null {
   if (!node || node.type === "leaf") return node;
   if (sessionsInTree(node.first).includes(targetId)) {
-    if (node.first.type === "leaf" && node.first.sessionId === targetId) {
+    if (node.first.type === "leaf" && node.first.sessionIds.includes(targetId)) {
       return { ...node, ratio: Math.max(0.15, Math.min(0.85, ratio)) };
     }
     const first = setSplitRatio(node.first, targetId, ratio) ?? node.first;
     return { ...node, first };
   }
   if (sessionsInTree(node.second).includes(targetId)) {
-    if (node.second.type === "leaf" && node.second.sessionId === targetId) {
+    if (node.second.type === "leaf" && node.second.sessionIds.includes(targetId)) {
       return { ...node, ratio: Math.max(0.15, Math.min(0.85, ratio)) };
     }
     const second = setSplitRatio(node.second, targetId, ratio) ?? node.second;
