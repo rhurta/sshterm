@@ -11,7 +11,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "test:split-tree": "node --experimental-strip-types --test src/lib/splitTree.test.ts"
+    "test:split-tree": "node --experimental-strip-types --test tests/splitTree.test.mjs"
   },
   "license": "MIT",
   "dependencies": {
