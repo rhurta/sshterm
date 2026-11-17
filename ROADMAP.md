@@ -356,11 +356,13 @@ The vault model already contains a `Dynamic` variant for forward compatibility, 
 
 ---
 
-## 📋 M9 — Polish
+## 🟡 M9 — Polish (partial)
 
-**Done when:** per-connection colors, host-key confirmation UI, auto-reconnect with backoff, idle lock, release build.
+**Already implemented:** application-wide Dark, Light and Nord themes, persisted in `config.toml` and applied to the lock screen, title bar, workspace, dialogs and existing terminals.
 
-- Per-connection `fg`/`bg` colors: applied to the terminal theme and tab accent.
+**Still to do:** per-connection colors, host-key confirmation UI, auto-reconnect with backoff, idle lock and final release packaging/signing.
+
+- Per-connection `fg`/`bg` colors: apply to the terminal theme and tab accent.
 - Host-key change: hard visual warning with the old and new fingerprints.
 - Auto-reconnect: exponential backoff shown in the tab title.
 - Idle lock: configurable timeout; sessions stay open, new connections need the password.
@@ -394,5 +396,5 @@ The vault model already contains a `Dynamic` variant for forward compatibility, 
 | M6 | Tiling + command console + broadcast | `e6fa4bc` | ✅ Feature complete; UI-test follow-up |
 | M7 | Local / reverse forwards (`-L` / `-R`) | `main` | 🟡 Partial |
 | M8 | Native SFTP | — | 📋 |
-| M9 | Polish | — | 📋 |
+| M9 | Polish | `main` | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine | — | 📋 |

@@ -290,7 +290,7 @@ Pie del archivo (escrito por `finish()` via `session_log_close`):
 ---- ended: 2026-11-15T02:10:44+00:00
 ```
 
-## 8. Archivos que la aplicación crea junto al exe
+## 8. Archivos que la aplicación crea junto al exe (detalle histórico M0–M3)
 
 | Archivo o carpeta | Contenido | Aparece en |
 | --- | --- | --- |
@@ -298,13 +298,13 @@ Pie del archivo (escrito por `finish()` via `session_log_close`):
 | `sshterm.vault` | Conexiones, contraseñas: cifrados | M1 |
 | `sshterm.vault.bak` | Copia del vault anterior (desde el 2.º guardado) | M1 |
 | `sshterm.vault.tmp` | Temporal durante escritura atómica; desaparece al renombrar | M1 (transitorio) |
-| `config.toml` | `language`, `log_output`, `log_mode` | M1 |
+| `config.toml` | M1–M6: idioma, tema, logging, preferencias de terminal y visibilidad/altura de la consola de comandos | M1–M6 |
 | `known_hosts` | Claves de host para `ssh.exe` | M2 |
 | `logs/sshterm.log` | Diagnósticos de la app (nunca contenido del terminal) | M2 |
 | `logs/<conexión>_<YYYYMMDD-HHMMSS>.log` | Log de sesión | M3 |
 | `highlight/` | Reglas de resaltado de sintaxis (`*.toml`) | M6b |
 
-## 9. Estructura prevista del backend (hitos futuros)
+## 9. Estructura histórica/propuesta del backend (no es el árbol actual)
 
 ```
 src-tauri/src/
@@ -315,7 +315,7 @@ src-tauri/src/
   askpass/      M2  entrega de contraseñas a ssh.exe           ✅
   session/      M2–M3  sesiones + bridge de logs               ✅
   logger/       M3  archivos de log de sesión                  ✅
-  broadcast/    M6  enviar comandos a varias sesiones          📋
+  # Broadcast M6 lives in src/lib/CommandConsole.svelte + broadcastTargets.ts (no backend broadcast module).
   highlight/    M6b carga y validación de reglas               📋
   tunnel/       M7  túneles -L, -R, -D                        📋
   sftp/         M8  explorador y descargas con russh-sftp      📋
@@ -323,7 +323,7 @@ src-tauri/src/
   transport/russh.rs  M10 motor nativo russh                   📋
 ```
 
-## 10. Componentes previstos del frontend
+## 10. Componentes previstos del frontend (tabla original M0–M3; consultar el resumen M6 al inicio para el estado actual)
 
 | Componente | Función | Estado |
 | --- | --- | --- |
@@ -336,10 +336,10 @@ src-tauri/src/
 | Barra lateral con árbol | Carpetas, drag-and-drop, búsqueda, importación | 📋 M4 |
 | Gestor de túneles | Estado de túneles activos | 📋 M7 |
 | Panel SFTP | Lista remota, cola de descargas | 📋 M8 |
-| Barra de broadcast | Comando para varias sesiones | 📋 M6 |
+| `CommandConsole.svelte` | Consola multilínea con targets Active/Selected/All y envío secuencial | ✅ M6 |
 | Panel de prueba de resaltado | Pegar texto, ver clasificación y colores | 📋 M6b |
 
-## 11. Comandos Tauri disponibles (tras M3)
+## 11. Comandos Tauri disponibles (instantánea histórica tras M3; no incluye comandos añadidos después)
 
 | Comando | Módulo | Descripción |
 | --- | --- | --- |

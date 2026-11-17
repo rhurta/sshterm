@@ -435,9 +435,9 @@ bold = true
 - Support the connection's host, port and jump route, with an optional separate SFTP port.
 - Decide whether SFTP requires the native SSH engine for the first release or whether a separately managed OpenSSH SFTP process is preferable. The earlier “from the start” assumption is not current implementation.
 
-### M9 — Polish and lifecycle (planned)
+### M9 — Polish and lifecycle (partial)
 
-- **Implemented:** app-wide Dark, Light and Nord themes are persisted in config.toml and apply before vault unlock. The palette covers the lock screen, title bar, workspace, connection UI, dialogs and all open xterm.js instances.
+- **Implemented:** app-wide Dark, Light and Nord themes are persisted in config.toml and apply before vault unlock. The palette covers the lock screen, title bar, workspace, connection UI, dialogs and all open xterm.js instances. M9 remains partial because per-connection colors, a dedicated host-key UI, auto-reconnect and idle lock are not implemented.
 - Still planned: per-connection foreground/background colors and tab accents; the vault's optional colors field is stored but not yet used.
 - Add a dedicated host-key management/confirmation UI. Current OpenSSH behavior is automatic first-use acceptance (accept-new) and refusal of changed keys, not a custom confirmation dialog.
 - Add automatic reconnect with backoff.
