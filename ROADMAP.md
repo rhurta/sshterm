@@ -378,7 +378,7 @@ The vault model already contains a `Dynamic` variant for forward compatibility, 
 | M3 | Session logging | `bbc0262` | ✅ |
 | M4 | Session tree + multi-tab | `bbb2c6c` / m4 | ✅ |
 | M5 | Jump hosts | `main` | ✅ |
-| M6 | Tiling + broadcast + highlighting | — | 📋 |
+| M6 | Tiling + command console + broadcast | `9fd3630` (plan) | 🟡 Planning |
 | M7 | Local / reverse forwards (`-L` / `-R`) | `main` | 🟡 Partial |
 | M8 | Native SFTP | — | 📋 |
 | M9 | Polish | — | 📋 |
