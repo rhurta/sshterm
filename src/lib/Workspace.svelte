@@ -620,7 +620,7 @@
   .workspace-layout { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
   .panes { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--app-bg); }
   .pane-slot { position: absolute; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface); }
-  .pane-slot.focused { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
+  .pane-slot.focused { outline: 2px solid var(--accent); outline-offset: -6px; z-index: 2; }
   .pane-tabs { display: flex; flex: 0 0 auto; min-height: 1.7rem; overflow-x: auto; gap: 2px; padding: 2px 3px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .pane-tab { display: flex; align-items: center; min-width: 0; max-width: 11rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-hover); }
   .pane-tab.active { border-color: var(--accent); background: var(--surface-raised); }
