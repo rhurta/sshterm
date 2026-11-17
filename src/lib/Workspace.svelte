@@ -54,7 +54,7 @@
   let multilinePasteCancelButton = $state<HTMLButtonElement | null>(null);
   let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
 
-  let openIds = $derived(tabs.map((tab) => tab.connId));
+  let openIds = $derived(tabs.filter((tab) => tab.connected).map((tab) => tab.connId));
   let consoleSessions = $derived<BroadcastSession[]>(tabs.map((tab) => ({
     sessionId: tab.sessionId,
     name: tab.name,
