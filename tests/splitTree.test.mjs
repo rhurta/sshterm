@@ -91,3 +91,20 @@ test("removeSession can preserve an empty pane for the workspace", () => {
   assert.deepEqual(getLayoutGeometry(tree).leaves.map((item) => item.sessionIds), [[]]);
   assert.deepEqual(sessionsInTree(tree), []);
 });
+
+test("preset pane groups keep sessions beyond the visible tile count reachable", () => {
+  const sessions = ["a", "b", "c", "d", "e", "f"];
+  const single = createLayoutTree(sessions, "single", "e");
+  assert.deepEqual(sessionsInTree(single), ["e", "a", "b", "c", "d", "f"]);
+  assert.equal(getLayoutGeometry(single).leaves.length, 1);
+  const two = createLayoutTree(sessions, "left-right", "e");
+  assert.deepEqual(sessionsInTree(two), ["e", "a", "b", "c", "d", "f"]);
+  assert.deepEqual(getLayoutGeometry(two).leaves.map((item) => item.sessionIds.length), [1, 5]);
+  const grid = createLayoutTree(sessions, "grid", "e");
+  assert.deepEqual(sessionsInTree(grid), ["e", "a", "b", "c", "d", "f"]);
+  assert.deepEqual(getLayoutGeometry(grid).leaves.map((item) => item.sessionIds.length), [1, 1, 1, 3]);
+});
+
+test("top-bottom preset with one session still creates one pane", () => {
+  assert.deepEqual(sessionsInTree(createLayoutTree(["only"], "top-bottom", "only")), ["only"]);
+});
