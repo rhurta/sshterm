@@ -139,7 +139,16 @@
     // Ctrl+V is handled explicitly so it works consistently in WebView2.
     t.attachCustomKeyEventHandler((event) => {
       if (disconnected) {
-        event.preventDefault();
+        // Keep copy available for inspecting a failed session, but never send
+        // keyboard input to a PTY that has already exited.
+        if (event.type === "keydown"
+          && (event.ctrlKey || event.metaKey)
+          && event.key.toLowerCase() === "c"
+          && settings.ctrl_c_copy
+          && t.hasSelection()) {
+          event.preventDefault();
+          copySelection(true);
+        }
         return false;
       }
       if (event.type !== "keydown") return true;
