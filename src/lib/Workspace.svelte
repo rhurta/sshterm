@@ -9,6 +9,7 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
+  import { createLayoutTree, sessionsInTree, type LayoutPreset } from "$lib/splitTree";
 
   let {
     dir,
@@ -22,6 +23,9 @@
 
   let tabs = $state<Tab[]>([]);
   let activeId = $state<string | null>(null);
+  let layoutPreset = $state<LayoutPreset>("single");
+  let layoutTree = $derived(createLayoutTree(tabs.map((tab) => tab.sessionId), layoutPreset, activeId));
+  let visibleSessionIds = $derived(sessionsInTree(layoutTree));
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let picker = $state(false);
   let pickerList = $state<ConnectionSummary[]>([]);
