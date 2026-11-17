@@ -236,7 +236,7 @@
   });
 </script>
 
-<div class="pane" class:hidden={!active} onfocusin={() => onactivate(sessionId)} onclick={() => onactivate(sessionId)}>
+<div class="pane" class:hidden={!active} onfocusin={() => onactivate(sessionId)}>
   <div class="terminal-host" bind:this={host}></div>
 </div>
 
