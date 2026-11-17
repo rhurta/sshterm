@@ -223,6 +223,7 @@
 
   function closePicker() {
     picker = false;
+    pendingPaneId = null;
     newTabButton?.focus();
   }
 
@@ -361,7 +362,7 @@
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
                     {#if tab}
                       <div class="pane-tab" class:active={paneActiveIds[pane.sessionId] === sessionId}>
-                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId} title={tab.name} onclick={() => activateSession(sessionId)}>{tab.name}</button>
+                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId} title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name} onclick={() => activateSession(sessionId)}>{tab.name}</button>
                         <button class="pane-tab-close" aria-label={`Close ${tab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
                       </div>
                     {/if}
