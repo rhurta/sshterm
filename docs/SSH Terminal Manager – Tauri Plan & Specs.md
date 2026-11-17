@@ -374,14 +374,14 @@ Not implemented:
 - OpenSSH receives ServerAliveInterval=<keepalive_secs> and ServerAliveCountMax=3.
 - Automatic reconnect with backoff is not implemented.
 
-### M6 — Tiling and broadcast (planned)
+### M6 — Tiling, command console and broadcast (planned)
 
 - Planned layouts: current tabs, horizontal split, vertical split and 2×2 grid.
 - Planned broadcast targets: visible panes, all open sessions or a selected subset.
 - protected is already persisted and editable, but broadcast exclusion and its operational meaning are not implemented yet.
 - Planned multi-line paste confirmation before broadcasting.
 
-### M6b — Syntax highlighting (planned)
+Implementation phases, safety requirements and acceptance criteria are maintained in [docs/M6-implementation-plan.md](M6-implementation-plan.md). The command console is a persistent multiline composition pane below the terminal area; composing text is separate from sending it. Enter inserts a newline, while Send / Ctrl+Enter explicitly dispatches to the chosen target set. Saved scripts are deferred until the console and broadcast workflow are validated.\n\n### M6b — Syntax highlighting (planned)
 
 The vault connection model already has a highlight: string[] field, but there is no rule loader, matcher, frontend decoration layer, test panel, or highlight/ rule set in the current implementation. Folder nodes also do not yet have a highlight property, so inherited folder rules require a model change.
 
