@@ -367,7 +367,12 @@
     min-height: 0;
     overflow-y: auto;
     padding-bottom: 0.5rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
   }
+  .tree::-webkit-scrollbar { width: 8px; }
+  .tree::-webkit-scrollbar-track { background: transparent; }
+  .tree::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 6px; }
   .line {
     padding-right: 0.5rem;
     box-sizing: border-box;
