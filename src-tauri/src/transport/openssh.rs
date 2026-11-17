@@ -118,7 +118,7 @@ fn build_command(cfg: &SshConfig, askpass: Option<(&str, &str)>) -> CommandBuild
         cmd.arg("-o");
         cmd.arg("PubkeyAuthentication=no");
         cmd.arg("-o");
-        cmd.arg("PreferredAuthentications=keyboard-interactive,password");
+        cmd.arg("PreferredAuthentications=password,keyboard-interactive");
     } else if cfg.key_path.is_some() {
         // Only offer the identity explicitly selected for this saved connection,
         // not every unrelated key currently loaded in ssh-agent.
@@ -395,7 +395,7 @@ mod tests {
         let args = argv(&build_command(&config, Some(("pipe", "token"))));
         assert!(args.windows(2).any(|w| w[0] == "-o" && w[1] == "PubkeyAuthentication=no"));
         assert!(args.windows(2).any(|w| {
-            w[0] == "-o" && w[1] == "PreferredAuthentications=keyboard-interactive,password"
+            w[0] == "-o" && w[1] == "PreferredAuthentications=password,keyboard-interactive"
         }));
         assert!(!args.iter().any(|arg| arg == "IdentitiesOnly=yes"));
         // The password/token is never placed in argv.

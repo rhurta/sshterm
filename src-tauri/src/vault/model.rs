@@ -168,6 +168,14 @@ impl Default for Connection {
 }
 
 impl Connection {
+    /// Whether this connection is configured for password authentication.
+    /// This is independent of whether a password is saved: an empty field can
+    /// still mean that the user will type the password into the terminal.
+    pub fn uses_password_auth(&self) -> bool {
+        matches!(&self.auth, Auth::Password { .. })
+            || self.legacy_password.as_ref().is_some_and(|password| !password.is_empty())
+    }
+
     /// Secret delivered to the askpass helper: a login password for password
     /// auth, or the stored passphrase of a key file. Key/agent auth without a
     /// passphrase returns None. Legacy M1-M3 passwords are still honoured.
@@ -329,6 +337,31 @@ mod tests {
         assert_eq!(c.key_path().as_deref(), Some("C:/keys/id"));
         assert!(c.password().is_none());
         assert!(c.jump.is_empty() && c.tunnels.is_empty() && c.highlight.is_empty());
+    }
+
+    #[test]
+    fn password_authentication_mode_is_detected_without_a_saved_secret() {
+        let password = Connection {
+            auth: Auth::Password { password: String::new() },
+            ..Connection::default()
+        };
+        assert!(password.uses_password_auth());
+
+        let legacy_password = Connection {
+            legacy_password: Some("legacy-secret".into()),
+            ..Connection::default()
+        };
+        assert!(legacy_password.uses_password_auth());
+
+        let key = Connection {
+            auth: Auth::Key {
+                path: "C:/keys/id".into(),
+                passphrase: Some("phrase".into()),
+            },
+            ..Connection::default()
+        };
+        assert!(!key.uses_password_auth());
+        assert!(!Connection::default().uses_password_auth());
     }
 
     #[test]

@@ -198,7 +198,7 @@ pub async fn session_open(
             user: conn.user.clone(),
             keepalive_secs: conn.keepalive_secs,
             key_path: conn.key_path().map(std::path::PathBuf::from),
-            password_auth: conn.key_path().is_none() && conn.password().is_some(),
+            password_auth: conn.uses_password_auth(),
             jump_hosts: hops.iter().map(|hop| JumpHost {
                 user: hop.user.clone(),
                 host: hop.host.clone(),
