@@ -9,7 +9,7 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
-  import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
+  import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
     dir,
@@ -271,7 +271,15 @@
     if (activeId === sessionId) activeId = tabs[tabs.length - 1]?.sessionId ?? null;
   }
 
-  function dividerStyle(axis: SplitAxis, rect: LayoutRect): string {
+
+  function removePane(paneId: string) {
+    const pane = layoutGeometry.leaves.find((item) => item.sessionId === paneId);
+    if (!pane || pane.sessionIds.length > 0 || layoutGeometry.leaves.length <= 1) return;
+    layoutTree = removeEmptyPane(layoutTree, paneId);
+    const { [paneId]: _removed, ...rest } = paneActiveIds;
+    paneActiveIds = rest;
+  }
+\n  function dividerStyle(axis: SplitAxis, rect: LayoutRect): string {
     if (axis === "horizontal") {
       return `left: calc(${rect.x * 100}% - 4px); top: ${rect.y * 100}%; width: 8px; height: ${rect.height * 100}%;`;
     }
@@ -367,6 +375,9 @@
                     {/if}
                   {/each}
                   <button class="pane-add" title="Open a connection in this pane" aria-label="Open a connection in this pane" onclick={() => openPickerForPane(pane.sessionId)}>+</button>
+                  {#if pane.sessionIds.length === 0 && layoutGeometry.leaves.length > 1}
+                    <button class="pane-remove" title="Remove empty pane" aria-label="Remove empty pane" onclick={() => removePane(pane.sessionId)}>×</button>
+                  {/if}
                 </div>
                 <div class="pane-terminals">
                   {#if pane.sessionIds.length === 0}
@@ -547,7 +558,10 @@
   .pane-tab button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: 0.68rem; cursor: pointer; }
   .pane-tab.active button { color: var(--text); }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }
-  .pane-add { flex: 0 0 auto; align-self: center; border: 0; background: transparent; color: var(--accent); font: inherit; cursor: pointer; }
+  .pane-add, .pane-remove { flex: 0 0 auto; align-self: center; border: 0; background: transparent; font: inherit; cursor: pointer; padding: 0 0.35rem; }
+  .pane-add { color: var(--accent); }
+  .pane-remove { color: var(--text-secondary); }
+  .pane-remove:hover { color: var(--danger, #e06c75); }
   .empty-pane { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
   .empty-pane button { font: inherit; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }
   .tool-separator { height: 1px; margin: 0.2rem 0; background: var(--border); }
