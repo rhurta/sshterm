@@ -64,10 +64,13 @@ Acceptance: one, two and four live sessions can be arranged, resized and closed 
 
 ### M6.2 — Command console
 
-1. Add a reusable CommandConsole component with a multiline editor, draft retention, target summary, Send and Clear.
-2. Add active-session send first, then wire selected/all target modes once target eligibility is available.
-3. Send exact UTF-8 bytes through the existing session_write command.
-4. Keep the console independent of terminal panes so future saved scripts reuse the same editor and send pipeline.
+**Initial active-session console implemented; validation and polish remain.** A reusable CommandConsole component is mounted independently of the tiled pane tree. Its toolbar toggle hides or shows the console without discarding the in-memory draft. The bottom pane has a draggable, keyboard-adjustable height divider, multiline editor, active-session target summary, Send and Clear. Enter inserts a newline; Ctrl+Enter or Send requests dispatch. Multi-line payloads require a second explicit confirmation. Dispatch uses the existing session_write command with the exact UTF-8 bytes encoded as base64; no newline is appended, and the UI reports IPC dispatch rather than claiming remote command completion. Drafts remain in frontend memory and are not persisted.
+
+Remaining:
+- Verify Enter, Ctrl+Enter, paste, explicit send, multi-line confirmation, clear and hide/show behavior in the Windows app.
+- Add focused component-level tests for send gating and payload preservation if the current test setup is extended.
+
+Selected/all target modes remain in M6.3.
 
 Acceptance: multiline drafts can be composed, pasted, edited and sent explicitly; Enter alone never sends.
 
