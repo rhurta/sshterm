@@ -66,6 +66,8 @@ export interface ConnectionSummary {
   jump: string[];
   jump_disabled: string[];
   tunnel_count: number;
+  /** Whether the saved connection is protected from broadcast by default. */
+  protected: boolean;
 }
 
 export type TreeNode =
@@ -119,4 +121,5 @@ export interface Tab {
   jumpNames: string[];
   /** Configured local/reverse forwards owned by this SSH session. */
   tunnelCount: number;
+  protected: boolean;
 }
