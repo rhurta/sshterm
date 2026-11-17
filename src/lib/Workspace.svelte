@@ -9,7 +9,7 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
-  import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeSession, sessionsInTree, setSplitRatioAtPath, splitSession, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
+  import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeSession, setSplitRatioAtPath, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
     dir,
@@ -25,7 +25,8 @@
   let activeId = $state<string | null>(null);
   let layoutPreset = $state<LayoutPreset>("single");
   let layoutTree = $state<SplitNode | null>(null);
-  let layoutGeometry = $derived(getLayoutGeometry(layoutTree));\n  let paneActiveIds = $state<Record<string, string>>({});
+  let layoutGeometry = $derived(getLayoutGeometry(layoutTree));
+  let paneActiveIds = $state<Record<string, string>>({});
   let visibleSessionIds = $derived(layoutGeometry.leaves.map((item) => item.sessionId));
   let panesElement = $state<HTMLDivElement | null>(null);
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
@@ -173,13 +174,7 @@
         cols: 80,
         rows: 24,
       });
-      tabs = [...tabs, {
-        sessionId,
-        connId: c.id,
-        name: c.name,
-        jumpNames,
-        tunnelCount: c.tunnel_count ?? 0,
-      }];
+      tabs = [...tabs, { sessionId, connId: c.id, name: c.name, jumpNames, tunnelCount: c.tunnel_count ?? 0 }];
       const focusedPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
       const targetPaneId = focusedPane?.sessionId ?? layoutGeometry.leaves[0]?.sessionId;
       if (!layoutTree || !targetPaneId) {
@@ -231,9 +226,6 @@
     activeId = sessionId;
     const pane = layoutGeometry.leaves.find((item) => item.sessionIds.includes(sessionId));
     if (pane) paneActiveIds = { ...paneActiveIds, [pane.sessionId]: sessionId };
-    else {
-      layoutTree = addSessionToPane(layoutTree, layoutGeometry.leaves[0]?.sessionId ?? "", sessionId);
-    }
   }
 
   function chooseLayout(preset: LayoutPreset) {
@@ -332,40 +324,9 @@
 
     <main>
       {#if tabs.length > 0}
-        <div class="tabs">
-          {#each tabs as tab (tab.sessionId)}
-            <div class="tab" class:active={activeId === tab.sessionId}>
-              <button
-                class="tab-name"
-                onclick={() => activateSession(tab.sessionId)}
-                title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
-              >
-                <span>{tab.name}</span>
-                {#if tab.jumpNames.length > 0}
-                  <small class="tab-chain">{tab.jumpNames.join(" → ")} → {tab.name}</small>
-                {/if}
-                {#if tab.tunnelCount > 0}
-                  <small class="tab-forwards">{t("workspace.tunnelsConfigured", { count: tab.tunnelCount })}</small>
-                {/if}
-              </button>
-              <button
-                class="tab-close"
-                onclick={() => closeTab(tab.sessionId)}
-                title={t("workspace.close")}
-              >
-                x
-              </button>
-            </div>
-          {/each}
-          <button
-            class="new-tab"
-            bind:this={newTabButton}
-            onclick={openPicker}
-            title={t("workspace.newTab")}
-          >+</button>
-        </div>
         <div class="workspace-layout">
           <div class="layout-tools" aria-label="Terminal layout">
+            <button bind:this={newTabButton} class="tool-add" title={t("workspace.newTab")} onclick={openPicker}>+</button>
             <button class:chosen={layoutPreset === "single"} title="Single pane" aria-pressed={layoutPreset === "single"} onclick={() => chooseLayout("single")}>1</button>
             <button class:chosen={layoutPreset === "left-right"} title="Left and right" aria-pressed={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}>▥</button>
             <button class:chosen={layoutPreset === "top-bottom"} title="Top and bottom" aria-pressed={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}>▤</button>
@@ -387,449 +348,26 @@
                 </div>
                 <div class="pane-terminals">
                   {#each pane.sessionIds as sessionId (sessionId)}
-                    <TerminalPane
-                      sessionId={sessionId}
-                      active={paneActiveIds[pane.sessionId] === sessionId}
-                      focused={activeId === sessionId}
-                      onactivate={activateSession}
-                      onclosed={dropTab}
-                      onmultilinepaste={requestMultilinePaste}
-                      {settings}
-                      {theme}
-                    />
+                    <TerminalPane sessionId={sessionId} active={paneActiveIds[pane.sessionId] === sessionId}
+                      focused={activeId === sessionId} onactivate={activateSession} onclosed={dropTab}
+                      onmultilinepaste={requestMultilinePaste} {settings} {theme} />
                   {/each}
                 </div>
               </div>
             {/each}
             {#each layoutGeometry.dividers as divider}
-              <div
-                class="layout-divider"
-                class:vertical={divider.axis === "horizontal"}
-                class:horizontal={divider.axis === "vertical"}
-                style={dividerStyle(divider.axis, divider.rect)}
-                role="separator"
+              <div class="layout-divider" class:vertical={divider.axis === "horizontal"} class:horizontal={divider.axis === "vertical"}
+                style={dividerStyle(divider.axis, divider.rect)} role="separator"
                 aria-orientation={divider.axis === "horizontal" ? "vertical" : "horizontal"}
-                aria-label="Resize terminal panes"
-                aria-valuemin="15"
-                aria-valuemax="85"
-                aria-valuenow={Math.round(divider.ratio * 100)}
-                tabindex="0"
+                aria-label="Resize terminal panes" aria-valuemin="15" aria-valuemax="85"
+                aria-valuenow={Math.round(divider.ratio * 100)} tabindex="0"
                 onpointerdown={(event) => startDividerDrag(event, divider)}
                 onpointermove={(event) => moveDividerDrag(event, divider)}
-                onpointerup={endDividerDrag}
-                onpointercancel={endDividerDrag}
+                onpointerup={endDividerDrag} onpointercancel={endDividerDrag}
                 onkeydown={(event) => adjustDivider(event, divider)}
               ></div>
             {/each}
           </div>
-        </div>"ts">
-  import { onMount, tick } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
-  import { subscribeSessionErrors } from "$lib/sessionBus";
-  import { hasMessage, t } from "$lib/i18n/index.svelte";
-  import ConnectionSidebar from "./ConnectionSidebar.svelte";
-  import ConnectionEditor from "./ConnectionEditor.svelte";
-  import TerminalPane from "./TerminalPane.svelte";
-  import LanguageSelect from "./LanguageSelect.svelte";
-  import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
-  import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
-  import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeSession, sessionsInTree, setSplitRatioAtPath, splitSession, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
-
-  let {
-    dir,
-    theme,
-    settingsOpen = $bindable(false),
-  }: {
-    dir: string;
-    theme: AppTheme;
-    settingsOpen?: boolean;
-  } = $props();
-
-  let tabs = $state<Tab[]>([]);
-  let activeId = $state<string | null>(null);
-  let layoutPreset = $state<LayoutPreset>("single");
-  let layoutTree = $state<SplitNode | null>(null);
-  let layoutGeometry = $derived(getLayoutGeometry(layoutTree));\n  let paneActiveIds = $state<Record<string, string>>({});
-  let visibleSessionIds = $derived(layoutGeometry.leaves.map((item) => item.sessionId));
-  let panesElement = $state<HTMLDivElement | null>(null);
-  let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
-  let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
-  let picker = $state(false);
-  let pickerList = $state<ConnectionSummary[]>([]);
-  let pickerDialog = $state<HTMLDivElement | null>(null);
-  let newTabButton = $state<HTMLButtonElement | null>(null);
-  let refreshToken = $state(0);
-  let error = $state("");
-  let settings = $state<TerminalSettings>({ ...DEFAULT_TERMINAL_SETTINGS });
-  let multilinePaste = $state<{ lineCount: number } | null>(null);
-  let multilinePasteCancelButton = $state<HTMLButtonElement | null>(null);
-  let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
-
-  let openIds = $derived(tabs.map((tab) => tab.connId));
-
-  /** The backend sends short codes; here they are converted to messages. */
-  function errorText(value: string): string {
-    const [code, ...detailParts] = value.split(":");
-    const key = `error.${code.trim()}`;
-    const base = hasMessage(key)
-      ? t(key)
-      : t("lock.error.unexpected", { detail: code.trim() });
-    const detail = detailParts.join(":").trim();
-    return detail ? `${base} — ${detail}` : base;
-  }
-
-  onMount(() => {
-    void invoke<TerminalSettings>("config_get_terminal_settings")
-      .then((value) => (settings = value))
-      .catch(() => {});
-    return subscribeSessionErrors((sessionId, message) => {
-      const tab = tabs.find((item) => item.sessionId === sessionId);
-      error = tab ? `${tab.name}: ${message}` : message;
-    });
-  });
-
-  async function setTerminalSetting<K extends keyof TerminalSettings>(
-    key: K,
-    value: TerminalSettings[K],
-  ) {
-    const previous = settings;
-    const next = { ...settings, [key]: value };
-    settings = next;
-    try {
-      await invoke("config_set_terminal_settings", { settings: next });
-    } catch (e) {
-      settings = previous;
-      error = String(e);
-    }
-  }
-
-  /** Requests confirmation before a terminal receives multi-line clipboard data. */
-  function requestMultilinePaste(text: string): Promise<boolean> {
-    // Do not stack confirmation dialogs if another paste is triggered while
-    // the first one is awaiting a decision.
-    if (multilinePasteResolver) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      multilinePasteResolver = resolve;
-      multilinePaste = { lineCount: text.split(/\r\n|\r|\n/).length };
-      void tick().then(() => multilinePasteCancelButton?.focus());
-    });
-  }
-
-  function settleMultilinePaste(confirmed: boolean) {
-    const resolve = multilinePasteResolver;
-    multilinePasteResolver = null;
-    multilinePaste = null;
-    resolve?.(confirmed);
-  }
-
-  function resolveJumpNames(connection: ConnectionSummary, all: ConnectionSummary[]): string[] {
-    const byId = new Map(all.map((item) => [item.id, item]));
-    const active = new Set<string>();
-    const visited = new Set<string>();
-    const names: string[] = [];
-
-    function append(id: string, disabled: string[] = []) {
-      if (disabled.includes(id) || active.has(id) || visited.has(id)) return;
-      const hop = byId.get(id);
-      if (!hop) return;
-      active.add(id);
-      for (const nested of hop.jump ?? []) append(nested, hop.jump_disabled ?? []);
-      active.delete(id);
-      visited.add(id);
-      names.push(hop.name);
-    }
-
-    for (const id of connection.jump ?? []) {
-      append(id, connection.jump_disabled ?? []);
-    }
-    return names;
-  }
-
-  function blank(): Connection {
-    return {
-      id: crypto.randomUUID(),
-      name: "",
-      host: "",
-      port: 22,
-      user: "",
-      auth: { type: "agent" },
-      keepalive_secs: 30,
-      colors: null,
-      protected: false,
-      jump: [],
-      jump_disabled: [],
-      tunnels: [],
-      sftp: null,
-      highlight: [],
-    };
-  }
-
-  async function edit(c: ConnectionSummary) {
-    try {
-      const full = await invoke<Connection | null>("conn_get", { id: c.id });
-      if (full) editor = { conn: full, isNew: false, parentId: null };
-    } catch (e) {
-      error = errorText(String(e));
-    }
-  }
-
-  async function save(c: Connection, parentId: string | null): Promise<string | null> {
-    try {
-      await invoke("conn_upsert", { conn: c, parentId });
-      editor = null;
-      error = "";
-      refreshToken += 1;
-      return null;
-    } catch (e) {
-      return String(e);
-    }
-  }
-
-  async function connect(c: ConnectionSummary) {
-    error = "";
-    try {
-      const jumpNames = c.jump?.length
-        ? resolveJumpNames(c, await invoke<ConnectionSummary[]>("conn_list"))
-        : [];
-      // 80x24 is provisional: TerminalPane adjusts to the real size on open.
-      const sessionId = await invoke<string>("session_open", {
-        connId: c.id,
-        cols: 80,
-        rows: 24,
-      });
-      tabs = [...tabs, {
-        sessionId,
-        connId: c.id,
-        name: c.name,
-        jumpNames,
-        tunnelCount: c.tunnel_count ?? 0,
-      }];
-      const focusedPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
-      const targetPaneId = focusedPane?.sessionId ?? layoutGeometry.leaves[0]?.sessionId;
-      if (!layoutTree || !targetPaneId) {
-        layoutTree = createLayoutTree([sessionId], "single", sessionId);
-        paneActiveIds = { ...paneActiveIds, [sessionId]: sessionId };
-      } else {
-        layoutTree = addSessionToPane(layoutTree, targetPaneId, sessionId);
-        paneActiveIds = { ...paneActiveIds, [targetPaneId]: sessionId };
-      }
-      activeId = sessionId;
-      picker = false;
-    } catch (e) {
-      error = errorText(String(e));
-    }
-  }
-
-  async function openPicker() {
-    try {
-      pickerList = await invoke<ConnectionSummary[]>("conn_list");
-      picker = true;
-      // Move keyboard focus out of xterm, otherwise Escape would be sent to
-      // the remote host instead of dismissing the dialog.
-      await tick();
-      pickerDialog?.focus();
-    } catch (e) {
-      error = errorText(String(e));
-    }
-  }
-
-  function closePicker() {
-    picker = false;
-    newTabButton?.focus();
-  }
-
-  function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && multilinePaste) {
-      e.preventDefault();
-      settleMultilinePaste(false);
-    } else if (e.key === "Escape" && settingsOpen) {
-      e.preventDefault();
-      settingsOpen = false;
-    } else if (e.key === "Escape" && picker) {
-      e.preventDefault();
-      closePicker();
-    }
-  }
-
-  function activateSession(sessionId: string) {
-    activeId = sessionId;
-    const pane = layoutGeometry.leaves.find((item) => item.sessionIds.includes(sessionId));
-    if (pane) paneActiveIds = { ...paneActiveIds, [pane.sessionId]: sessionId };
-    else {
-      layoutTree = addSessionToPane(layoutTree, layoutGeometry.leaves[0]?.sessionId ?? "", sessionId);
-    }
-  }
-
-  function chooseLayout(preset: LayoutPreset) {
-    layoutPreset = preset;
-    layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), preset, activeId);
-    const nextActive: Record<string, string> = {};
-    for (const pane of getLayoutGeometry(layoutTree).leaves) {
-      nextActive[pane.sessionId] = pane.sessionIds.includes(activeId ?? "") ? activeId! : pane.sessionIds[0];
-    }
-    paneActiveIds = nextActive;
-  }
-
-  function dropTab(sessionId: string) {
-    const oldPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(sessionId));
-    tabs = tabs.filter((tab) => tab.sessionId !== sessionId);
-    layoutTree = removeSession(layoutTree, sessionId);
-    if (oldPane && paneActiveIds[oldPane.sessionId] === sessionId) {
-      const remaining = oldPane.sessionIds.filter((id) => id !== sessionId);
-      if (remaining.length) paneActiveIds = { ...paneActiveIds, [oldPane.sessionId]: remaining[0] };
-      else {
-        const { [oldPane.sessionId]: _removed, ...rest } = paneActiveIds;
-        paneActiveIds = rest;
-      }
-    }
-    if (activeId === sessionId) activeId = tabs[tabs.length - 1]?.sessionId ?? null;
-  }
-
-  function dividerStyle(axis: SplitAxis, rect: LayoutRect): string {
-    if (axis === "horizontal") {
-      return `left: calc(${rect.x * 100}% - 4px); top: ${rect.y * 100}%; width: 8px; height: ${rect.height * 100}%;`;
-    }
-    return `left: ${rect.x * 100}%; top: calc(${rect.y * 100}% - 4px); width: ${rect.width * 100}%; height: 8px;`;
-  }
-
-  function updateDivider(event: PointerEvent, path: SplitPath, axis: SplitAxis, region: LayoutRect) {
-    if (!panesElement) return;
-    const bounds = panesElement.getBoundingClientRect();
-    const ratio = axis === "horizontal"
-      ? (event.clientX - bounds.left - region.x * bounds.width) / (region.width * bounds.width)
-      : (event.clientY - bounds.top - region.y * bounds.height) / (region.height * bounds.height);
-    layoutTree = setSplitRatioAtPath(layoutTree, path, ratio);
-  }
-
-  function startDividerDrag(event: PointerEvent, divider: { path: SplitPath; axis: SplitAxis; region: LayoutRect }) {
-    event.preventDefault();
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    dragState = { path: divider.path, axis: divider.axis, region: divider.region };
-  }
-
-  function moveDividerDrag(event: PointerEvent, divider: { path: SplitPath; axis: SplitAxis; region: LayoutRect }) {
-    if (!dragState || dragState.path.join("/") !== divider.path.join("/")) return;
-    updateDivider(event, divider.path, divider.axis, divider.region);
-  }
-
-  function endDividerDrag() {
-    dragState = null;
-  }
-
-  function adjustDivider(event: KeyboardEvent, divider: { path: SplitPath; axis: SplitAxis; ratio: number }) {
-    const negative = divider.axis === "horizontal" ? ["ArrowLeft"] : ["ArrowUp"];
-    const positive = divider.axis === "horizontal" ? ["ArrowRight"] : ["ArrowDown"];
-    let next = divider.ratio;
-    if (negative.includes(event.key)) next -= 0.02;
-    else if (positive.includes(event.key)) next += 0.02;
-    else return;
-    event.preventDefault();
-    layoutTree = setSplitRatioAtPath(layoutTree, divider.path, next);
-  }
-
-  async function closeTab(sessionId: string) {
-    try {
-      await invoke("session_close", { id: sessionId });
-    } catch {
-      // the session already ended; drop the tab anyway
-    }
-    dropTab(sessionId);
-  }
-</script>
-
-<svelte:window onkeydown={onKeydown} />
-
-<div class="app">
-
-  {#if error}
-    <p class="error" role="alert">{error}</p>
-  {/if}
-
-  <div class="body">
-    <ConnectionSidebar
-      {openIds}
-      {refreshToken}
-      onopen={connect}
-      onedit={edit}
-      onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })}
-    />
-
-    <main>
-      {#if tabs.length > 0}
-        <div class="tabs">
-          {#each tabs as tab (tab.sessionId)}
-            <div class="tab" class:active={activeId === tab.sessionId}>
-              <button
-                class="tab-name"
-                onclick={() => activateSession(tab.sessionId)}
-                title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
-              >
-                <span>{tab.name}</span>
-                {#if tab.jumpNames.length > 0}
-                  <small class="tab-chain">{tab.jumpNames.join(" → ")} → {tab.name}</small>
-                {/if}
-                {#if tab.tunnelCount > 0}
-                  <small class="tab-forwards">{t("workspace.tunnelsConfigured", { count: tab.tunnelCount })}</small>
-                {/if}
-              </button>
-              <button
-                class="tab-close"
-                onclick={() => closeTab(tab.sessionId)}
-                title={t("workspace.close")}
-              >
-                x
-              </button>
-            </div>
-          {/each}
-          <button
-            class="new-tab"
-            bind:this={newTabButton}
-            onclick={openPicker}
-            title={t("workspace.newTab")}
-          >+</button>
-        </div>
-        <div class="layout-tools" aria-label="Terminal layout">
-          <button class:chosen={layoutPreset === "single"} title="Single terminal" aria-pressed={layoutPreset === "single"} onclick={() => chooseLayout("single")}>1</button>
-          <button class:chosen={layoutPreset === "left-right"} title="Left and right" aria-pressed={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}>▥</button>
-          <button class:chosen={layoutPreset === "top-bottom"} title="Top and bottom" aria-pressed={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}>▤</button>
-          <button class:chosen={layoutPreset === "grid"} title="2 by 2 grid" aria-pressed={layoutPreset === "grid"} onclick={() => chooseLayout("grid")}>▦</button>
-        </div>
-        <div class="panes" bind:this={panesElement}>
-          {#each tabs as tab (tab.sessionId)}
-            {@const pane = layoutGeometry.leaves.find((item) => item.sessionId === tab.sessionId)}
-            <div class="pane-slot" class:hidden={!pane} style={pane ? `left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;` : ""}>
-              <TerminalPane
-                sessionId={tab.sessionId}
-                active={Boolean(pane)}
-                focused={activeId === tab.sessionId}
-                onactivate={activateSession}
-                onclosed={dropTab}
-                onmultilinepaste={requestMultilinePaste}
-                {settings}
-                {theme}
-              />
-            </div>
-          {/each}
-          {#each layoutGeometry.dividers as divider, index (divider.path.join("/"))}
-            <div
-              class="layout-divider"
-              class:vertical={divider.axis === "horizontal"}
-              class:horizontal={divider.axis === "vertical"}
-              style={dividerStyle(divider.axis, divider.rect)}
-              role="separator"
-              aria-orientation={divider.axis === "horizontal" ? "vertical" : "horizontal"}
-              aria-label="Resize terminal panes"
-              aria-valuemin="15"
-              aria-valuemax="85"
-              aria-valuenow={Math.round(divider.ratio * 100)}
-              tabindex="0"
-              onpointerdown={(event) => startDividerDrag(event, divider)}
-              onpointermove={(event) => moveDividerDrag(event, divider)}
-              onpointerup={endDividerDrag}
-              onpointercancel={endDividerDrag}
-              onkeydown={(event) => adjustDivider(event, divider)}
-            ></div>
-          {/each}
         </div>
       {:else}
         <div class="empty">
@@ -1039,71 +577,18 @@
     padding: 0.2rem 0.6rem;
     cursor: pointer;
   }
-  .workspace-layout {
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-    display: flex;
-    overflow: hidden;
-  }
-  .panes {
-    position: relative;
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-    overflow: hidden;
-    background: var(--app-bg);
-  }
-  .pane-slot {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-    background: var(--surface);
-  }
-  .pane-tabs {
-    display: flex;
-    flex: 0 0 auto;
-    min-height: 1.7rem;
-    overflow-x: auto;
-    gap: 2px;
-    padding: 2px 3px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-  .pane-tab {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    max-width: 11rem;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: var(--surface-hover);
-  }
-  .pane-tab.active {
-    border-color: var(--accent);
-    background: var(--surface-raised);
-  }
-  .pane-tab button {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 0.18rem 0.35rem;
-    color: var(--text-secondary);
-    background: transparent;
-    border: 0;
-    font: inherit;
-    font-size: 0.68rem;
-    cursor: pointer;
-  }
+  .workspace-layout { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
+  .panes { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--app-bg); }
+  .pane-slot { position: absolute; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface); }
+  .pane-tabs { display: flex; flex: 0 0 auto; min-height: 1.7rem; overflow-x: auto; gap: 2px; padding: 2px 3px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .pane-tab { display: flex; align-items: center; min-width: 0; max-width: 11rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-hover); }
+  .pane-tab.active { border-color: var(--accent); background: var(--surface-raised); }
+  .pane-tab button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: 0.68rem; cursor: pointer; }
   .pane-tab.active button { color: var(--text); }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }
   .pane-terminals { position: relative; flex: 1; min-height: 0; overflow: hidden; }
   .pane-terminals :global(.pane) { position: absolute; inset: 0; }
-  .layout-divider {
+
   .layout-divider {
     position: absolute;
     z-index: 4;
@@ -1119,6 +604,7 @@
   }
   .layout-tools { display: flex; flex-direction: column; flex: 0 0 2.4rem; gap: 0.3rem; padding: 0.35rem 0.25rem; background: var(--surface); border-right: 1px solid var(--border); }
   .layout-tools button { min-width: 1.85rem; min-height: 1.85rem; padding: 0.2rem 0.35rem; color: var(--text-secondary); background: transparent; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .layout-tools button.tool-add { color: var(--accent); font-weight: 700; }
   .layout-tools button.chosen { color: var(--accent); border-color: var(--accent); background: var(--surface-hover); }
   .empty {
     flex: 1;
