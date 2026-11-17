@@ -404,13 +404,21 @@
           </div>
           <div class="panes" bind:this={panesElement}>
             {#each layoutGeometry.leaves as pane (pane.sessionId)}
-              <div class="pane-slot" style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
+              <div class="pane-slot" class:focused={pane.sessionIds.includes(activeId ?? "")} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
                 <div class="pane-tabs" role="tablist" aria-label="Sessions in pane">
                   {#each pane.sessionIds as sessionId (sessionId)}
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
                     {#if tab}
                       <div class="pane-tab" class:active={paneActiveIds[pane.sessionId] === sessionId}>
-                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId} title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name} onclick={() => activateSession(sessionId)}>{tab.name}</button>
+                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
+                          aria-label={activeId === sessionId ? `${tab.name}, active pane` : tab.name}
+                          title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
+                          onclick={() => activateSession(sessionId)}>
+                          <span class="pane-tab-name">{tab.name}</span>
+                          {#if activeId === sessionId}
+                            <span class="pane-focus-dot" aria-hidden="true"></span>
+                          {/if}
+                        </button>
                         <button class="pane-tab-close" aria-label={`Close ${tab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
                       </div>
                     {/if}
@@ -612,10 +620,13 @@
   .workspace-layout { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
   .panes { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--app-bg); }
   .pane-slot { position: absolute; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface); }
+  .pane-slot.focused { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
   .pane-tabs { display: flex; flex: 0 0 auto; min-height: 1.7rem; overflow-x: auto; gap: 2px; padding: 2px 3px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .pane-tab { display: flex; align-items: center; min-width: 0; max-width: 11rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-hover); }
   .pane-tab.active { border-color: var(--accent); background: var(--surface-raised); }
-  .pane-tab button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: 0.68rem; cursor: pointer; }
+  .pane-tab button { min-width: 0; display: flex; align-items: center; gap: 0.35rem; overflow: hidden; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: 0.68rem; cursor: pointer; }
+  .pane-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pane-focus-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); }
   .pane-tab.active button { color: var(--text); }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }
   .pane-add, .pane-remove { flex: 0 0 auto; align-self: center; border: 0; background: transparent; font: inherit; cursor: pointer; padding: 0 0.35rem; }
