@@ -6,10 +6,12 @@
     visible,
     sessionId,
     sessionName,
+    height,
   }: {
     visible: boolean;
     sessionId: string | null;
     sessionName: string;
+    height: number;
   } = $props();
 
   let draft = $state("");
@@ -69,7 +71,7 @@
   }
 </script>
 
-<section class="command-console" class:hidden={!visible} aria-label="Command console">
+<section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label="Command console">
   <div class="console-heading">
     <strong>Command console</strong>
     <span class="target" aria-live="polite">
