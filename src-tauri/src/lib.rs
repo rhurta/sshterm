@@ -8,9 +8,68 @@ mod store;
 mod transport;
 mod vault;
 
+use serde::{Deserialize, Serialize};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, Position, Size, WindowEvent};
+
 #[tauri::command]
 fn app_info() -> String {
     paths::app_dir().display().to_string()
+}
+
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct SavedWindowState {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    maximized: bool,
+}
+
+fn window_state_path() -> std::path::PathBuf {
+    paths::app_dir().join("window-state.json")
+}
+
+fn save_window_state(window: &tauri::WebviewWindow, path: &std::path::Path) {
+    if window.is_minimized().unwrap_or(false) {
+        return;
+    }
+    let maximized = window.is_maximized().unwrap_or(false);
+    let previous = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<SavedWindowState>(&bytes).ok());
+    let bounds = if maximized {
+        previous
+    } else {
+        let position = window.outer_position().ok();
+        let size = window.outer_size().ok();
+        position.zip(size).map(|(position, size)| SavedWindowState {
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+            maximized: false,
+        })
+    };
+    if let Some(mut state) = bounds {
+        state.maximized = maximized;
+        if let Ok(bytes) = serde_json::to_vec_pretty(&state) {
+            let _ = std::fs::write(path, bytes);
+        }
+    }
+}
+
+fn restore_window_state(window: &tauri::WebviewWindow) {
+    let Ok(bytes) = std::fs::read(window_state_path()) else { return };
+    let Ok(state) = serde_json::from_slice::<SavedWindowState>(&bytes) else { return };
+    if state.width < 640 || state.height < 480 {
+        return;
+    }
+    let _ = window.set_size(Size::Physical(PhysicalSize::new(state.width, state.height)));
+    let _ = window.set_position(Position::Physical(PhysicalPosition::new(state.x, state.y)));
+    if state.maximized {
+        let _ = window.maximize();
+    }
 }
 
 /// SSH_ASKPASS helper mode: `ssh.exe` launches this same exe with the pipe
@@ -41,6 +100,19 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                restore_window_state(&window);
+                let save_path = window_state_path();
+                let event_window = window.clone();
+                window.on_window_event(move |event| {
+                    if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::CloseRequested { .. }) {
+                        save_window_state(&event_window, &save_path);
+                    }
+                });
+            }
+            Ok(())
+        })
         .manage(commands::VaultState::default())
         .manage(session::SessionState::default())
         .invoke_handler(tauri::generate_handler![
