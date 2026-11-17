@@ -82,6 +82,69 @@ export function setSplitRatioAtPath(node: SplitNode | null, path: SplitPath, rat
   return { ...node, second: setSplitRatioAtPath(node.second, rest, ratio) ?? node.second };
 }
 
+
+export type LayoutRect = { x: number; y: number; width: number; height: number };
+export type LayoutLeaf = { sessionId: string; rect: LayoutRect };
+export type LayoutDivider = {
+  path: SplitPath;
+  axis: SplitAxis;
+  rect: LayoutRect;
+  region: LayoutRect;
+  ratio: number;
+};
+export type LayoutGeometry = { leaves: LayoutLeaf[]; dividers: LayoutDivider[] };
+
+/** Calculates normalized leaf and divider bounds for a recursive split tree. */
+export function getLayoutGeometry(node: SplitNode | null): LayoutGeometry {
+  const leaves: LayoutLeaf[] = [];
+  const dividers: LayoutDivider[] = [];
+
+  function visit(current: SplitNode, rect: LayoutRect, path: SplitPath) {
+    if (current.type === "leaf") {
+      leaves.push({ sessionId: current.sessionId, rect });
+      return;
+    }
+
+    const divider: LayoutRect = current.axis === "horizontal"
+      ? {
+          x: rect.x + rect.width * current.ratio,
+          y: rect.y,
+          width: 0,
+          height: rect.height,
+        }
+      : {
+          x: rect.x,
+          y: rect.y + rect.height * current.ratio,
+          width: rect.width,
+          height: 0,
+        };
+    dividers.push({ path, axis: current.axis, rect: divider, region: rect, ratio: current.ratio });
+
+    if (current.axis === "horizontal") {
+      const firstWidth = rect.width * current.ratio;
+      visit(current.first, { ...rect, width: firstWidth }, [...path, "first"]);
+      visit(current.second, {
+        x: rect.x + firstWidth,
+        y: rect.y,
+        width: rect.width - firstWidth,
+        height: rect.height,
+      }, [...path, "second"]);
+    } else {
+      const firstHeight = rect.height * current.ratio;
+      visit(current.first, { ...rect, height: firstHeight }, [...path, "first"]);
+      visit(current.second, {
+        x: rect.x,
+        y: rect.y + firstHeight,
+        width: rect.width,
+        height: rect.height - firstHeight,
+      }, [...path, "second"]);
+    }
+  }
+
+  if (node) visit(node, { x: 0, y: 0, width: 1, height: 1 }, []);
+  return { leaves, dividers };
+}
+
 /** Compatibility helper: adjust the nearest split enclosing a target leaf. */
 export function setSplitRatio(node: SplitNode | null, targetId: string, ratio: number): SplitNode | null {
   if (!node || node.type === "leaf") return node;
