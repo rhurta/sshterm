@@ -33,6 +33,13 @@
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let picker = $state(false);
   let pickerList = $state<ConnectionSummary[]>([]);
+  let pickerQuery = $state("");
+  let filteredPickerList = $derived.by(() => {
+    const query = pickerQuery.trim().toLocaleLowerCase();
+    if (!query) return pickerList;
+    return pickerList.filter((c) => [c.name, c.host, c.user, `${c.user}@${c.host}:${c.port}`]
+      .some((value) => value.toLocaleLowerCase().includes(query)));
+  });
   let pickerDialog = $state<HTMLDivElement | null>(null);
   let newTabButton = $state<HTMLButtonElement | null>(null);
   let refreshToken = $state(0);
@@ -195,6 +202,7 @@
   async function openPicker() {
     try {
       pickerList = await invoke<ConnectionSummary[]>("conn_list");
+      pickerQuery = "";
       picker = true;
       // Move keyboard focus out of xterm, otherwise Escape would be sent to
       // the remote host instead of dismissing the dialog.
@@ -497,11 +505,22 @@
             aria-label={t("workspace.close")}
           >&times;</button>
         </div>
+        <input
+          class="picker-search"
+          type="search"
+          bind:value={pickerQuery}
+          placeholder={t("tree.search")}
+          aria-label={t("tree.search")}
+          autocomplete="off"
+          spellcheck="false"
+        />
         {#if pickerList.length === 0}
           <p class="hint">{t("workspace.pickerEmpty")}</p>
+        {:else if filteredPickerList.length === 0}
+          <p class="hint">{t("tree.noMatches")}</p>
         {:else}
           <div class="picker-list">
-            {#each pickerList as c (c.id)}
+            {#each filteredPickerList as c (c.id)}
               <button onclick={() => connect(c)}>
                 <span class="name">{c.name}</span>
                 <span class="detail">{c.user}@{c.host}:{c.port}</span>
@@ -706,6 +725,18 @@
     padding: 0.35rem 0.7rem;
     cursor: pointer;
   }
+  .picker-search {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--text);
+    background: var(--app-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.4rem 0.5rem;
+  }
+  .picker-search:focus { outline: none; border-color: var(--accent); }
   .picker-list {
     display: flex;
     flex-direction: column;
