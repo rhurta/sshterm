@@ -9,7 +9,7 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
-  import { createLayoutTree, sessionsInTree, type LayoutPreset } from "$lib/splitTree";
+  import { createLayoutTree, getLayoutGeometry, removeSession, setSplitRatioAtPath, splitSession, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
     dir,
@@ -24,8 +24,11 @@
   let tabs = $state<Tab[]>([]);
   let activeId = $state<string | null>(null);
   let layoutPreset = $state<LayoutPreset>("single");
-  let layoutTree = $derived(createLayoutTree(tabs.map((tab) => tab.sessionId), layoutPreset, activeId));
-  let visibleSessionIds = $derived(sessionsInTree(layoutTree));
+  let layoutTree = $state<SplitNode | null>(null);
+  let layoutGeometry = $derived(getLayoutGeometry(layoutTree));
+  let visibleSessionIds = $derived(layoutGeometry.leaves.map((item) => item.sessionId));
+  let panesElement = $state<HTMLDivElement | null>(null);
+  let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let picker = $state(false);
   let pickerList = $state<ConnectionSummary[]>([]);
@@ -170,6 +173,7 @@
         cols: 80,
         rows: 24,
       });
+      const previousActiveId = activeId;
       tabs = [...tabs, {
         sessionId,
         connId: c.id,
@@ -177,6 +181,11 @@
         jumpNames,
         tunnelCount: c.tunnel_count ?? 0,
       }];
+      if (layoutPreset === "single" || !layoutTree) {
+        layoutTree = createLayoutTree([...tabs.map((tab) => tab.sessionId)], layoutPreset, sessionId);
+      } else {
+        layoutTree = splitSession(layoutTree, previousActiveId ?? visibleSessionIds[0] ?? "", sessionId, "horizontal");
+      }
       // The new pane mounts active; TerminalPane focuses xterm as soon as it
       // is visible, so typing starts in the terminal right away.
       activeId = sessionId;
@@ -217,9 +226,69 @@
     }
   }
 
+  function activateSession(sessionId: string) {
+    activeId = sessionId;
+    if (layoutPreset === "single") {
+      layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), "single", sessionId);
+    }
+  }
+
+  function chooseLayout(preset: LayoutPreset) {
+    layoutPreset = preset;
+    layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), preset, activeId);
+  }
+
   function dropTab(sessionId: string) {
     tabs = tabs.filter((tab) => tab.sessionId !== sessionId);
-    if (activeId === sessionId) activeId = tabs[tabs.length - 1]?.sessionId ?? null;
+    layoutTree = removeSession(layoutTree, sessionId);
+    if (activeId === sessionId) {
+      activeId = tabs[tabs.length - 1]?.sessionId ?? null;
+      if (layoutPreset === "single") {
+        layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), "single", activeId);
+      }
+    }
+  }
+
+  function dividerStyle(axis: SplitAxis, rect: LayoutRect): string {
+    if (axis === "horizontal") {
+      return `left: calc(${rect.x * 100}% - 4px); top: ${rect.y * 100}%; width: 8px; height: ${rect.height * 100}%;`;
+    }
+    return `left: ${rect.x * 100}%; top: calc(${rect.y * 100}% - 4px); width: ${rect.width * 100}%; height: 8px;`;
+  }
+
+  function updateDivider(event: PointerEvent, path: SplitPath, axis: SplitAxis, region: LayoutRect) {
+    if (!panesElement) return;
+    const bounds = panesElement.getBoundingClientRect();
+    const ratio = axis === "horizontal"
+      ? (event.clientX - bounds.left - region.x * bounds.width) / (region.width * bounds.width)
+      : (event.clientY - bounds.top - region.y * bounds.height) / (region.height * bounds.height);
+    layoutTree = setSplitRatioAtPath(layoutTree, path, ratio);
+  }
+
+  function startDividerDrag(event: PointerEvent, divider: { path: SplitPath; axis: SplitAxis; region: LayoutRect }) {
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    dragState = { path: divider.path, axis: divider.axis, region: divider.region };
+  }
+
+  function moveDividerDrag(event: PointerEvent, divider: { path: SplitPath; axis: SplitAxis; region: LayoutRect }) {
+    if (!dragState || dragState.path.join("/") !== divider.path.join("/")) return;
+    updateDivider(event, divider.path, divider.axis, divider.region);
+  }
+
+  function endDividerDrag() {
+    dragState = null;
+  }
+
+  function adjustDivider(event: KeyboardEvent, divider: { path: SplitPath; axis: SplitAxis; ratio: number }) {
+    const negative = divider.axis === "horizontal" ? ["ArrowLeft"] : ["ArrowUp"];
+    const positive = divider.axis === "horizontal" ? ["ArrowRight"] : ["ArrowDown"];
+    let next = divider.ratio;
+    if (negative.includes(event.key)) next -= 0.02;
+    else if (positive.includes(event.key)) next += 0.02;
+    else return;
+    event.preventDefault();
+    layoutTree = setSplitRatioAtPath(layoutTree, divider.path, next);
   }
 
   async function closeTab(sessionId: string) {
@@ -256,7 +325,7 @@
             <div class="tab" class:active={activeId === tab.sessionId}>
               <button
                 class="tab-name"
-                onclick={() => (activeId = tab.sessionId)}
+                onclick={() => activateSession(tab.sessionId)}
                 title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
               >
                 <span>{tab.name}</span>
@@ -284,23 +353,46 @@
           >+</button>
         </div>
         <div class="layout-tools" aria-label="Terminal layout">
-          <button class:chosen={layoutPreset === "single"} title="Single terminal" aria-pressed={layoutPreset === "single"} onclick={() => (layoutPreset = "single")}>1</button>
-          <button class:chosen={layoutPreset === "left-right"} title="Left and right" aria-pressed={layoutPreset === "left-right"} onclick={() => (layoutPreset = "left-right")}>▥</button>
-          <button class:chosen={layoutPreset === "top-bottom"} title="Top and bottom" aria-pressed={layoutPreset === "top-bottom"} onclick={() => (layoutPreset = "top-bottom")}>▤</button>
-          <button class:chosen={layoutPreset === "grid"} title="2 by 2 grid" aria-pressed={layoutPreset === "grid"} onclick={() => (layoutPreset = "grid")}>▦</button>
+          <button class:chosen={layoutPreset === "single"} title="Single terminal" aria-pressed={layoutPreset === "single"} onclick={() => chooseLayout("single")}>1</button>
+          <button class:chosen={layoutPreset === "left-right"} title="Left and right" aria-pressed={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}>▥</button>
+          <button class:chosen={layoutPreset === "top-bottom"} title="Top and bottom" aria-pressed={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}>▤</button>
+          <button class:chosen={layoutPreset === "grid"} title="2 by 2 grid" aria-pressed={layoutPreset === "grid"} onclick={() => chooseLayout("grid")}>▦</button>
         </div>
-        <div class="panes" class:layout-horizontal={layoutPreset === "left-right"} class:layout-vertical={layoutPreset === "top-bottom"} class:layout-grid={layoutPreset === "grid"}>
+        <div class="panes" bind:this={panesElement}>
           {#each tabs as tab (tab.sessionId)}
-            <TerminalPane
-              sessionId={tab.sessionId}
-              active={visibleSessionIds.includes(tab.sessionId)}
-              focused={activeId === tab.sessionId}
-              onactivate={(id) => (activeId = id)}
-              onclosed={dropTab}
-              onmultilinepaste={requestMultilinePaste}
-              {settings}
-              {theme}
-            />
+            {@const pane = layoutGeometry.leaves.find((item) => item.sessionId === tab.sessionId)}
+            <div class="pane-slot" class:hidden={!pane} style={pane ? `left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;` : ""}>
+              <TerminalPane
+                sessionId={tab.sessionId}
+                active={Boolean(pane)}
+                focused={activeId === tab.sessionId}
+                onactivate={activateSession}
+                onclosed={dropTab}
+                onmultilinepaste={requestMultilinePaste}
+                {settings}
+                {theme}
+              />
+            </div>
+          {/each}
+          {#each layoutGeometry.dividers as divider, index (divider.path.join("/"))}
+            <div
+              class="layout-divider"
+              class:vertical={divider.axis === "horizontal"}
+              class:horizontal={divider.axis === "vertical"}
+              style={dividerStyle(divider.axis, divider.rect)}
+              role="separator"
+              aria-orientation={divider.axis === "horizontal" ? "vertical" : "horizontal"}
+              aria-label="Resize terminal panes"
+              aria-valuemin="15"
+              aria-valuemax="85"
+              aria-valuenow={Math.round(divider.ratio * 100)}
+              tabindex="0"
+              onpointerdown={(event) => startDividerDrag(event, divider)}
+              onpointermove={(event) => moveDividerDrag(event, divider)}
+              onpointerup={endDividerDrag}
+              onpointercancel={endDividerDrag}
+              onkeydown={(event) => adjustDivider(event, divider)}
+            ></div>
           {/each}
         </div>
       {:else}
@@ -512,18 +604,33 @@
     cursor: pointer;
   }
   .panes {
+    position: relative;
     flex: 1;
     min-height: 0;
     min-width: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-    gap: 2px;
-    background: var(--border);
+    overflow: hidden;
+    background: var(--app-bg);
   }
-  .panes.layout-horizontal { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .panes.layout-vertical { grid-template-rows: repeat(2, minmax(0, 1fr)); }
-  .panes.layout-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  .pane-slot {
+    position: absolute;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .pane-slot.hidden { display: none; }
+  .layout-divider {
+    position: absolute;
+    z-index: 4;
+    background: var(--border);
+    touch-action: none;
+    outline: none;
+  }
+  .layout-divider.vertical { cursor: col-resize; }
+  .layout-divider.horizontal { cursor: row-resize; }
+  .layout-divider:hover,
+  .layout-divider:focus-visible {
+    background: var(--accent);
+  }
   .layout-tools { display: flex; gap: 0.25rem; padding: 0.25rem 0.4rem; background: var(--surface); border-bottom: 1px solid var(--border); }
   .layout-tools button { min-width: 2rem; padding: 0.2rem 0.45rem; color: var(--text-secondary); background: transparent; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
   .layout-tools button.chosen { color: var(--accent); border-color: var(--accent); background: var(--surface-hover); }
