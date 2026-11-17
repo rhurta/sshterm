@@ -47,6 +47,9 @@ jobs:
       - name: Check frontend types and Svelte
         run: npm run check
 
+      - name: Test split-tree helpers
+        run: npm run test:split-tree
+
       - name: Build frontend
         run: npm run build
 
