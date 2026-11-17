@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  addSessionToPane,\n  createLayoutTree,
+  addSessionToPane,
+  createLayoutTree,
   getLayoutGeometry,
   leaf,
   removeSession,
