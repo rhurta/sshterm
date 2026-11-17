@@ -6,6 +6,7 @@ import {
   getLayoutGeometry,
   leaf,
   removeSession,
+  removeEmptyPane,
   sessionsInTree,
   setSplitRatioAtPath,
   splitSession,
@@ -110,4 +111,19 @@ test("preset pane groups keep sessions beyond the visible tile count reachable",
 
 test("top-bottom preset with one session still creates one pane", () => {
   assert.deepEqual(sessionsInTree(createLayoutTree(["only"], "top-bottom", "only")), ["only"]);
+});
+
+
+test("removeEmptyPane removes the selected empty leaf and collapses its parent", () => {
+  const tree = splitPaneWithEmptyLeaf(leaf("a"), "a", "empty-pane", "horizontal");
+  const updated = removeEmptyPane(tree, "empty-pane");
+  assert.deepEqual(sessionsInTree(updated), ["a"]);
+  assert.equal(getLayoutGeometry(updated).leaves.length, 1);
+});
+
+test("removeEmptyPane does not remove a pane that still contains sessions", () => {
+  const tree = splitPaneWithEmptyLeaf(leaf("a"), "a", "empty-pane", "horizontal");
+  const updated = removeEmptyPane(tree, "a");
+  assert.deepEqual(sessionsInTree(updated), ["a"]);
+  assert.equal(getLayoutGeometry(updated).leaves.length, 2);
 });
