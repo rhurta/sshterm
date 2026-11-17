@@ -50,6 +50,9 @@ jobs:
       - name: Test split-tree helpers
         run: npm run test:split-tree
 
+      - name: Test broadcast target resolution
+        run: npm run test:broadcast-targets
+
       - name: Build frontend
         run: npm run build
 
