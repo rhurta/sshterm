@@ -1,10 +1,10 @@
-I've prepared a proposed M4 implementation document based on the spec and roadmap. You can save it as `docs/M4-implementation-plan.md` (the `docs/` folder is already in `.gitignore` per the spec, so it's a local working document).
+> **Historical proposal:** this document records the original M4 design discussion. M4 was subsequently implemented and is complete; `docs/` is tracked by Git (it is not ignored). Use `ROADMAP.md` and the current *SSH Terminal Manager – Tauri Plan & Specs* for the present implementation state.
 
 ---
 
 # M4 — Session Tree: Proposed Implementation Plan
 
-**Status:** Proposal for review
+**Status:** Historical proposal; M4 completed
 **Scope source:** `SSH Terminal Manager – Tauri Plan & Specs.md` §5, §7, §11; `ROADMAP.md` M4 section
 **Milestone goal:** Folders, CRUD, search, import from PuTTY / WinSSHTerm / `~/.ssh/config`, and multi-tab workspace.
 
@@ -23,7 +23,7 @@ I've prepared a proposed M4 implementation document based on the spec and roadma
 | Import: `~/.ssh/config`, PuTTY registry, WinSSHTerm | §12 Decisions |
 | Multi-tab workspace | ROADMAP "ships together" |
 | Connection editor: auth / colors / keepalive / protected | ROADMAP checklist |
-| Per-connection colors on terminal + tab accent | ROADMAP checklist |
+| Per-connection colors on terminal + tab accent | Deferred to M9; global application themes are implemented |
 | Drag-and-drop in tree | §7 Sidebar with tree |
 
 ### Out of scope (later milestones)
@@ -376,7 +376,7 @@ Each commit leaves the build green and is independently reviewable.
 5. **D5** — Confirm UUID v4 with `f_` / `c_` display prefixes.
 6. **D6** — Confirm skip-on-duplicate default with an "import as copy" option.
 
-Once these are answered, Step 1 can start immediately.
+This proposal is retained as an implementation-history record. Its open questions are historical, not current blockers. M4 shipped the typed tree, CRUD/search/import, connection editor, browser drag-and-drop and multi-tab workspace. Per-connection colors remain deferred to M9.
 
 ---
 

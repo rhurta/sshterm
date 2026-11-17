@@ -9,7 +9,7 @@ This document is the implementation plan for M6. It deliberately separates works
 - Provide a persistent command console below the terminal area, inspired by SecureCRT's command window.
 - Compose and edit one or many command lines before sending. Enter inserts a newline; it never executes by itself.
 - Send the composed text to the active session, explicitly selected sessions, or all eligible open sessions.
-- Reuse the console later for named, saved command sequences without replacing its editor or execution model.
+- Keep the editor and dispatch path reusable for named, saved command sequences in a future milestone; saved commands themselves are out of scope for M6.
 
 ## UX and interaction decisions
 
@@ -18,11 +18,11 @@ This document is the implementation plan for M6. It deliberately separates works
 - The main workspace consists of a terminal layout region and an optional command-console region.
 - Terminal layouts are represented as a small split tree, not a fixed grid: a leaf owns one session ID; a split owns an axis, ratio and two child nodes.
 - Supported presets: single pane, left/right, top/bottom and 2×2. Splitters are draggable and keyboard accessible.
-- A session can appear in only one leaf. Closing a session removes its leaf and collapses empty splits.
+- A session can appear in only one leaf. Closing its last tab leaves the pane empty; the user can explicitly remove an empty pane, which collapses its parent split.
 - Existing tabs remain the session switcher. Selecting a tab focuses its leaf; if it is not currently tiled, the single-pane layout switches to it rather than silently duplicating it.
 - xterm FitAddon and PTY resize must run after a leaf becomes visible and after its dimensions settle. Hidden leaves must not resize their PTYs to zero or stale dimensions.
-- Make the focused pane immediately recognizable without adding a text label: use a thin accent outline around the pane and a small bright dot on its active session tab. The cue follows keyboard focus and the command-console target.
-- Persist layout only for the current workspace initially; do not add a new config or vault format until the UX is validated.
+- Make the focused pane immediately recognizable without adding a text label: use a thin accent outline around the pane and a small bright dot on its active session tab. The pane cue follows the active terminal session; the command-console list separately marks the current target set.
+- Do not persist the split tree or add a vault migration in M6. Persist only command-console visibility and height in the non-secret config after interaction is validated.
 
 ### Command console
 
@@ -30,13 +30,13 @@ This document is the implementation plan for M6. It deliberately separates works
 - Enter inserts a newline. Ctrl+Enter sends. The Send button is always available.
 - The editor preserves its contents after sending; clearing is explicit.
 - Pasting multi-line text into the editor does not execute it. The existing terminal multi-line-paste confirmation remains specific to pasting into a terminal.
-- Sending is a separate action and requires a visible target summary and confirmation when the payload contains multiple lines.
+- Sending is a separate action and requires a visible target summary and confirmation when the payload contains multiple lines or targets more than one session.
 - The console is available with one or many terminal panes and can be collapsed without losing its draft.
 
 ### Broadcast safety
 
 - Initial targets: active session, explicitly selected sessions, or all open sessions.
-- Show target names/count immediately above the editor and re-evaluate eligibility at send time.
+- Show target names/count immediately above the editor and re-evaluate eligibility at send time. The searchable connection list is in a fixed left column beside the editor.
 - Add the protected flag to the credential-free connection summary. Protected connections are excluded from broadcast by default.
 - Provide a deliberate opt-in to include protected sessions; never silently include them.
 - Do not infer success from IPC dispatch. Report how many sessions accepted the write request and surface per-session failures.
@@ -48,10 +48,10 @@ This document is the implementation plan for M6. It deliberately separates works
 
 ### M6.1 — Tiling foundation
 
-**Core tiling and pane-tab UX implemented; UI-level coverage remains.** The focused pane now has a subtle accent outline and a small bright dot on its active tab instead of a prominent text label. The workspace renders a recursive split tree with single, left/right, top/bottom and 2×2 presets. Splitters are draggable and keyboard accessible. Each pane has its own session tab strip; opening a connection adds it to the focused pane, and switching tabs is isolated to that pane. Existing TerminalPane instances remain keyed by session ID so switching pane tabs does not recreate live xterm sessions. Pure split-tree helpers cover insertion, tab removal, collapse, pane tab grouping, balanced presets, geometry and path-addressed ratio updates; tests run in Windows CI. The layout presets and explicit horizontal/vertical split actions are in a vertical side toolbar. Splitting creates an empty pane; its in-pane plus action opens the connection picker for that pane. Closing the last tab leaves its pane empty. Terminal viewport scrollbars explicitly mirror the connection-tree scrollbar treatment. The pane connection picker includes a live search field; the connection tree and ProxyJump selector also have search.
+**Core tiling and pane-tab UX implemented.** The focused pane now has a subtle accent outline and a small bright dot on its active tab instead of a prominent text label. The workspace renders a recursive split tree with single, left/right, top/bottom and 2×2 presets. Splitters are draggable and keyboard accessible. Each pane has its own session tab strip; opening a connection adds it to the focused pane, and switching tabs is isolated to that pane. Existing TerminalPane instances remain keyed by session ID so switching pane tabs does not recreate live xterm sessions. Pure split-tree helpers cover insertion, tab removal, collapse, pane tab grouping, balanced presets, geometry and path-addressed ratio updates; tests run in Windows CI. The layout presets and explicit horizontal/vertical split actions are in a vertical side toolbar. Splitting creates an empty pane; its in-pane plus action opens the connection picker for that pane. Closing the last tab leaves its pane empty. Terminal viewport scrollbars explicitly mirror the connection-tree scrollbar treatment. The pane connection picker includes a live search field; the connection tree and ProxyJump selector also have search.
 ### M6.1 — Remaining work
 
-- Add automated UI-level tests for pane tab switching, close behavior, focus and resize. Pure split-tree tests already run in Windows CI.
+- Automated UI-level tests for pane tab switching, close behavior, focus and resize remain follow-up work. Pure split-tree tests run in Windows CI; interactive checks have been performed during development.
 
 ### M6.1 — Tiling foundation (original checklist)
 
@@ -65,19 +65,19 @@ Acceptance: one, two and four live sessions can be arranged, resized and closed 
 
 ### M6.2 — Command console
 
-**Initial active-session console implemented; validation and polish remain.** A reusable CommandConsole component is mounted independently of the tiled pane tree. Its toolbar toggle hides or shows the console without discarding the in-memory draft. The bottom pane has a draggable, keyboard-adjustable height divider, multiline editor, active-session target summary, Send and Clear. Enter inserts a newline; Ctrl+Enter or Send requests dispatch. Multi-line payloads require a second explicit confirmation. Dispatch uses the existing session_write command with the exact UTF-8 bytes encoded as base64; no newline is appended, and the UI reports IPC dispatch rather than claiming remote command completion. Drafts remain in frontend memory and are not persisted.
+**Command-console composition and dispatch implemented.** A reusable CommandConsole component is mounted independently of the tiled pane tree. Its toolbar toggle hides or shows the console without discarding the in-memory draft. The bottom pane has a draggable, keyboard-adjustable height divider, multiline editor, active-session target summary, Send and Clear. Enter inserts a newline; Ctrl+Enter or Send requests dispatch. Multi-line payloads require a second explicit confirmation. Dispatch uses the existing session_write command with the exact UTF-8 bytes encoded as base64; no newline is appended, and the UI reports IPC dispatch rather than claiming remote command completion. Drafts remain in frontend memory and are not persisted.
 
-Remaining:
-- Verify Enter, Ctrl+Enter, paste, explicit send, multi-line confirmation, clear and hide/show behavior in the Windows app.
-- Add focused component-level tests for send gating and payload preservation if the current test setup is extended.
+Follow-up:
+- Component-level UI tests for send gating and payload preservation are not currently part of the test setup.
+- Core console composition, paste, explicit send and hide/show behavior were exercised in the Windows app. Broadcast target-specific acceptance is tracked under M6.3.
 
-Selected/all target modes remain in M6.3.
+Selected/all target modes are covered in M6.3.
 
 Acceptance: multiline drafts can be composed, pasted, edited and sent explicitly; Enter alone never sends.
 
 ### M6.3 — Broadcast targeting and safeguards
 
-**Target selection and safe dispatch implemented; Windows CI and interactive validation remain.**
+**Target selection and safe dispatch implemented; pure target-resolution tests run in Windows CI.**
 
 - The credential-free Rust `ConnectionSummary` now exposes the saved `protected` flag, and each open frontend session retains that flag in its tab metadata.
 - The console supports Active session, Selected sessions and All open sessions.
@@ -89,18 +89,23 @@ Acceptance: multiline drafts can be composed, pasted, edited and sent explicitly
 - The console reports the number of accepted write requests and each per-session dispatch failure. It does not claim remote command completion.
 - Pure target-resolution tests cover active, selected, all, protected opt-in/exclusion, stale IDs and duplicate IDs; Windows CI runs these tests.
 
-Remaining:
-- Verify the three target modes, protected opt-in, confirmation, and partial failures in the Windows app.
-- Add an integration-level dispatch test if a suitable session-write test seam is introduced.
+Follow-up:
+- Explicit Windows UI acceptance is still required for all three target modes, protected opt-in, multi-line/multi-session confirmation and partial failures.
+- There is no integration-level dispatch test because the current app test setup has no session-write test seam.
 
 Acceptance: target resolution is tested for stale/closed sessions and protected exclusion; the UI makes the exact target set explicit and reports partial dispatch failures.
 
 ### M6.4 — Persistence and polish
 
-- Persist command-console visibility and height in non-secret config only after interaction is validated.
-- Add keyboard shortcuts and accessibility labels.
-- Add English and Spanish translations.
-- Update README, roadmap and the main specification with implemented—not aspirational—behavior.
+**Implemented in commit `e6fa4bc`.**
+
+- Command-console visibility and height persist in the non-secret `command_console` section of `config.toml`; missing values in older config files use defaults (visible, 180 px). Stored height is clamped to 110–900 px.
+- Keyboard shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 select single, left/right, top/bottom and 2×2 layouts; Ctrl+Enter requests a send.
+- The console resize separator supports keyboard adjustment and exposes an accessible name/value. Layout and console controls expose translated accessible labels.
+- Command-console UI strings and workspace tool labels are provided in English and Spanish.
+- README, roadmap and the main specification are updated in the documentation follow-up commit.
+
+No command text or broadcast draft is stored in config.
 
 ## Out of scope for M6
 

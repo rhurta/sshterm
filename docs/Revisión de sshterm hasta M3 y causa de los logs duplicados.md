@@ -1,5 +1,7 @@
 # Revisión de sshterm hasta M3 y causa de los logs duplicados
 
+> **Informe histórico de revisión M3.** Las tablas de hallazgos y estados describen el estado de aquella revisión; no son una lista vigente de errores. Para el estado actual, consulta la especificación principal y `ROADMAP.md`.
+
 ## 1. Resumen
 
 - **Causa de los duplicados:** el log se construye con los bytes que salen de ConPTY, y ConPTY no reenvía lo que escribe el servidor: reenvía **redibujados de su pantalla**. Al quitar los códigos de escape, cada redibujado queda como texto repetido o como fragmentos sueltos. No se puede arreglar limpiando mejor ese flujo.
@@ -109,3 +111,16 @@ Lo que está bien: el nombre de la tubería con ACL solo para el usuario actual 
 1. Puntos 3 y 4 de la sección 5: conservar la pestaña al terminar y abrir la sesión con el tamaño real.
 2. Punto 8: validar host y usuario y usar `--`, antes de implementar la importación del M4.
 3. Punto 11: que el servidor askpass use el texto de la pregunta (como en el diseño original del M5).
+
+
+## 8. Seguimiento frente al código actual (2026-11-17)
+
+Esta sección actualiza solo los hallazgos que siguen siendo relevantes; no altera los resultados históricos de las pruebas anteriores.
+
+| Hallazgo de la revisión M3 | Estado actual |
+| --- | --- |
+| La pestaña desaparecía al terminar SSH | Se añadió la opción `keep_disconnected_sessions` en Settings. Si se activa, la pestaña conserva la pantalla final, queda marcada como desconectada y no acepta entrada ni broadcast. El valor predeterminado sigue siendo desactivado. |
+| Apertura provisional a 80×24 antes del montaje del terminal | Se conserva como tamaño provisional. `TerminalPane` ajusta el PTY al tamaño real al montarse y solo envía un resize cuando cambian filas o columnas; el `sessionBus` retiene la salida temprana. |
+| `keepalive_secs = 0` se normaliza a 30 | Sigue siendo el comportamiento actual: cero significa usar el valor predeterminado de 30 segundos, no desactivar keepalive. La UI acepta valores de 1 a 3600 segundos. |
+| Entrega de credenciales askpass | El ayudante asigna secretos a prompts identificables de usuario/host o ruta de clave y falla de forma cerrada ante prompts genéricos/ambiguos. No se debe asumir compatibilidad con cualquier prompt 2FA o keyboard-interactive. |
+| Orden de escrituras y broadcast a varias sesiones | El broadcast de M6 envía secuencialmente a los PTY y no reintenta. Esto no convierte los envíos en una transacción ni confirma ejecución remota. |

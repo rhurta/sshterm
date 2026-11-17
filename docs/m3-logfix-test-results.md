@@ -1,5 +1,7 @@
 # M3 Log Fix - Test Results
 
+> **Historical test report.** The recorded date is a placeholder (`2025-01-XX`) and the results apply to the M3 patch/commit named below, not to the current main branch or its Windows CI. Use the latest GitHub Actions workflow for current build/test status.
+
 ## Date
 Test performed: 2025-01-XX
 

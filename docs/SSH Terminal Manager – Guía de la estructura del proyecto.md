@@ -1,8 +1,10 @@
 # SSH Terminal Manager – Guía de la estructura del proyecto
 
-Documento para aprender y entender qué contiene el proyecto, qué hace cada archivo y cómo encajan las piezas. **Refleja el estado real tras los hitos M0–M3** (commit `bbc0262`, «M3 fix: Replace PTY byte logging with screen buffer capture»). El plan completo, el formato del vault y la especificación de cada módulo están en *SSH Terminal Manager – Tauri Plan & Specs*; este documento es la guía de lectura del código.
+Documento para aprender cómo se organiza el proyecto y cómo se conectan el frontend y el backend.
 
-> Estado verificado al actualizar esta guía: `cargo test` → 42 pruebas superadas, 1 ignorada (test manual de ConPTY), 0 fallos. `npm run check` → 0 errores, 0 advertencias.
+> **Nota de vigencia (2026-11-17):** el mapa detallado de archivos y las cifras de pruebas de las secciones históricas se redactaron tras M0–M3 y no representan el árbol actual. La tabla de estado que sigue está actualizada a M6. Para el detalle normativo y las limitaciones usa *SSH Terminal Manager – Tauri Plan & Specs*; para los criterios y pruebas de M6 usa `docs/M6-implementation-plan.md`. La carpeta `docs/` está versionada por Git.
+
+> Estado de M6 en `main`: tiling, consola de comandos, broadcast y persistencia de preferencias implementados; la automatización de pruebas UI y las pruebas de integración SSH/broadcast siguen como trabajo de seguimiento.
 
 ## 1. Idea general
 
@@ -32,11 +34,17 @@ Ventana (WebView2)                    Proceso Rust
 | M1 | ✅ | Vault cifrado (Argon2id + XChaCha20-Poly1305), crear/bloquear/desbloquear/cambiar contraseña, `config.toml`, i18n inglés/español, 20 pruebas de Rust |
 | M2 | ✅ | Sesiones SSH reales vía `ssh.exe` sobre ConPTY, terminal xterm.js, redimensionado, askpass, barra lateral de conexiones, editor de conexiones |
 | M3 | ✅ | Un log por sesión; captura desde el buffer de pantalla de xterm.js (no bytes del PTY); sin líneas duplicadas por los redraws de ConPTY |
-| M4 en adelante | 📋 | Árbol de sesiones con carpetas, saltos, mosaico, resaltado, túneles, SFTP… |
+| M4 | ✅ | Árbol tipado, carpetas, CRUD, búsqueda, importación, drag-and-drop y editor de conexiones |
+| M5 | ✅ | ProxyJump anidado y credenciales por salto dentro de los límites del motor OpenSSH |
+| M6 | ✅ | Tiling recursivo, paneles con pestañas, consola multilínea, broadcast seguro, preferencias persistidas y UI inglés/español |
+| M7 | 🟡 | Reenvíos TCP local/reverse ligados a sesiones interactivas; sin gestor independiente ni SOCKS |
+| M8 | 📋 | SFTP nativo con `russh-sftp` |
+| M9 | 🟡 | Temas globales implementados; colores por conexión, UI de host keys, reconexión y bloqueo por inactividad pendientes |
+| M10 | 📋 | Motor SSH nativo `russh` |
 
-Lo que **todavía no existe**: árbol de carpetas (M4), saltos (M5), mosaico (M6), túneles (M7), SFTP (M8), colores por conexión (M9), motor `russh` (M10), bloqueo automático por inactividad (M9), `vault_save` expuesto al frontend, cambio de contraseña desde la UI.
+Todavía no existen SFTP, resaltado de sintaxis (M6b), colores por conexión, UI dedicada para gestionar host keys, reconexión automática ni bloqueo por inactividad. El cambio de contraseña del vault existe en backend, pero no hay pantalla para cambiarla desde la UI. El contenido de `vault_save` no se expone como comando frontend.
 
-## 3. Árbol del proyecto (estado tras M3)
+## 3. Árbol del proyecto (mapa histórico M0–M3; no es el árbol actual)
 
 ```
 sshterm/
@@ -45,10 +53,10 @@ sshterm/
   svelte.config.js        SvelteKit con adapter-static (SPA)
   vite.config.js          servidor de desarrollo, puerto 1420
   tsconfig.json           reglas de TypeScript
-  .gitignore              excluye node_modules, build, vault, logs, docs, etc.
+  .gitignore              excluye node_modules, build, vault, logs y datos generados (docs/ está versionado por Git).
   README.md               visión general, tecnologías, instrucciones de desarrollo
   ROADMAP.md              tabla de hitos con detalle de implementación
-  docs/                   guías y especificaciones locales (ignoradas por git)
+  docs/                   guías y especificaciones versionadas por Git
   static/                 archivos estáticos (iconos, imágenes)
   src/                    FRONTEND
     app.html              plantilla HTML base
@@ -60,7 +68,7 @@ sshterm/
       LanguageSelect.svelte     selector de idioma
       ConnectionSidebar.svelte  lista de conexiones (barra lateral)
       ConnectionEditor.svelte   formulario crear/editar conexión
-      Workspace.svelte          barra de pestañas + montaje de TerminalPane
+      Workspace.svelte          árbol de splits, pestañas por panel, toolbar, connection picker y CommandConsole
       TerminalPane.svelte       terminal xterm.js + FitAddon + LogCapture
       logCapture.ts             captura de log desde el buffer de pantalla
       sessionBus.ts             fan-out de eventos session:data / session:closed
@@ -81,10 +89,10 @@ sshterm/
     gen/schemas/          esquemas generados (no editar)
     src/
       main.rs             punto de entrada; detecta modo --askpass
-      lib.rs              módulos, WebView2, registro de 19 comandos Tauri
+      lib.rs              módulos, WebView2, restauración de ventana y registro de comandos Tauri
       paths.rs            rutas portables desde el directorio del exe
       commands.rs         VaultState, comandos vault_* y config_*
-      config.rs           Config { language, log_output, log_mode }; LogMode
+      config.rs           Config: language, theme, logging, terminal settings y command-console preferences
       vault/
         mod.rs            ciclo de vida del Vault, escritura atómica, .bak
         crypto.rs         formato binario, KDF, seal/open

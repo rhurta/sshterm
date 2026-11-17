@@ -20,18 +20,28 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M3 | Per-session log files | ✅ Complete |
 | M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
-| M6 | Tiling, command console and broadcast | 🟡 In progress (tiling presets) |
+| M6 | Tiling, command console and broadcast | ✅ Feature complete; UI-test follow-up remains |
 | M7 | Local and reverse TCP forwarding (`-L` / `-R`) | 🟡 Partial |
 | M8 | Native SFTP (`russh-sftp`) | 📋 Planned |
-| M9 | Polish (colors, host-key UI, auto-reconnect) | 📋 Planned |
+| M9 | Polish (per-connection colors, host-key UI, auto-reconnect) | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine replaces phase 1 | 📋 Planned |
 
-M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.md](docs/M6-implementation-plan.md). Syntax highlighting remains tracked separately as M6b.\n\n## Portable layout
+M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.md](docs/M6-implementation-plan.md). Syntax highlighting remains tracked separately as M6b.
+
+### M6 delivered
+
+- Recursive workspace tiling with single, left/right, top/bottom and 2×2 layouts, draggable and keyboard-adjustable dividers, per-pane session tabs, empty-pane handling, and an active-pane outline/dot.
+- A bottom command console with a searchable left-side connection list, Active / Selected / All targeting, protected-session opt-in, multiline and multi-session confirmation, exact-byte sequential dispatch, and per-session failure reporting.
+- Console visibility and height persist in non-secret `config.toml`; drafts remain in frontend memory only.
+- Keyboard shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Enter requests a send.
+- Automated coverage includes pure split-tree and broadcast-target resolution tests plus Rust config tests. Component-level UI automation and live multi-host dispatch integration tests remain follow-up work.
+
+## Portable layout
 
 ```
 sshterm.exe
 sshterm.vault      encrypted: connections, passwords, tunnels, colors
-config.toml        plain: language, log settings, font, keepalive defaults
+config.toml        plain: language, theme, logging, terminal preferences, command-console visibility/height
 known_hosts        SSH host-key fingerprints (used by ssh.exe in phase 1)
 highlight/         *.toml syntax-highlighting rule files
 logs/              <connection>_<YYYYMMDD-HHMMSS>.log  per-session logs
@@ -61,13 +71,13 @@ sshterm/
 │       └── windows.yml          # Windows validation and portable build
 ├── src/                         # Frontend (SvelteKit)
 │   ├── lib/
-│   │   ├── ConnectionTree.svelte   # Recursive folder/connection tree
-│   │   ├── ConnectionSidebar.svelte
-│   │   ├── SearchBox.svelte / ImportDialog.svelte
+│   │   ├── ConnectionTree.svelte / ConnectionSidebar.svelte
+│   │   ├── ConnectionEditor.svelte / ImportDialog.svelte / SearchBox.svelte
+│   │   ├── Workspace.svelte / TerminalPane.svelte / CommandConsole.svelte
+│   │   ├── splitTree.ts          # Recursive tiling model and geometry helpers
+│   │   ├── broadcastTargets.ts   # Credential-free broadcast target resolution
 │   │   ├── i18n/                 # Translation dictionaries (en, es)
-│   │   ├── encoding.ts           # Base64 helpers
-│   │   ├── logCapture.ts         # Screen-buffer log capture
-│   │   └── sessionBus.ts         # session:data / session:closed event bus
+│   │   └── encoding.ts / logCapture.ts / sessionBus.ts
 │   └── routes/                   # SvelteKit pages
 └── src-tauri/                    # Backend (Rust)
     └── src/

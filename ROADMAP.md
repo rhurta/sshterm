@@ -264,20 +264,33 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 
 ---
 
-## 📋 M6 — Tiling, broadcast and syntax highlighting
+## ✅ M6 — Tiling, command console and broadcast
 
-**Done when:** splits work, broadcast reaches a hand-picked set of panes, and rule files load and colorize prompt / command / parameters / output / IPs.
+**Feature implementation complete.** Syntax highlighting is a separate M6b item and is not part of M6 completion.
 
 ### Tiling
 
-- Layouts: tabs (current), split horizontal, split vertical, 2×2 grid.
-- Pane handles: drag to resize.
+- Recursive split tree with single-pane, left/right, top/bottom and 2×2 presets; explicit split actions create an empty sibling pane.
+- Each pane has its own session tab strip. Existing xterm/PTY sessions stay mounted while pane tabs are switched.
+- Splitters support pointer dragging and keyboard adjustment. The active pane is identified by a subtle accent outline and a small dot.
+- Closing a tab leaves its pane available as an empty pane; empty panes can be explicitly removed.
+- Pane layout is workspace state only and is not persisted. Command-console visibility and height are persisted separately.
 
-### Broadcast
+### Command console and broadcast
 
-- Send input to: all visible panes, all open sessions, or a hand-picked set.
-- `protected: true` connections are excluded by default and visually marked.
-- Multi-line paste shows a confirmation dialog before sending.
+- Persistent bottom console with a searchable, vertically scrollable connection list on the left and a multiline command editor on the right.
+- Targets: Active session, Selected sessions, or All open sessions. Disconnected retained tabs are visible but are never eligible for dispatch.
+- Protected sessions are excluded from Selected/All by default; an explicit opt-in is required to include them.
+- Multi-line payloads and sends to multiple sessions require a second confirmation with the target set shown.
+- Writes are sequential and preserve the exact UTF-8 bytes; no newline is appended and no automatic retry is performed.
+- The UI reports accepted IPC write requests and per-session failures. It cannot confirm that the remote shell completed a command.
+- Console drafts remain in frontend memory and are never saved in config, the encrypted vault or logs. Visibility and height are saved in non-secret config.
+- Shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 choose layouts; Ctrl+Enter requests a send.
+
+### Verification and remaining follow-up
+
+- Windows CI runs split-tree tests, broadcast-target resolution tests, frontend checks/build, Rust formatting/tests and the portable Windows executable build.
+- Automated component-level UI tests and live multi-host dispatch integration tests are not currently present. The broadcast confirmation/protected/partial-failure flows still need explicit manual acceptance testing on Windows.
 
 ### Syntax highlighting (M6b)
 
@@ -378,7 +391,7 @@ The vault model already contains a `Dynamic` variant for forward compatibility, 
 | M3 | Session logging | `bbc0262` | ✅ |
 | M4 | Session tree + multi-tab | `bbb2c6c` / m4 | ✅ |
 | M5 | Jump hosts | `main` | ✅ |
-| M6 | Tiling + command console + broadcast | `9aae6ef` (tiling presets) | 🟡 In progress |
+| M6 | Tiling + command console + broadcast | `e6fa4bc` | ✅ Feature complete; UI-test follow-up |
 | M7 | Local / reverse forwards (`-L` / `-R`) | `main` | 🟡 Partial |
 | M8 | Native SFTP | — | 📋 |
 | M9 | Polish | — | 📋 |

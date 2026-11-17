@@ -2,7 +2,7 @@
 
 A portable SSH terminal for Windows 11, built with Tauri 2, Rust and Svelte 5. The current transport runs the Windows OpenSSH client (ssh.exe) inside a ConPTY owned by the application. A native russh transport is future work.
 
-This document distinguishes **implemented behavior**, **reserved data-model fields**, and **planned work**. The implementation review baseline is commit 01060eb79b1b021decc64ff6f16691495a9ffd8d on main; this specification describes that implementation and does not imply future milestones have shipped.
+This document distinguishes **implemented behavior**, **reserved data-model fields**, and **planned work**. The implementation review baseline is commit e6fa4bc78fdbf3c47ee11b11d45306cc256ea148 on main. Sections explicitly marked planned or partial remain future work; the M6 section records the delivered implementation and its test limitations.
 
 ## 1. Goals and constraints
 
@@ -55,7 +55,7 @@ Actual path behavior:
 - sshterm.vault, config.toml, known_hosts, logs/, highlight/ and webview-data/ are derived from that directory.
 - WEBVIEW2_USER_DATA_FOLDER is set to webview-data/ before the Tauri builder creates the window.
 - SSH lookup order is bin/ssh.exe, %SystemRoot%\System32\OpenSSH\ssh.exe, then %SystemRoot%\System32\ssh.exe. If none exists, session startup returns ssh_not_found.
-- config.toml supports language, application theme, logging, terminal clipboard/mouse preferences, and optional multi-line paste confirmation. Font and default-keepalive settings are not implemented there.
+- config.toml supports language, application theme, logging, terminal clipboard/mouse preferences (including multi-line paste confirmation and retained disconnected tabs), and command-console visibility/height. Font and default-keepalive settings are not implemented there.
 - known_hosts is maintained by OpenSSH through the configured UserKnownHostsFile; it is not currently populated from the known_hosts map in the vault payload.
 - highlight/ has a path helper and is ignored by Git, but the rule loader and rule files are not implemented.
 - logs/sshterm.log is a separate diagnostic log containing session metadata and byte counts. Per-session terminal logs are separate files.
@@ -170,7 +170,7 @@ The encrypted JSON payload has version 1, a nested tree and a connection map. A 
 - jump is an ordered list of saved connection IDs. jump_disabled records configured hops that are currently disabled; missing jump_disabled fields default to an empty list.
 - tunnels supports local, remote and reserved dynamic variants. Each variant has an enabled flag; old tunnel entries without that field deserialize as enabled.
 - colors, sftp and highlight are reserved/forward-looking fields. Colors are not applied by the UI, there is no SFTP implementation, and highlighting is not loaded.
-- protected is editable and stored, but it has no active behavior until broadcast is implemented.
+- protected is editable and stored. M6 broadcast excludes protected sessions by default in Selected/All modes and requires explicit opt-in to include them; Active mode is a deliberate single-session target.
 - known_hosts remains in the payload model for compatibility/future use. The current OpenSSH trust database is the plain-text known_hosts file beside the executable.
 
 The payload version and encrypted file format remain at version 1. Unlock migrates older M1–M3 connection records in memory: old top-level password values move to auth, and unlinked flat connections are placed in a default Connections folder. The migration saves the updated payload without a version bump.
@@ -182,13 +182,13 @@ The frontend calls the registered Tauri commands; it does not invoke Rust module
 | Module | Responsibility | Current commands / events | Status |
 | --- | --- | --- | --- |
 | vault / commands | Vault lifecycle and password change | vault_status, vault_create, vault_unlock, vault_lock, vault_change_password | ✅ Implemented |
-| config | Non-secret language, logging, and terminal clipboard/mouse settings | config_get_language, config_set_language, config_get_terminal_settings, config_set_terminal_settings | ✅ Implemented |
+| config | Non-secret language, theme, logging, terminal and command-console preferences | config_get_language, config_set_language, config_get_theme, config_set_theme, config_get_terminal_settings, config_set_terminal_settings, config_get_command_console_settings, config_set_command_console_settings | ✅ Implemented |
 | store | Connection CRUD, nested tree, search and imports | conn_list, conn_get, conn_upsert, conn_delete, tree_get, folder_upsert, folder_delete, move_node, search, import_preview, import_apply | ✅ Implemented |
 | transport | Transport trait and OpenSSH/ConPTY implementation | Internal | ✅ OpenSSH only |
 | askpass | Session-scoped named-pipe credential delivery | Internal | ✅ Implemented on Windows |
 | session | Start/write/resize/close sessions and log bridge | session_open, session_write, session_resize, session_close, session_close_all, session_log_append, session_log_close; events session:data, session:closed, session:error | ✅ Implemented |
 | logger | Per-session logs and diagnostic log output | Internal | ✅ Implemented |
-| broadcast | Send input to multiple sessions | — | 📋 Planned M6 |
+| broadcast | Resolve safe target sets in the frontend; dispatch through the existing session_write command | CommandConsole.svelte + broadcastTargets.ts; no separate backend command | ✅ Implemented M6 |
 | sftp | Remote file browser and transfer operations | — | 📋 Planned M8 |
 | highlight | Rule loading, validation and buffer decorations | — | 📋 Planned M6b |
 | hostkeys | Dedicated host-key confirmation UI / management | — | 📋 Not implemented; current TOFU is handled by OpenSSH |
@@ -275,16 +275,18 @@ Security and routing behavior:
 | SearchBox.svelte | Debounced connection search and match count | ✅ Implemented |
 | ImportDialog.svelte | Preview, review warnings/skips and apply imports | ✅ Implemented |
 | ConnectionEditor.svelte | General, authentication, advanced, jump-host and tunnel sections | ✅ Implemented |
-| Workspace.svelte | Tab bar, connection picker, terminal panes and workspace error banner | ✅ Implemented |
+| Workspace.svelte | Recursive tiled workspace, per-pane tabs, layout controls, command-console settings and workspace error banner | ✅ Implemented M6 |
 | TerminalPane.svelte | xterm.js terminal, FitAddon, focus, PTY resize and log capture | ✅ Implemented |
+| CommandConsole.svelte | Searchable target list, Active/Selected/All modes, multiline editor, confirmation and sequential broadcast dispatch | ✅ Implemented M6 |
 | Tunnel manager panel | Start/stop independent tunnels and show live status | 📋 Planned; no dedicated panel |
 | SFTP panel | Browse/download/upload remote files | 📋 Planned M8 |
-| Broadcast bar | Target multiple sessions | 📋 Planned M6 |
 | Highlighting test panel | Paste sample text and test rule classification | 📋 Planned M6b |
 
 The tree supports folders and connections, context-menu operations (open, edit, duplicate, create, rename and delete), F2/double-click rename, search and HTML drag-and-drop. Dragging is disabled while a search filter is active, because filtered indices cannot safely be mapped to the original tree indices. Dropping can move a node before/after another node, into a folder, or to the root. Backend validation rejects cycles and invalid destinations without removing the node first.
 
-Each workspace tab owns one independent SSH session and PTY. Hidden tabs continue running; only the active pane resizes the PTY. Opening a session and switching tabs focuses the terminal. The session tab retains a tunnel indicator as a forwarding health check, not merely as a configured-forward count. Its intended states are pending while forwarding setup is being verified, healthy when every enabled forward has been accepted by OpenSSH, and failed when setup or a recognized forwarding diagnostic reports an error. A healthy indicator means the SSH forwarding setup is active; it does not guarantee that every application behind a forwarded destination is reachable.
+Each workspace tab owns one independent SSH session and PTY. Hidden tabs continue running; only the active pane resizes the PTY. Tiled panes have independent tab strips; switching tabs does not recreate the underlying xterm instance. A pane can be left empty after its last tab closes and can be explicitly removed. The active pane has a subtle outline and active-tab dot. Pane split ratios are workspace state and are not persisted.
+
+Session tabs show the resolved Jump Host route and a compact configured-forward count. The forward badge is a configuration indicator, not a live tunnel-health check and not an end-to-end probe of the destination application. Recognized SSH forwarding diagnostics are surfaced separately in the workspace error banner and terminal output.
 
 ## 8. Implemented feature specifications and planned work
 
@@ -321,7 +323,13 @@ Configuration (config.toml):
 language = "en"
 log_output = true
 log_mode = "screen"   # "screen" (default) or "raw"
+
+[command_console]
+visible = true
+height = 180
 ```
+
+The `command_console` table stores only layout preferences; command drafts are never written to disk.
 
 - log_output defaults to true; false means no per-session log file is created.
 - screen mode records rendered terminal text, with trailing whitespace trimmed and consecutive blank lines collapsed. It omits alternate-screen content and progress-bar redraws that are overwritten before capture.
@@ -358,9 +366,9 @@ Implemented:
 - ExitOnForwardFailure=yes tells OpenSSH to exit when a requested listener cannot be created.
 - Forwards start with the interactive SSH session and stop when that session closes.
 - Recognized local/reverse forwarding and connection failures are surfaced in the workspace error banner while the original SSH output remains in the terminal.
-- **Session-tab health indicator (retain):** the tab must expose forwarding health for the active session rather than presenting only a static count. It should show pending during SSH/forward setup, healthy only after all enabled forwards have been accepted, and failed when OpenSSH reports a forwarding setup/runtime error. Associate the status with its session so one tab's error cannot mark another tab's forwards unhealthy.
-- Use OpenSSH's `ExitOnForwardFailure=yes` as the initial setup guarantee, together with explicit status reporting. Do not mark forwards healthy merely because `session_open` spawned the process; it returns before the SSH handshake and forwarding setup have necessarily completed.
-- Health indicates that the SSH forwarding setup/listener is active. It is not an end-to-end probe of the application listening at the forwarded destination; destination reachability may still need a separate optional probe.
+- Session tabs show the number of enabled forwards configured on that connection. This is a configuration indicator only; it does not claim that OpenSSH has accepted every listener or that the destination service is reachable.
+- Use OpenSSH's `ExitOnForwardFailure=yes` as the initial setup guarantee. Recognized forwarding errors and session failures are surfaced in terminal output and the workspace error banner.
+- A future dedicated tunnel-health feature would need per-forward lifecycle events and explicit state; it is not part of the current configured-count badge.
 - For a remote listener to accept connections from hosts other than the SSH server itself, the server-side sshd configuration may need to permit it with GatewayPorts.
 
 Not implemented:
@@ -376,14 +384,23 @@ Not implemented:
 - OpenSSH receives ServerAliveInterval=<keepalive_secs> and ServerAliveCountMax=3.
 - Automatic reconnect with backoff is not implemented.
 
-### M6 — Tiling, command console and broadcast (planned)
+### M6 — Tiling, command console and broadcast (feature implementation complete)
 
-- Planned layouts: current tabs, horizontal split, vertical split and 2×2 grid.
-- Planned broadcast targets: visible panes, all open sessions or a selected subset.
-- protected is already persisted and editable, but broadcast exclusion and its operational meaning are not implemented yet.
-- Planned multi-line paste confirmation before broadcasting.
+- The workspace uses a recursive split tree. Supported presets are single, left/right, top/bottom and 2×2; explicit split actions add an empty sibling pane. Each pane has its own tabs. Existing xterm/PTY instances stay mounted when switching pane tabs.
+- Splitters support pointer dragging and keyboard adjustment. The active pane has a thin accent outline and a small bright dot on its active tab. Closing the last tab leaves an empty pane that can be removed explicitly.
+- The command console is a bottom pane with a searchable, vertically scrollable list of open connections on the left and a multiline editor on the right.
+- Targets are Active session, Selected sessions or All open sessions. Disconnected retained tabs are visible but are never eligible for sending. Protected connections are excluded from Selected/All by default; explicit opt-in is required to include them.
+- The target count and names are shown. Multi-line sends and multi-session sends require a second confirmation showing the targets. Writes are sequential, exact UTF-8 bytes; no newline is appended and no automatic retry occurs.
+- The UI reports the number of accepted IPC write requests and per-session dispatch failures. It does not claim remote command completion.
+- The editor draft remains in frontend memory only; it is not persisted in the vault, config or logs. Console visibility and height are persisted in non-secret `config.toml`.
+- Shortcuts: Ctrl+Alt+K toggles the command console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Enter requests a send. The console divider is keyboard adjustable.
+- New command-console and workspace UI strings/labels are translated in English and Spanish.
 
-Implementation phases, safety requirements and acceptance criteria are maintained in [docs/M6-implementation-plan.md](M6-implementation-plan.md). The command console is a persistent multiline composition pane below the terminal area; composing text is separate from sending it. Enter inserts a newline, while Send / Ctrl+Enter explicitly dispatches to the chosen target set. Saved scripts are deferred until the console and broadcast workflow are validated.\n\n### M6b — Syntax highlighting (planned)
+**Verification:** Windows CI runs pure split-tree tests, pure broadcast-target resolution tests, frontend checks/build, Rust formatting/tests and a portable Windows executable build. Component-level UI automation and live multi-host dispatch integration tests are not present; explicit Windows UI acceptance is still needed for all broadcast modes, protected opt-in, confirmations and partial failures.
+
+Implementation phases, safety requirements and acceptance criteria are maintained in [docs/M6-implementation-plan.md](M6-implementation-plan.md). Saved scripts and command libraries are out of scope for M6.
+
+### M6b — Syntax highlighting (planned)
 
 The vault connection model already has a highlight: string[] field, but there is no rule loader, matcher, frontend decoration layer, test panel, or highlight/ rule set in the current implementation. Folder nodes also do not yet have a highlight property, so inherited folder rules require a model change.
 
@@ -525,14 +542,14 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M3 | Per-session logging with xterm.js screen-buffer capture | ✅ Complete |
 | M4 | Connection tree, CRUD, search, imports, drag-and-drop and multi-tab workspace | ✅ Complete |
 | M5 | Nested ProxyJump chains and per-hop passwords (within phase-1 limits) | ✅ Complete |
-| M6 | Tiling and broadcast | 📋 Planned |
+| M6 | Tiling, command console and broadcast | ✅ Feature implementation complete; UI automation / manual broadcast acceptance follow-up |
 | M6b | Syntax highlighting | 📋 Planned |
 | M7 | Local/reverse forwarding (-L / -R) | 🟡 Partial; bound to interactive sessions |
 | M8 | Native SFTP | 📋 Planned |
 | M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
-The status reflects the source tree, not the aspirational feature descriptions. In particular, M5 is implemented, M7 is partial, global themes are implemented while per-connection coloring remains planned, and the sftp, highlight, protected and dynamic data fields do not imply that their corresponding features are complete.
+The status reflects the source tree, not aspirational feature descriptions. M5 and M6 feature implementations are complete; M7 is partial; global themes are implemented while per-connection coloring remains planned. SFTP, highlighting and dynamic-forward data fields do not imply that their corresponding features are complete. Broadcast uses the protected flag as documented above.
 
 ## 12. Decisions, operational workflow and CI
 
