@@ -48,3 +48,28 @@ export function createLayoutTree(sessionIds: string[], preset: LayoutPreset, act
   }
   return split("horizontal", leaves[0], leaves[1]);
 }
+
+/** Insert a new session beside a target leaf. Existing session IDs are never duplicated. */
+export function splitSession(node: SplitNode | null, targetId: string, sessionId: string, axis: SplitAxis): SplitNode | null {
+  if (!node || sessionsInTree(node).includes(sessionId)) return node;
+  if (node.type === "leaf") {
+    return node.sessionId === targetId
+      ? { type: "split", axis, ratio: 0.5, first: node, second: leaf(sessionId) }
+      : node;
+  }
+  return {
+    ...node,
+    first: splitSession(node.first, targetId, sessionId, axis) ?? node.first,
+    second: splitSession(node.second, targetId, sessionId, axis) ?? node.second,
+  };
+}
+
+/** Update the ratio at the split whose two branches contain the requested target. */
+export function setSplitRatio(node: SplitNode | null, targetId: string, ratio: number): SplitNode | null {
+  if (!node || node.type === "leaf") return node;
+  const bounded = Math.max(0.15, Math.min(0.85, ratio));
+  if (sessionsInTree(node.first).includes(targetId)) {
+    return { ...node, ratio: bounded, first: setSplitRatio(node.first, targetId, ratio) ?? node.first };
+  }
+  return { ...node, second: setSplitRatio(node.second, targetId, ratio) ?? node.second };
+}
