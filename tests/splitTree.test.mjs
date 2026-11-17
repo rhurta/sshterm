@@ -22,8 +22,10 @@ test("layout presets include each session once and grid balances four panes", ()
   }
 });
 
-test("single preset follows active session", () => {
-  assert.deepEqual(sessionsInTree(createLayoutTree(["a", "b"], "single", "b")), ["b"]);
+test("single preset puts the active session first and keeps other sessions as tabs", () => {
+  const tree = createLayoutTree(["a", "b"], "single", "b");
+  assert.deepEqual(sessionsInTree(tree), ["b", "a"]);
+  assert.deepEqual(getLayoutGeometry(tree).leaves.map((pane) => pane.sessionIds), [["b", "a"]]);
 });
 
 test("splitSession inserts beside a target without duplicating sessions", () => {
