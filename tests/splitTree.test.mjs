@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  createLayoutTree,
+  addSessionToPane,\n  createLayoutTree,
   getLayoutGeometry,
   leaf,
   removeSession,
@@ -52,10 +52,27 @@ test("split ratio updates only the addressed split and clamps bounds", () => {
 test("layout geometry positions nested leaves and dividers within normalized bounds", () => {
   const tree = createLayoutTree(["a", "b", "c", "d"], "grid", "a");
   const geometry = getLayoutGeometry(tree);
-  assert.deepEqual(geometry.leaves.map((item) => item.sessionId), ["a", "b", "c", "d"]);
+  assert.deepEqual(geometry.leaves.map((item) => item.sessionIds), [["a"], ["b"], ["c"], ["d"]]);
   assert.equal(geometry.dividers.length, 3);
   assert.deepEqual(geometry.leaves[0].rect, { x: 0, y: 0, width: 0.5, height: 0.5 });
   assert.deepEqual(geometry.leaves[1].rect, { x: 0, y: 0.5, width: 0.5, height: 0.5 });
   assert.deepEqual(geometry.leaves[2].rect, { x: 0.5, y: 0, width: 0.5, height: 0.5 });
   assert.deepEqual(geometry.leaves[3].rect, { x: 0.5, y: 0.5, width: 0.5, height: 0.5 });
+});
+
+test("addSessionToPane appends a tab without creating another tile", () => {
+  const tree = createLayoutTree(["a", "b"], "left-right", "a");
+  const updated = addSessionToPane(tree, "a", "c");
+  assert.deepEqual(sessionsInTree(updated), ["a", "c", "b"]);
+  const geometry = getLayoutGeometry(updated);
+  assert.deepEqual(geometry.leaves[0].sessionIds, ["a", "c"]);
+  assert.equal(geometry.leaves.length, 2);
+});
+
+test("removing one tab keeps its pane until the final tab closes", () => {
+  const tree = addSessionToPane(leaf("a"), "a", "b");
+  const oneLeft = removeSession(tree, "a");
+  assert.deepEqual(sessionsInTree(oneLeft), ["b"]);
+  assert.equal(getLayoutGeometry(oneLeft).leaves[0].sessionId, "a");
+  assert.equal(removeSession(oneLeft, "b"), null);
 });
