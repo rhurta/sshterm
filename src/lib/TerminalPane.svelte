@@ -254,6 +254,16 @@
     min-height: 0;
     min-width: 0;
   }
+  .terminal-host :global(.xterm-viewport) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+  }
+  .terminal-host :global(.xterm-viewport::-webkit-scrollbar) { width: 8px; }
+  .terminal-host :global(.xterm-viewport::-webkit-scrollbar-track) { background: transparent; }
+  .terminal-host :global(.xterm-viewport::-webkit-scrollbar-thumb) {
+    background: var(--muted);
+    border-radius: 6px;
+  }
   .hidden {
     display: none;
   }
