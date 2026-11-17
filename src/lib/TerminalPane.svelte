@@ -14,6 +14,7 @@
     sessionId,
     active,
     focused,
+    onactivate,
     onclosed,
     settings,
     theme,
@@ -22,6 +23,7 @@
     sessionId: string;
     active: boolean;
     focused: boolean;
+    onactivate: (id: string) => void;
     onclosed: (id: string) => void;
     settings: TerminalSettings;
     theme: AppTheme;
@@ -234,7 +236,7 @@
   });
 </script>
 
-<div class="pane" class:hidden={!active}>
+<div class="pane" class:hidden={!active} onfocusin={() => onactivate(sessionId)} onclick={() => onactivate(sessionId)}>
   <div class="terminal-host" bind:this={host}></div>
 </div>
 
