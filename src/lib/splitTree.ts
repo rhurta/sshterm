@@ -41,7 +41,7 @@ export function createLayoutTree(sessionIds: string[], preset: LayoutPreset, act
   if (leaves.length === 1) return leaves[0];
   if (preset === "top-bottom") return split("vertical", leaves[0], leaves[1]);
   if (preset === "grid" && leaves.length > 2) {
-    return split("horizontal", split("vertical", leaves[0], leaves[1]), split("vertical", leaves[2], leaves[3]));
+    return split("horizontal", split("vertical", leaves[0], leaves[1]), leaves[2]);
   }
   return split("horizontal", leaves[0], leaves[1]);
 }
