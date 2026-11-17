@@ -7,6 +7,7 @@
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import CommandConsole from "./CommandConsole.svelte";
+  import type { BroadcastSession } from "$lib/broadcastTargets";
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
@@ -55,6 +56,11 @@
 
   let openIds = $derived(tabs.map((tab) => tab.connId));
   let activeSessionName = $derived(tabs.find((tab) => tab.sessionId === activeId)?.name ?? "");
+  let consoleSessions = $derived<BroadcastSession[]>(tabs.map((tab) => ({
+    sessionId: tab.sessionId,
+    name: tab.name,
+    protected: tab.protected,
+  })));
 
   /** The backend sends short codes; here they are converted to messages. */
   function errorText(value: string): string {
@@ -186,7 +192,7 @@
         cols: 80,
         rows: 24,
       });
-      tabs = [...tabs, { sessionId, connId: c.id, name: c.name, jumpNames, tunnelCount: c.tunnel_count ?? 0 }];
+      tabs = [...tabs, { sessionId, connId: c.id, name: c.name, jumpNames, tunnelCount: c.tunnel_count ?? 0, protected: c.protected }];
       const focusedPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
       const targetPaneId = pendingPaneId ?? focusedPane?.sessionId ?? layoutGeometry.leaves[0]?.sessionId;
       if (!layoutTree || !targetPaneId) {
@@ -467,7 +473,7 @@
           aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize}
           onkeydown={adjustConsoleHeight} title="Drag to resize command console"></div>
       {/if}
-      <CommandConsole visible={consoleVisible && tabs.length > 0} sessionId={activeId} sessionName={activeSessionName} height={consoleHeight} />
+      <CommandConsole visible={consoleVisible && tabs.length > 0} sessions={consoleSessions} activeSessionId={activeId} height={consoleHeight} />
     </main>
   </div>
 
