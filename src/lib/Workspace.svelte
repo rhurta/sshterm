@@ -283,11 +283,19 @@
             title={t("workspace.newTab")}
           >+</button>
         </div>
-        <div class="panes">
+        <div class="layout-tools" aria-label="Terminal layout">
+          <button class:chosen={layoutPreset === "single"} title="Single terminal" aria-pressed={layoutPreset === "single"} onclick={() => (layoutPreset = "single")}>1</button>
+          <button class:chosen={layoutPreset === "left-right"} title="Left and right" aria-pressed={layoutPreset === "left-right"} onclick={() => (layoutPreset = "left-right")}>▥</button>
+          <button class:chosen={layoutPreset === "top-bottom"} title="Top and bottom" aria-pressed={layoutPreset === "top-bottom"} onclick={() => (layoutPreset = "top-bottom")}>▤</button>
+          <button class:chosen={layoutPreset === "grid"} title="2 by 2 grid" aria-pressed={layoutPreset === "grid"} onclick={() => (layoutPreset = "grid")}>▦</button>
+        </div>
+        <div class="panes" class:layout-horizontal={layoutPreset === "left-right"} class:layout-vertical={layoutPreset === "top-bottom"} class:layout-grid={layoutPreset === "grid"}>
           {#each tabs as tab (tab.sessionId)}
             <TerminalPane
               sessionId={tab.sessionId}
-              active={activeId === tab.sessionId}
+              active={visibleSessionIds.includes(tab.sessionId)}
+              focused={activeId === tab.sessionId}
+              onactivate={(id) => (activeId = id)}
               onclosed={dropTab}
               onmultilinepaste={requestMultilinePaste}
               {settings}
@@ -306,7 +314,7 @@
   {#if settingsOpen}
     <div class="backdrop">
       <button class="scrim" tabindex="-1" aria-label={t("workspace.close")} onclick={() => (settingsOpen = false)}></button>
-      <section class="dialog settings-dialog" role="dialog" aria-modal="true" aria-label={t("settings.title")} tabindex="-1">
+      <div class="dialog settings-dialog" role="dialog" aria-modal="true" aria-label={t("settings.title")} tabindex="-1">
         <div class="dialog-head">
           <h2>{t("settings.title")}</h2>
           <button class="close" onclick={() => (settingsOpen = false)} title={t("workspace.close")}>&times;</button>
@@ -322,7 +330,7 @@
         <label class="setting"><input type="checkbox" checked={settings.ctrl_c_copy} onchange={(e) => setTerminalSetting("ctrl_c_copy", e.currentTarget.checked)} />{t("settings.ctrlCCopy")}</label>
         <label class="setting"><input type="checkbox" checked={settings.confirm_multiline_paste} onchange={(e) => setTerminalSetting("confirm_multiline_paste", e.currentTarget.checked)} />{t("settings.confirmMultilinePaste")}</label>
         <button class="ghost" onclick={() => (settingsOpen = false)}>{t("editor.cancel")}</button>
-      </section>
+      </div>
     </div>
   {/if}
 
@@ -334,7 +342,7 @@
         aria-label={t("settings.multilinePasteCancel")}
         onclick={() => settleMultilinePaste(false)}
       ></button>
-      <section
+      <div
         class="dialog confirm-paste-dialog"
         role="alertdialog"
         aria-modal="true"
@@ -356,7 +364,7 @@
             {t("settings.multilinePasteConfirm")}
           </button>
         </div>
-      </section>
+      </div>
     </div>
   {/if}
 
@@ -506,7 +514,19 @@
   .panes {
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 2px;
+    background: var(--border);
   }
+  .panes.layout-horizontal { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panes.layout-vertical { grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  .panes.layout-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  .layout-tools { display: flex; gap: 0.25rem; padding: 0.25rem 0.4rem; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .layout-tools button { min-width: 2rem; padding: 0.2rem 0.45rem; color: var(--text-secondary); background: transparent; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .layout-tools button.chosen { color: var(--accent); border-color: var(--accent); background: var(--surface-hover); }
   .empty {
     flex: 1;
     display: flex;
