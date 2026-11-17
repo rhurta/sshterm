@@ -46,6 +46,7 @@ export function createLayoutTree(sessionIds: string[], preset: LayoutPreset, act
   if (preset === "single") {
     return { type: "leaf", sessionId: ordered[0], sessionIds: ordered };
   }
+  if (ordered.length === 1) return leaf(ordered[0]);
 
   if (preset === "top-bottom") {
     const first = leaf(ordered[0]);
