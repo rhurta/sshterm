@@ -1,6 +1,7 @@
 /** Pure split-tree helpers for the M6 workspace layout. */
 export type SplitAxis = "horizontal" | "vertical";
 export type LayoutPreset = "single" | "left-right" | "top-bottom" | "grid";
+export type SplitPath = Array<"first" | "second">;
 
 export type SplitNode =
   | { type: "leaf"; sessionId: string }
@@ -43,33 +44,60 @@ export function createLayoutTree(sessionIds: string[], preset: LayoutPreset, act
   const leaves = ordered.map(leaf);
   if (leaves.length === 1) return leaves[0];
   if (preset === "top-bottom") return split("vertical", leaves[0], leaves[1]);
-  if (preset === "grid" && leaves.length > 2) {
+  if (preset === "grid" && leaves.length === 3) {
     return split("horizontal", split("vertical", leaves[0], leaves[1]), leaves[2]);
+  }
+  if (preset === "grid" && leaves.length === 4) {
+    return split("horizontal", split("vertical", leaves[0], leaves[1]), split("vertical", leaves[2], leaves[3]));
   }
   return split("horizontal", leaves[0], leaves[1]);
 }
 
 /** Insert a new session beside a target leaf. Existing session IDs are never duplicated. */
 export function splitSession(node: SplitNode | null, targetId: string, sessionId: string, axis: SplitAxis): SplitNode | null {
-  if (!node || sessionsInTree(node).includes(sessionId)) return node;
+  if (!node || !targetId || !sessionId || sessionsInTree(node).includes(sessionId)) return node;
   if (node.type === "leaf") {
     return node.sessionId === targetId
       ? { type: "split", axis, ratio: 0.5, first: node, second: leaf(sessionId) }
       : node;
   }
-  return {
-    ...node,
-    first: splitSession(node.first, targetId, sessionId, axis) ?? node.first,
-    second: splitSession(node.second, targetId, sessionId, axis) ?? node.second,
-  };
+  if (sessionsInTree(node.first).includes(targetId)) {
+    return { ...node, first: splitSession(node.first, targetId, sessionId, axis) ?? node.first };
+  }
+  if (sessionsInTree(node.second).includes(targetId)) {
+    return { ...node, second: splitSession(node.second, targetId, sessionId, axis) ?? node.second };
+  }
+  return node;
 }
 
-/** Update the ratio at the split whose two branches contain the requested target. */
-export function setSplitRatio(node: SplitNode | null, targetId: string, ratio: number): SplitNode | null {
+/** Update exactly one split, identified by its path from the root. */
+export function setSplitRatioAtPath(node: SplitNode | null, path: SplitPath, ratio: number): SplitNode | null {
   if (!node || node.type === "leaf") return node;
   const bounded = Math.max(0.15, Math.min(0.85, ratio));
-  if (sessionsInTree(node.first).includes(targetId)) {
-    return { ...node, ratio: bounded, first: setSplitRatio(node.first, targetId, ratio) ?? node.first };
+  if (path.length === 0) return { ...node, ratio: bounded };
+  const [branch, ...rest] = path;
+  if (branch === "first") {
+    return { ...node, first: setSplitRatioAtPath(node.first, rest, ratio) ?? node.first };
   }
-  return { ...node, second: setSplitRatio(node.second, targetId, ratio) ?? node.second };
+  return { ...node, second: setSplitRatioAtPath(node.second, rest, ratio) ?? node.second };
+}
+
+/** Compatibility helper: adjust the nearest split enclosing a target leaf. */
+export function setSplitRatio(node: SplitNode | null, targetId: string, ratio: number): SplitNode | null {
+  if (!node || node.type === "leaf") return node;
+  if (sessionsInTree(node.first).includes(targetId)) {
+    if (node.first.type === "leaf" && node.first.sessionId === targetId) {
+      return { ...node, ratio: Math.max(0.15, Math.min(0.85, ratio)) };
+    }
+    const first = setSplitRatio(node.first, targetId, ratio) ?? node.first;
+    return { ...node, first };
+  }
+  if (sessionsInTree(node.second).includes(targetId)) {
+    if (node.second.type === "leaf" && node.second.sessionId === targetId) {
+      return { ...node, ratio: Math.max(0.15, Math.min(0.85, ratio)) };
+    }
+    const second = setSplitRatio(node.second, targetId, ratio) ?? node.second;
+    return { ...node, second };
+  }
+  return node;
 }
