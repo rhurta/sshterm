@@ -34,9 +34,12 @@ function split(axis: SplitAxis, first: SplitNode, second: SplitNode): SplitNode 
 export function createLayoutTree(sessionIds: string[], preset: LayoutPreset, activeId: string | null): SplitNode | null {
   const unique = [...new Set(sessionIds)];
   if (!unique.length) return null;
-  const ordered = preset === "single" && activeId && unique.includes(activeId)
-    ? [activeId]
-    : unique.slice(0, preset === "grid" ? 4 : preset === "single" ? 1 : 2);
+  const limit = preset === "grid" ? 4 : preset === "single" ? 1 : 2;
+  const ordered = unique.slice(0, limit);
+  if (activeId && unique.includes(activeId) && !ordered.includes(activeId)) {
+    ordered[ordered.length - 1] = activeId;
+  }
+  if (preset === "single" && activeId && unique.includes(activeId)) ordered[0] = activeId;
   const leaves = ordered.map(leaf);
   if (leaves.length === 1) return leaves[0];
   if (preset === "top-bottom") return split("vertical", leaves[0], leaves[1]);
