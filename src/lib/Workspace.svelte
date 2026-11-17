@@ -404,7 +404,7 @@
           </div>
           <div class="panes" bind:this={panesElement}>
             {#each layoutGeometry.leaves as pane (pane.sessionId)}
-              <div class="pane-slot" class:focused={pane.sessionIds.includes(activeId ?? "")} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
+              <div class="pane-slot" class:focused={pane.sessionIds.includes(activeId ?? "")} class:split-layout={layoutGeometry.leaves.length > 1} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
                 <div class="pane-tabs" role="tablist" aria-label="Sessions in pane">
                   {#each pane.sessionIds as sessionId (sessionId)}
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
@@ -620,7 +620,8 @@
   .workspace-layout { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
   .panes { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--app-bg); }
   .pane-slot { position: absolute; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface); }
-  .pane-slot.focused { outline: 2px solid var(--accent); outline-offset: -6px; z-index: 2; }
+  .pane-slot.focused { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
+  .pane-slot.focused.split-layout { outline-offset: -6px; }
   .pane-tabs { display: flex; flex: 0 0 auto; min-height: 1.7rem; overflow-x: auto; gap: 2px; padding: 2px 3px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .pane-tab { display: flex; align-items: center; min-width: 0; max-width: 11rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-hover); }
   .pane-tab.active { border-color: var(--accent); background: var(--surface-raised); }
