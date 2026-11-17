@@ -330,7 +330,7 @@
   {/if}
 {/snippet}
 
-<div class="tree" role="tree" aria-label={t("workspace.connections")} class:root-drop={rootDrop} ondragover={onRootDragOver} ondrop={onRootDrop} ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) rootDrop = false; }}>
+<div class="tree" role="tree" tabindex="0" aria-label={t("workspace.connections")} class:root-drop={rootDrop} ondragover={onRootDragOver} ondrop={onRootDrop} ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) rootDrop = false; }}>
   {#each visible(tree) as node, index (node.id)}
     {@render row(node, null, index, 0)}
   {/each}
