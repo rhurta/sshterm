@@ -6,6 +6,7 @@
   import ConnectionSidebar from "./ConnectionSidebar.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import CommandConsole from "./CommandConsole.svelte";
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
@@ -30,6 +31,9 @@
   let pendingPaneId = $state<string | null>(null);
   let panesElement = $state<HTMLDivElement | null>(null);
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
+  let consoleVisible = $state(true);
+  let consoleHeight = $state(180);
+  let consoleDrag = $state<{ startY: number; startHeight: number } | null>(null);
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let picker = $state(false);
   let pickerList = $state<ConnectionSummary[]>([]);
@@ -50,6 +54,7 @@
   let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
 
   let openIds = $derived(tabs.map((tab) => tab.connId));
+  let activeSessionName = $derived(tabs.find((tab) => tab.sessionId === activeId)?.name ?? "");
 
   /** The backend sends short codes; here they are converted to messages. */
   function errorText(value: string): string {
@@ -330,6 +335,31 @@
     layoutTree = setSplitRatioAtPath(layoutTree, divider.path, next);
   }
 
+
+  function startConsoleResize(event: PointerEvent) {
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    consoleDrag = { startY: event.clientY, startHeight: consoleHeight };
+  }
+
+  function moveConsoleResize(event: PointerEvent) {
+    if (!consoleDrag) return;
+    const maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.65));
+    consoleHeight = Math.max(110, Math.min(maxHeight, consoleDrag.startHeight + consoleDrag.startY - event.clientY));
+  }
+
+  function endConsoleResize() {
+    consoleDrag = null;
+  }
+
+  function adjustConsoleHeight(event: KeyboardEvent) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    const delta = event.key === "ArrowUp" ? 12 : -12;
+    const maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.65));
+    consoleHeight = Math.max(110, Math.min(maxHeight, consoleHeight + delta));
+  }
+
   async function closeTab(sessionId: string) {
     try {
       await invoke("session_close", { id: sessionId });
@@ -340,7 +370,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onpointermove={moveConsoleResize} onpointerup={endConsoleResize} onpointercancel={endConsoleResize} />
 
 <div class="app">
 
@@ -369,6 +399,8 @@
             <span class="tool-separator"></span>
             <button title="Split focused pane left/right" disabled={!activeId} onclick={() => splitFocusedPane("horizontal")}>↔</button>
             <button title="Split focused pane top/bottom" disabled={!activeId} onclick={() => splitFocusedPane("vertical")}>↕</button>
+            <span class="tool-separator"></span>
+            <button class:chosen={consoleVisible} title={consoleVisible ? "Hide command console" : "Show command console"} aria-label={consoleVisible ? "Hide command console" : "Show command console"} aria-pressed={consoleVisible} onclick={() => (consoleVisible = !consoleVisible)}>⌨</button>
           </div>
           <div class="panes" bind:this={panesElement}>
             {#each layoutGeometry.leaves as pane (pane.sessionId)}
@@ -420,6 +452,15 @@
           <p class="hint">{t("workspace.terminals")}</p>
         </div>
       {/if}
+      {#if consoleVisible && tabs.length > 0}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
+        <div class="console-resizer" role="separator" aria-orientation="horizontal"
+          aria-label="Resize command console" aria-valuemin="110" aria-valuemax={Math.max(160, Math.floor(window.innerHeight * 0.65))}
+          aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize}
+          onkeydown={adjustConsoleHeight} title="Drag to resize command console"></div>
+      {/if}
+      <CommandConsole visible={consoleVisible && tabs.length > 0} sessionId={activeId} sessionName={activeSessionName}
+        style={consoleVisible && tabs.length > 0 ? `height: ${consoleHeight}px;` : ""} />
     </main>
   </div>
 
@@ -585,6 +626,8 @@
   .empty-pane { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
   .empty-pane button { font: inherit; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }
   .tool-separator { height: 1px; margin: 0.2rem 0; background: var(--border); }
+  .console-resizer { flex: 0 0 6px; cursor: row-resize; background: var(--border); touch-action: none; outline: none; }
+  .console-resizer:hover, .console-resizer:focus-visible { background: var(--accent); }
   .pane-terminals { position: relative; flex: 1; min-height: 0; overflow: hidden; }
   .pane-terminals :global(.pane) { position: absolute; inset: 0; }
 
