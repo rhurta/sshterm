@@ -17,6 +17,19 @@ export function sessionsInTree(node: SplitNode | null): string[] {
   return [...sessionsInTree(node.first), ...sessionsInTree(node.second)];
 }
 
+/** Remove an empty pane by its stable leaf ID and collapse its parent split. */
+export function removeEmptyPane(node: SplitNode | null, paneId: string): SplitNode | null {
+  if (!node) return null;
+  if (node.type === "leaf") {
+    return node.sessionId === paneId && node.sessionIds.length === 0 ? null : node;
+  }
+  const first = removeEmptyPane(node.first, paneId);
+  const second = removeEmptyPane(node.second, paneId);
+  if (!first) return second;
+  if (!second) return first;
+  return { ...node, first, second };
+}
+
 export function removeSession(node: SplitNode | null, sessionId: string, preserveEmptyPane = false): SplitNode | null {
   if (!node) return null;
   if (node.type === "leaf") {
