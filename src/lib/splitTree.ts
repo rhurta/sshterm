@@ -17,12 +17,12 @@ export function sessionsInTree(node: SplitNode | null): string[] {
   return [...sessionsInTree(node.first), ...sessionsInTree(node.second)];
 }
 
-export function removeSession(node: SplitNode | null, sessionId: string): SplitNode | null {
+export function removeSession(node: SplitNode | null, sessionId: string, preserveEmptyPane = false): SplitNode | null {
   if (!node) return null;
   if (node.type === "leaf") {
     if (!node.sessionIds.includes(sessionId)) return node;
     const remaining = node.sessionIds.filter((id) => id !== sessionId);
-    return remaining.length ? { ...node, sessionIds: remaining } : null;
+    return remaining.length || preserveEmptyPane ? { ...node, sessionIds: remaining } : null;
   }
   const first = removeSession(node.first, sessionId);
   const second = removeSession(node.second, sessionId);
@@ -75,7 +75,29 @@ export function splitSession(node: SplitNode | null, targetId: string, sessionId
 }
 
 
-/** Add a session as a tab in the pane containing the stable pane ID. */
+
+/** Split the pane containing targetSessionId and create a stable empty sibling pane. */
+export function splitPaneWithEmptyLeaf(
+  node: SplitNode | null,
+  targetSessionId: string,
+  newPaneId: string,
+  axis: SplitAxis,
+): SplitNode | null {
+  if (!node || !targetSessionId || !newPaneId || sessionsInTree(node).includes(newPaneId)) return node;
+  if (node.type === "leaf") {
+    return node.sessionIds.includes(targetSessionId)
+      ? { type: "split", axis, ratio: 0.5, first: node, second: { type: "leaf", sessionId: newPaneId, sessionIds: [] } }
+      : node;
+  }
+  if (sessionsInTree(node.first).includes(targetSessionId)) {
+    return { ...node, first: splitPaneWithEmptyLeaf(node.first, targetSessionId, newPaneId, axis) ?? node.first };
+  }
+  if (sessionsInTree(node.second).includes(targetSessionId)) {
+    return { ...node, second: splitPaneWithEmptyLeaf(node.second, targetSessionId, newPaneId, axis) ?? node.second };
+  }
+  return node;
+}
+\n/** Add a session as a tab in the pane containing the stable pane ID. */
 export function addSessionToPane(node: SplitNode | null, paneId: string, sessionId: string): SplitNode | null {
   if (!node || !paneId || !sessionId || sessionsInTree(node).includes(sessionId)) return node;
   if (node.type === "leaf") {
