@@ -455,7 +455,7 @@
       {#if consoleVisible && tabs.length > 0}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
         <div class="console-resizer" role="separator" aria-orientation="horizontal"
-          aria-label="Resize command console" aria-valuemin="110" aria-valuemax={Math.max(160, Math.floor(window.innerHeight * 0.65))}
+          aria-label="Resize command console" aria-valuemin="110" aria-valuemax="900"
           aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize}
           onkeydown={adjustConsoleHeight} title="Drag to resize command console"></div>
       {/if}
