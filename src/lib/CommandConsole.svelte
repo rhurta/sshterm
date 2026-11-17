@@ -46,7 +46,9 @@
 
   function onTargetModeChange(event: Event) {
     targetMode = (event.currentTarget as HTMLSelectElement).value as BroadcastTargetMode;
-    if (targetMode === "selected" && selectedSessionIds.length === 0 && activeSessionId
+    if (targetMode === "selected"
+      && !sessions.some((session) => session.connected && selectedSessionIds.includes(session.sessionId))
+      && activeSessionId
       && sessions.some((session) => session.sessionId === activeSessionId && session.connected)) {
       selectedSessionIds = [activeSessionId];
     }
@@ -185,7 +187,7 @@
             <label class:protected={session.protected} class:disconnected={!session.connected}>
               <input
                 type="checkbox"
-                checked={selectedSessionIds.includes(session.sessionId)}
+                checked={session.connected && selectedSessionIds.includes(session.sessionId)}
                 onchange={(event) => toggleSelected(session.sessionId, event.currentTarget.checked)}
                 disabled={sending || !session.connected}
               />
