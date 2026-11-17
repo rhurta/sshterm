@@ -9,7 +9,7 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
-  import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeSession, setSplitRatioAtPath, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
+  import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
     dir,
@@ -27,6 +27,7 @@
   let layoutTree = $state<SplitNode | null>(null);
   let layoutGeometry = $derived(getLayoutGeometry(layoutTree));
   let paneActiveIds = $state<Record<string, string>>({});
+  let pendingPaneId = $state<string | null>(null);
   let visibleSessionIds = $derived(layoutGeometry.leaves.map((item) => item.sessionId));
   let panesElement = $state<HTMLDivElement | null>(null);
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
@@ -176,7 +177,7 @@
       });
       tabs = [...tabs, { sessionId, connId: c.id, name: c.name, jumpNames, tunnelCount: c.tunnel_count ?? 0 }];
       const focusedPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
-      const targetPaneId = focusedPane?.sessionId ?? layoutGeometry.leaves[0]?.sessionId;
+      const targetPaneId = pendingPaneId ?? focusedPane?.sessionId ?? layoutGeometry.leaves[0]?.sessionId;
       if (!layoutTree || !targetPaneId) {
         layoutTree = createLayoutTree([sessionId], "single", sessionId);
         paneActiveIds = { ...paneActiveIds, [sessionId]: sessionId };
@@ -184,6 +185,7 @@
         layoutTree = addSessionToPane(layoutTree, targetPaneId, sessionId);
         paneActiveIds = { ...paneActiveIds, [targetPaneId]: sessionId };
       }
+      pendingPaneId = null;
       activeId = sessionId;
       picker = false;
     } catch (e) {
@@ -202,6 +204,21 @@
     } catch (e) {
       error = errorText(String(e));
     }
+  }
+
+
+  async function openPickerForPane(paneId: string) {
+    pendingPaneId = paneId;
+    await openPicker();
+  }
+
+  function splitFocusedPane(axis: SplitAxis) {
+    if (!layoutTree || !activeId) return;
+    const pane = layoutGeometry.leaves.find((item) => item.sessionIds.includes(activeId!));
+    if (!pane) return;
+    const paneId = crypto.randomUUID();
+    layoutTree = splitPaneWithEmptyLeaf(layoutTree, activeId, paneId, axis);
+    pendingPaneId = paneId;
   }
 
   function closePicker() {
@@ -230,6 +247,7 @@
 
   function chooseLayout(preset: LayoutPreset) {
     layoutPreset = preset;
+    pendingPaneId = null;
     layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), preset, activeId);
     const nextActive: Record<string, string> = {};
     for (const pane of getLayoutGeometry(layoutTree).leaves) {
@@ -241,7 +259,7 @@
   function dropTab(sessionId: string) {
     const oldPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(sessionId));
     tabs = tabs.filter((tab) => tab.sessionId !== sessionId);
-    layoutTree = removeSession(layoutTree, sessionId);
+    layoutTree = removeSession(layoutTree, sessionId, true);
     if (oldPane && paneActiveIds[oldPane.sessionId] === sessionId) {
       const remaining = oldPane.sessionIds.filter((id) => id !== sessionId);
       if (remaining.length) paneActiveIds = { ...paneActiveIds, [oldPane.sessionId]: remaining[0] };
@@ -331,6 +349,9 @@
             <button class:chosen={layoutPreset === "left-right"} title="Left and right" aria-pressed={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}>▥</button>
             <button class:chosen={layoutPreset === "top-bottom"} title="Top and bottom" aria-pressed={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}>▤</button>
             <button class:chosen={layoutPreset === "grid"} title="2 by 2 grid" aria-pressed={layoutPreset === "grid"} onclick={() => chooseLayout("grid")}>▦</button>
+            <span class="tool-separator"></span>
+            <button title="Split focused pane left/right" disabled={!activeId} onclick={() => splitFocusedPane("horizontal")}>↔</button>
+            <button title="Split focused pane top/bottom" disabled={!activeId} onclick={() => splitFocusedPane("vertical")}>↕</button>
           </div>
           <div class="panes" bind:this={panesElement}>
             {#each layoutGeometry.leaves as pane (pane.sessionId)}
@@ -345,8 +366,12 @@
                       </div>
                     {/if}
                   {/each}
+                  <button class="pane-add" title="Open a connection in this pane" aria-label="Open a connection in this pane" onclick={() => openPickerForPane(pane.sessionId)}>+</button>
                 </div>
                 <div class="pane-terminals">
+                  {#if pane.sessionIds.length === 0}
+                    <div class="empty-pane"><button onclick={() => openPickerForPane(pane.sessionId)}>Open a connection</button></div>
+                  {/if}
                   {#each pane.sessionIds as sessionId (sessionId)}
                     <TerminalPane sessionId={sessionId} active={paneActiveIds[pane.sessionId] === sessionId}
                       focused={activeId === sessionId} onactivate={activateSession} onclosed={dropTab}
@@ -586,6 +611,10 @@
   .pane-tab button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: 0.68rem; cursor: pointer; }
   .pane-tab.active button { color: var(--text); }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }
+  .pane-add { flex: 0 0 auto; align-self: center; border: 0; background: transparent; color: var(--accent); font: inherit; cursor: pointer; }
+  .empty-pane { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+  .empty-pane button { font: inherit; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }
+  .tool-separator { height: 1px; margin: 0.2rem 0; background: var(--border); }
   .pane-terminals { position: relative; flex: 1; min-height: 0; overflow: hidden; }
   .pane-terminals :global(.pane) { position: absolute; inset: 0; }
 
@@ -605,6 +634,7 @@
   .layout-tools { display: flex; flex-direction: column; flex: 0 0 2.4rem; gap: 0.3rem; padding: 0.35rem 0.25rem; background: var(--surface); border-right: 1px solid var(--border); }
   .layout-tools button { min-width: 1.85rem; min-height: 1.85rem; padding: 0.2rem 0.35rem; color: var(--text-secondary); background: transparent; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
   .layout-tools button.tool-add { color: var(--accent); font-weight: 700; }
+  .layout-tools button:disabled { opacity: 0.4; cursor: default; }
   .layout-tools button.chosen { color: var(--accent); border-color: var(--accent); background: var(--surface-hover); }
   .empty {
     flex: 1;
