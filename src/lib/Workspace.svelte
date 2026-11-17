@@ -459,8 +459,7 @@
           aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize}
           onkeydown={adjustConsoleHeight} title="Drag to resize command console"></div>
       {/if}
-      <CommandConsole visible={consoleVisible && tabs.length > 0} sessionId={activeId} sessionName={activeSessionName}
-        style={consoleVisible && tabs.length > 0 ? `height: ${consoleHeight}px;` : ""} />
+      <CommandConsole visible={consoleVisible && tabs.length > 0} sessionId={activeId} sessionName={activeSessionName} height={consoleHeight} />
     </main>
   </div>
 
