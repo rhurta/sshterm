@@ -110,6 +110,21 @@ fn build_command(cfg: &SshConfig, askpass: Option<(&str, &str)>) -> CommandBuild
     cmd.arg("-o");
     // A stalled TCP connect must not leave the terminal blank forever.
     cmd.arg("ConnectTimeout=15");
+    if cfg.password_auth {
+        // A password-authenticated destination must not exhaust sshd's
+        // MaxAuthTries by offering unrelated keys from the local agent first.
+        // OpenSSH does not generally apply destination options to ProxyJump
+        // hosts, so agent authentication on the jump route remains unchanged.
+        cmd.arg("-o");
+        cmd.arg("PubkeyAuthentication=no");
+        cmd.arg("-o");
+        cmd.arg("PreferredAuthentications=keyboard-interactive,password");
+    } else if cfg.key_path.is_some() {
+        // Only offer the identity explicitly selected for this saved connection,
+        // not every unrelated key currently loaded in ssh-agent.
+        cmd.arg("-o");
+        cmd.arg("IdentitiesOnly=yes");
+    }
     if let Some(key) = &cfg.key_path {
         cmd.arg("-i");
         cmd.arg(key.display().to_string());
@@ -317,6 +332,7 @@ mod tests {
             user: "admin".into(),
             keepalive_secs: 45,
             key_path: None,
+            password_auth: false,
             jump_hosts: Vec::new(),
             forwards: Vec::new(),
         }
@@ -373,12 +389,35 @@ mod tests {
     }
 
     #[test]
-    fn key_auth_adds_the_identity_file_flag() {
+    fn saved_password_auth_skips_agent_keys_for_the_destination() {
+        let mut config = cfg();
+        config.password_auth = true;
+        let args = argv(&build_command(&config, Some(("pipe", "token"))));
+        assert!(args.windows(2).any(|w| w[0] == "-o" && w[1] == "PubkeyAuthentication=no"));
+        assert!(args.windows(2).any(|w| {
+            w[0] == "-o" && w[1] == "PreferredAuthentications=keyboard-interactive,password"
+        }));
+        assert!(!args.iter().any(|arg| arg == "IdentitiesOnly=yes"));
+        // The password/token is never placed in argv.
+        assert!(!args.iter().any(|arg| arg.contains("token") || arg.contains("pipe")));
+    }
+
+    #[test]
+    fn key_auth_adds_only_the_selected_identity() {
         let mut config = cfg();
         config.key_path = Some(PathBuf::from("C:/keys/id_ed25519"));
         let args = argv(&build_command(&config, None));
         assert!(args.windows(2).any(|w| w[0] == "-i" && w[1] == "C:/keys/id_ed25519"));
+        assert!(args.windows(2).any(|w| w[0] == "-o" && w[1] == "IdentitiesOnly=yes"));
+        assert!(!args.iter().any(|arg| arg == "PubkeyAuthentication=no"));
         assert_eq!(args.last().map(String::as_str), Some("admin@10.0.0.5"));
+    }
+
+    #[test]
+    fn agent_authentication_remains_enabled_without_identity_restrictions() {
+        let args = argv(&build_command(&cfg(), None));
+        assert!(!args.iter().any(|arg| arg == "PubkeyAuthentication=no"));
+        assert!(!args.iter().any(|arg| arg == "IdentitiesOnly=yes"));
     }
 
     #[test]
@@ -396,9 +435,13 @@ mod tests {
                 port: 22,
             },
         ];
+        config.password_auth = true;
         let args = argv(&build_command(&config, None));
         let jump = args.windows(2).find(|w| w[0] == "-J").unwrap();
         assert_eq!(jump[1], "bastion@gateway.example:2201,relay@10.0.0.8:22");
+        assert!(args.windows(2).any(|w| w[0] == "-o" && w[1] == "PubkeyAuthentication=no"));
+        // Per OpenSSH ProxyJump semantics, these destination command-line
+        // options are not inherited by the independently authenticated hops.
         assert_eq!(args.last().map(String::as_str), Some("admin@10.0.0.5"));
     }
 

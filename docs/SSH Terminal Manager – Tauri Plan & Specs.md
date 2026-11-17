@@ -257,6 +257,8 @@ Security and routing behavior:
 - OpenSSH process output and exit behavior are less structured than a native transport; the app recognizes a bounded set of common diagnostic strings rather than receiving typed SSH errors.
 - Jump hops can use saved passwords or the SSH agent. A jump hop configured with its own custom private-key path is rejected (jump_key_auth_unsupported); ProxyJump does not provide a separate -i per hop in this design.
 - The target and every active hop must have a distinct user@host identity. OpenSSH password prompts omit the port, so duplicate identities cannot be disambiguated safely.
+- For a destination saved with password authentication, the target SSH process uses `PubkeyAuthentication=no` and prefers `keyboard-interactive,password`. This prevents unrelated keys loaded in the local agent from consuming the server's authentication-attempt limit before the saved password is tried. These destination options are not generally applied to ProxyJump hosts, so their configured password/agent authentication continues independently.
+- For a destination with a saved private-key path, OpenSSH receives `-i` plus `IdentitiesOnly=yes`, limiting public-key authentication to the explicitly configured identity rather than unrelated agent keys. Agent-only connections retain the system's normal agent behavior.
 - A generic askpass password prompt is unsupported and fails closed.
 - The host-key prompt is not shown as an interactive confirmation UI: accept-new automatically trusts a first-seen key and rejects a changed key.
 - A session's forwards exist only while its interactive SSH terminal session remains open.

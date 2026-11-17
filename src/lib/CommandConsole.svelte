@@ -65,6 +65,13 @@
     status = "";
   }
 
+  function isTargeted(session: BroadcastSession): boolean {
+    if (!session.connected) return false;
+    if (targetMode === "active") return session.sessionId === activeSessionId;
+    if (session.protected && !includeProtected) return false;
+    return targetMode === "all" || selectedSessionIds.includes(session.sessionId);
+  }
+
   function toggleProtected(event: Event) {
     includeProtected = (event.currentTarget as HTMLInputElement).checked;
     confirmingMultiline = false;
@@ -155,91 +162,106 @@
 <section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label="Command console">
   <div class="console-heading">
     <strong>Command console</strong>
-    <label class="target-mode">
-      <span>Send to</span>
-      <select value={targetMode} onchange={onTargetModeChange} disabled={sending} aria-label="Command target">
-        <option value="active">Active session</option>
-        <option value="selected">Selected sessions</option>
-        <option value="all">All open sessions</option>
-      </select>
-    </label>
   </div>
 
-  {#if targetMode === "selected"}
-    <div class="session-picker">
+  <div class="console-layout">
+    <aside class="target-panel" aria-label="Command targets">
       <div class="session-picker-heading">
-        <span>Select open connections</span>
-        <span>{visibleSessions.length} / {sessions.length}</span>
+        <span>Open connections</span>
+        <span>{sessions.filter((session) => session.connected).length} live</span>
       </div>
+      <label class="target-mode">
+        <span>Send to</span>
+        <select value={targetMode} onchange={onTargetModeChange} disabled={sending} aria-label="Command target">
+          <option value="active">Active session</option>
+          <option value="selected">Selected sessions</option>
+          <option value="all">All open sessions</option>
+        </select>
+      </label>
+
       <input
         class="session-search"
         type="search"
         bind:value={sessionQuery}
-        placeholder="Filter by connection name…"
+        placeholder="Filter connections…"
         aria-label="Filter open connections"
         disabled={sending}
       />
-      <div class="session-choices" aria-label="Select target sessions">
+
+      <div class="session-choices" aria-label="Open connections">
         {#if visibleSessions.length === 0}
           <span class="session-empty">No sessions match this filter.</span>
         {:else}
           {#each visibleSessions as session (session.sessionId)}
-            <label class:protected={session.protected} class:disconnected={!session.connected}>
-              <input
-                type="checkbox"
-                checked={session.connected && selectedSessionIds.includes(session.sessionId)}
-                onchange={(event) => toggleSelected(session.sessionId, event.currentTarget.checked)}
-                disabled={sending || !session.connected}
-              />
-              <span class="session-name">{session.name}</span>
-              {#if session.protected}<small>Protected</small>{/if}
-              {#if !session.connected}<small class="offline">Disconnected</small>{/if}
-            </label>
+            {#if targetMode === "selected"}
+              <label class:protected={session.protected} class:disconnected={!session.connected} class="session-row">
+                <input
+                  type="checkbox"
+                  checked={session.connected && selectedSessionIds.includes(session.sessionId)}
+                  onchange={(event) => toggleSelected(session.sessionId, event.currentTarget.checked)}
+                  disabled={sending || !session.connected}
+                />
+                <span class="session-name">{session.name}</span>
+                {#if session.protected}<small class="protected-tag">Protected</small>{/if}
+                {#if !session.connected}<small class="offline">Disconnected</small>{/if}
+              </label>
+            {:else}
+              <div class:protected={session.protected} class:disconnected={!session.connected} class="session-row">
+                <span class="session-target-state" class:targeted={isTargeted(session)} aria-hidden="true">
+                  {isTargeted(session) ? "●" : "·"}
+                </span>
+                <span class="session-name">{session.name}</span>
+                {#if session.protected}<small class="protected-tag">Protected</small>{/if}
+                {#if !session.connected}<small class="offline">Disconnected</small>{/if}
+              </div>
+            {/if}
           {/each}
         {/if}
       </div>
+
+      {#if targetMode !== "active" && hasProtectedSessions}
+        <label class="protected-opt-in">
+          <input type="checkbox" checked={includeProtected} onchange={toggleProtected} disabled={sending} />
+          Include protected connections
+        </label>
+      {/if}
+    </aside>
+
+    <div class="editor-panel">
+      <div class="target-summary" aria-live="polite">
+        <span>Targets ({targetResolution.targets.length}): {targetNames || "No eligible sessions"}</span>
+        {#if targetResolution.excludedProtected > 0}
+          <span class="excluded">{targetResolution.excludedProtected} protected excluded</span>
+        {/if}
+      </div>
+
+      <textarea
+        bind:this={editor}
+        bind:value={draft}
+        onkeydown={onEditorKeydown}
+        placeholder="Write or paste commands here. Enter adds a new line; it does not execute."
+        aria-label="Command text"
+        spellcheck="false"
+        disabled={targetResolution.targets.length === 0 || sending}
+      ></textarea>
+
+      <div class="console-actions">
+        {#if confirmingMultiline}
+          <span class="confirmation" role="alert">
+            Send {lineCount} line{lineCount === 1 ? "" : "s"} to {targetResolution.targets.length} session{targetResolution.targets.length === 1 ? "" : "s"}: {targetNames}.
+            Each host receives the same bytes independently; remote completion is not verified.
+          </span>
+          <button class="send" onclick={sendDraft} disabled={sending || targetResolution.targets.length === 0}>Confirm send</button>
+          <button class="secondary" onclick={() => (confirmingMultiline = false)}>Cancel</button>
+        {:else}
+          <span class="status" class:error={statusError} role="status">{status}</span>
+          <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>Clear</button>
+          <button class="send" onclick={requestSend} disabled={targetResolution.targets.length === 0 || draft.length === 0 || sending}>
+            {sending ? "Sending…" : "Send"}
+          </button>
+        {/if}
+      </div>
     </div>
-  {/if}
-
-  {#if targetMode !== "active" && hasProtectedSessions}
-    <label class="protected-opt-in">
-      <input type="checkbox" checked={includeProtected} onchange={toggleProtected} disabled={sending} />
-      Include protected connections
-    </label>
-  {/if}
-
-  <div class="target-summary" aria-live="polite">
-    <span>Targets ({targetResolution.targets.length}): {targetNames || "No eligible sessions"}</span>
-    {#if targetResolution.excludedProtected > 0}
-      <span class="excluded">{targetResolution.excludedProtected} protected excluded</span>
-    {/if}
-  </div>
-
-  <textarea
-    bind:this={editor}
-    bind:value={draft}
-    onkeydown={onEditorKeydown}
-    placeholder="Write or paste commands here. Enter adds a new line; it does not execute."
-    aria-label="Command text"
-    spellcheck="false"
-    disabled={targetResolution.targets.length === 0 || sending}
-  ></textarea>
-
-  <div class="console-actions">
-    {#if confirmingMultiline}
-      <span class="confirmation" role="alert">
-        Send {lineCount} line{lineCount === 1 ? "" : "s"} to {targetResolution.targets.length} session{targetResolution.targets.length === 1 ? "" : "s"}: {targetNames}.
-        Each host receives the same bytes independently; remote completion is not verified.
-      </span>
-      <button class="send" onclick={sendDraft} disabled={sending || targetResolution.targets.length === 0}>Confirm send</button>
-      <button class="secondary" onclick={() => (confirmingMultiline = false)}>Cancel</button>
-    {:else}
-      <span class="status" class:error={statusError} role="status">{status}</span>
-      <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>Clear</button>
-      <button class="send" onclick={requestSend} disabled={targetResolution.targets.length === 0 || draft.length === 0 || sending}>
-        {sending ? "Sending…" : "Send"}
-      </button>
-    {/if}
   </div>
 </section>
 
@@ -260,85 +282,118 @@
   .console-heading {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
     min-height: 1.45rem;
   }
   .console-heading strong { font-size: 0.78rem; font-weight: 600; color: var(--text); }
-  .target-mode { display: flex; align-items: center; gap: 0.4rem; color: var(--text-secondary); font-size: 0.72rem; }
-  .target-mode select {
-    max-width: 12rem;
-    padding: 0.2rem 0.4rem;
-    color: var(--text);
-    background: var(--app-bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font: inherit;
+  .console-layout {
+    display: grid;
+    grid-template-columns: minmax(10.5rem, 0.34fr) minmax(0, 1fr);
+    gap: 0.65rem;
+    flex: 1 1 auto;
+    min-height: 0;
   }
-  .target-mode select:focus { outline: none; border-color: var(--accent); }
-  .target-summary {
+  .target-panel {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 0.65rem;
-    color: var(--text-secondary);
-    font-size: 0.68rem;
-    line-height: 1.25;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+    min-height: 0;
+    padding-right: 0.65rem;
+    border-right: 1px solid var(--border);
   }
-  .excluded { color: var(--warning, #d6a85f); }
-  .session-picker { display: flex; flex-direction: column; gap: 0.22rem; min-height: 0; }
   .session-picker-heading {
     display: flex;
     justify-content: space-between;
+    gap: 0.3rem;
     color: var(--text-secondary);
     font-size: 0.65rem;
   }
-  .session-search {
-    flex: 0 0 auto;
+  .target-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.12rem;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+  }
+  .target-mode select {
     width: 100%;
-    min-height: 1.35rem;
-    box-sizing: border-box;
-    padding: 0.15rem 0.35rem;
+    min-width: 0;
+    padding: 0.18rem 0.35rem;
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--border);
     border-radius: 3px;
     font: inherit;
-    font-size: 0.68rem;
+  }
+  .target-mode select:focus { outline: none; border-color: var(--accent); }
+  .session-search {
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 1.3rem;
+    box-sizing: border-box;
+    padding: 0.12rem 0.35rem;
+    color: var(--text);
+    background: var(--app-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font: inherit;
+    font-size: 0.66rem;
   }
   .session-search:focus { outline: none; border-color: var(--accent); }
   .session-choices {
     display: flex;
     flex-direction: column;
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-height: 0;
-    max-height: 4.15rem;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 3px;
     color: var(--text-secondary);
     font-size: 0.68rem;
   }
-  .session-choices label {
+  .session-row {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
+    min-width: 0;
     min-height: 1.25rem;
-    gap: 0.4rem;
+    gap: 0.35rem;
     padding: 0.08rem 0.35rem;
     border-bottom: 1px solid var(--border);
   }
-  .session-choices label:last-child { border-bottom: 0; }
-  .session-choices label.protected { background: color-mix(in srgb, var(--warning, #d6a85f) 6%, transparent); }
-  .session-choices label.disconnected { opacity: 0.6; }
-  .session-choices input, .protected-opt-in input { flex: 0 0 auto; accent-color: var(--accent); }
+  .session-row:last-child { border-bottom: 0; }
+  .session-row.protected { background: color-mix(in srgb, var(--warning, #d6a85f) 6%, transparent); }
+  .session-row.disconnected { opacity: 0.6; }
+  .session-row input, .protected-opt-in input { flex: 0 0 auto; accent-color: var(--accent); }
   .session-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .session-choices small { flex: 0 0 auto; color: var(--warning, #d6a85f); font-size: 0.6rem; }
-  .session-choices small.offline { color: var(--danger); }
+  .session-row small { flex: 0 0 auto; color: var(--warning, #d6a85f); font-size: 0.58rem; }
+  .session-row small.offline { color: var(--danger); }
+  .session-row small.protected-tag { color: var(--warning, #d6a85f); }
+  .session-target-state { flex: 0 0 0.85rem; width: 0.85rem; color: var(--muted); text-align: center; font-size: 0.72rem; }
+  .session-target-state.targeted { color: var(--accent); }
   .session-empty { padding: 0.35rem; color: var(--muted); }
-  .protected-opt-in { color: var(--warning, #d6a85f); font-size: 0.68rem; }
+  .protected-opt-in { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; color: var(--warning, #d6a85f); font-size: 0.64rem; }
+  .editor-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+    min-height: 0;
+  }
+  .target-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.65rem;
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    line-height: 1.25;
+  }
+  .excluded { color: var(--warning, #d6a85f); }
   textarea {
     width: 100%;
-    min-height: 3.6rem;
+    min-height: 0;
     flex: 1 1 auto;
     resize: none;
     box-sizing: border-box;
@@ -358,6 +413,7 @@
     justify-content: flex-end;
     gap: 0.55rem;
     min-height: 1.45rem;
+    flex: 0 0 auto;
   }
   .status, .confirmation { flex: 1; min-width: 0; color: var(--text-secondary); font-size: 0.68rem; }
   .status.error { color: var(--danger); }
@@ -374,4 +430,9 @@
   button.send { color: var(--accent-contrast); background: var(--accent); border-color: var(--accent); }
   button.secondary { color: var(--text-secondary); background: transparent; }
   button:disabled { opacity: 0.45; cursor: default; }
+  @media (max-width: 720px) {
+    .console-layout { grid-template-columns: minmax(8.5rem, 0.42fr) minmax(0, 1fr); gap: 0.4rem; }
+    .target-panel { padding-right: 0.4rem; }
+    .session-row { gap: 0.25rem; padding-inline: 0.25rem; }
+  }
 </style>

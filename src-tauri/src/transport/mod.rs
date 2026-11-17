@@ -102,6 +102,8 @@ pub struct SshConfig {
     /// Optional private key file (M4, `auth.type = key`). Only the path is
     /// stored in the vault; the file itself is read in place by ssh.exe.
     pub key_path: Option<PathBuf>,
+    /// True when the destination uses a saved login password rather than a key or agent.
+    pub password_auth: bool,
     /// Ordered ProxyJump chain, outermost hop first.
     pub jump_hosts: Vec<JumpHost>,
     /// Local (-L) and remote (-R) TCP forwards tied to this SSH session.
