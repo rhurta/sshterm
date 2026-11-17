@@ -9,7 +9,7 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
   import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
-  import { createLayoutTree, getLayoutGeometry, removeSession, setSplitRatioAtPath, splitSession, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
+  import { createLayoutTree, getLayoutGeometry, removeSession, sessionsInTree, setSplitRatioAtPath, splitSession, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
     dir,
@@ -228,8 +228,8 @@
 
   function activateSession(sessionId: string) {
     activeId = sessionId;
-    if (layoutPreset === "single") {
-      layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), "single", sessionId);
+    if (layoutPreset === "single" || !sessionsInTree(layoutTree).includes(sessionId)) {
+      layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), layoutPreset, sessionId);
     }
   }
 
