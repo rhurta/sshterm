@@ -39,22 +39,40 @@ function split(axis: SplitAxis, first: SplitNode, second: SplitNode): SplitNode 
 export function createLayoutTree(sessionIds: string[], preset: LayoutPreset, activeId: string | null): SplitNode | null {
   const unique = [...new Set(sessionIds)];
   if (!unique.length) return null;
-  const limit = preset === "grid" ? 4 : preset === "single" ? 1 : 2;
-  const ordered = unique.slice(0, limit);
-  if (activeId && unique.includes(activeId) && !ordered.includes(activeId)) {
-    ordered[ordered.length - 1] = activeId;
+  const ordered = activeId && unique.includes(activeId)
+    ? [activeId, ...unique.filter((id) => id !== activeId)]
+    : unique;
+
+  if (preset === "single") {
+    return { type: "leaf", sessionId: ordered[0], sessionIds: ordered };
   }
-  if (preset === "single" && activeId && unique.includes(activeId)) ordered[0] = activeId;
-  const leaves = ordered.map(leaf);
-  if (leaves.length === 1) return leaves[0];
-  if (preset === "top-bottom") return split("vertical", leaves[0], leaves[1]);
-  if (preset === "grid" && leaves.length === 3) {
-    return split("horizontal", split("vertical", leaves[0], leaves[1]), leaves[2]);
+
+  if (preset === "top-bottom") {
+    const first = leaf(ordered[0]);
+    const secondIds = ordered.slice(1);
+    const second = { type: "leaf" as const, sessionId: secondIds[0], sessionIds: secondIds };
+    return split("vertical", first, second);
   }
-  if (preset === "grid" && leaves.length === 4) {
-    return split("horizontal", split("vertical", leaves[0], leaves[1]), split("vertical", leaves[2], leaves[3]));
+
+  if (preset === "left-right") {
+    const first = leaf(ordered[0]);
+    const secondIds = ordered.slice(1);
+    const second = { type: "leaf" as const, sessionId: secondIds[0], sessionIds: secondIds };
+    return split("horizontal", first, second);
   }
-  return split("horizontal", leaves[0], leaves[1]);
+
+  if (ordered.length === 1) return leaf(ordered[0]);
+  if (ordered.length === 2) return split("horizontal", leaf(ordered[0]), leaf(ordered[1]));
+  if (ordered.length === 3) {
+    return split("horizontal", split("vertical", leaf(ordered[0]), leaf(ordered[1])), leaf(ordered[2]));
+  }
+  const rightIds = ordered.slice(3);
+  const right = { type: "leaf" as const, sessionId: rightIds[0], sessionIds: rightIds };
+  return split(
+    "horizontal",
+    split("vertical", leaf(ordered[0]), leaf(ordered[1])),
+    split("vertical", leaf(ordered[2]), right),
+  );
 }
 
 /** Insert a new session beside a target leaf. Existing session IDs are never duplicated. */
