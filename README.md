@@ -20,7 +20,7 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M3 | Per-session log files | ✅ Complete |
 | M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
-| M6 | Tiling, command console and broadcast | 🟡 In planning / implementation |
+| M6 | Tiling, command console and broadcast | 🟡 In progress (tiling presets) |
 | M7 | Local and reverse TCP forwarding (`-L` / `-R`) | 🟡 Partial |
 | M8 | Native SFTP (`russh-sftp`) | 📋 Planned |
 | M9 | Polish (colors, host-key UI, auto-reconnect) | 📋 Planned |
