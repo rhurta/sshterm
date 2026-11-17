@@ -47,6 +47,16 @@ This document is the implementation plan for M6. It deliberately separates works
 
 ### M6.1 — Tiling foundation
 
+**Initial implementation committed; splitter work remains.** The workspace now has single, left/right, top/bottom and 2×2 layout presets backed by pure split-tree helpers. Existing tabs remain intact; the selected terminal stays visible, and other visible terminals retain their own xterm instances. Only visible panes fit and resize their PTYs, while keyboard focus is assigned to the pane the user focuses. The current renderer uses CSS grid for these presets; draggable splitters, arbitrary nested split editing and focused automated helper tests remain outstanding.
+
+### M6.1 — Remaining work
+
+- Add draggable, keyboard-accessible splitters that update split ratios.
+- Add tree insert/remove/collapse operations to interactive layout actions.
+- Add automated tests for tree operations and session close/tab-switch behavior.
+
+### M6.1 — Tiling foundation (original checklist)
+
 1. Introduce a typed frontend split-tree model and pure helpers for insert, remove, collapse and traversal.
 2. Add layout presets and active-leaf focus while preserving the existing session tabs.
 3. Render each visible leaf as an independent TerminalPane; keep one terminal instance per live session.
