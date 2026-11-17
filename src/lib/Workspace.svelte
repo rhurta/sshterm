@@ -243,8 +243,8 @@
     layoutTree = removeSession(layoutTree, sessionId);
     if (activeId === sessionId) {
       activeId = tabs[tabs.length - 1]?.sessionId ?? null;
-      if (layoutPreset === "single") {
-        layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), "single", activeId);
+      if (activeId && (layoutPreset === "single" || !sessionsInTree(layoutTree).includes(activeId))) {
+        layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), layoutPreset, activeId);
       }
     }
   }
