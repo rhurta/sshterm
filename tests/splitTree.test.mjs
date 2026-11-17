@@ -8,6 +8,7 @@ import {
   sessionsInTree,
   setSplitRatioAtPath,
   splitSession,
+  splitPaneWithEmptyLeaf,
 } from "../src/lib/splitTree.ts";
 
 test("layout presets include each session once and grid balances four panes", () => {
@@ -75,4 +76,18 @@ test("removing one tab keeps its pane until the final tab closes", () => {
   assert.deepEqual(sessionsInTree(oneLeft), ["b"]);
   assert.equal(getLayoutGeometry(oneLeft).leaves[0].sessionId, "a");
   assert.equal(removeSession(oneLeft, "b"), null);
+});
+
+test("splitPaneWithEmptyLeaf creates an empty sibling pane", () => {
+  const tree = splitPaneWithEmptyLeaf(leaf("a"), "a", "empty-pane", "vertical");
+  const geometry = getLayoutGeometry(tree);
+  assert.deepEqual(geometry.leaves.map((item) => item.sessionIds), [["a"], []]);
+  assert.equal(geometry.leaves[1].sessionId, "empty-pane");
+  assert.deepEqual(sessionsInTree(tree), ["a"]);
+});
+
+test("removeSession can preserve an empty pane for the workspace", () => {
+  const tree = removeSession(leaf("a"), "a", true);
+  assert.deepEqual(getLayoutGeometry(tree).leaves.map((item) => item.sessionIds), [[]]);
+  assert.deepEqual(sessionsInTree(tree), []);
 });
