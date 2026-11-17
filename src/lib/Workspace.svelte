@@ -279,7 +279,8 @@
     const { [paneId]: _removed, ...rest } = paneActiveIds;
     paneActiveIds = rest;
   }
-\n  function dividerStyle(axis: SplitAxis, rect: LayoutRect): string {
+
+  function dividerStyle(axis: SplitAxis, rect: LayoutRect): string {
     if (axis === "horizontal") {
       return `left: calc(${rect.x * 100}% - 4px); top: ${rect.y * 100}%; width: 8px; height: ${rect.height * 100}%;`;
     }
