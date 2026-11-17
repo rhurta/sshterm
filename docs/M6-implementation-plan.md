@@ -5,7 +5,7 @@ This document is the implementation plan for M6. It deliberately separates works
 ## Goals
 
 - Show multiple live SSH sessions in one workspace using horizontal, vertical and 2×2 tiling.
-- Keep the existing tab workflow; tiling is an additional way to arrange already-open sessions, not a replacement for tabs.
+- Keep session tabs inside each tiled pane. Opening a connection adds a tab to the currently focused pane; switching a pane tab does not affect other panes.
 - Provide a persistent command console below the terminal area, inspired by SecureCRT's command window.
 - Compose and edit one or many command lines before sending. Enter inserts a newline; it never executes by itself.
 - Send the composed text to the active session, explicitly selected sessions, or all eligible open sessions.
@@ -47,13 +47,12 @@ This document is the implementation plan for M6. It deliberately separates works
 
 ### M6.1 — Tiling foundation
 
-**Initial implementation committed; splitter work remains.** The workspace now has single, left/right, top/bottom and 2×2 layout presets backed by pure split-tree helpers. Existing tabs remain intact; the selected terminal stays visible, and other visible terminals retain their own xterm instances. Only visible panes fit and resize their PTYs, while keyboard focus is assigned to the pane the user focuses. The current renderer still uses preset CSS grid rather than recursive split-tree rendering. Pure helpers now cover insertion, removal/collapse, balanced 2×2 trees and path-addressed ratio updates; automated tests are included in the Windows CI workflow. Draggable splitters and interactive arbitrary nested split editing remain outstanding.
-
+**Core tiling and pane-tab UX implemented; empty-pane split actions and UI-level coverage remain.** The workspace renders a recursive split tree with single, left/right, top/bottom and 2×2 presets. Splitters are draggable and keyboard accessible. Each pane has its own session tab strip; opening a connection adds it to the focused pane, and switching tabs is isolated to that pane. Existing TerminalPane instances remain keyed by session ID so switching pane tabs does not recreate live xterm sessions. Pure split-tree helpers cover insertion, tab removal, collapse, pane tab grouping, balanced presets, geometry and path-addressed ratio updates; tests run in Windows CI. The layout presets are in a vertical side toolbar. Terminal scrollbars and connection-tree scrollbars now share a thin scrollbar treatment.
 ### M6.1 — Remaining work
 
-- Add draggable, keyboard-accessible splitters that update split ratios.
-- Add tree insert/remove/collapse operations to interactive layout actions.
-- Add automated tests for tree operations and session close/tab-switch behavior. Pure split-tree tests now run in Windows CI; UI-level close/tab-switch tests remain outstanding.
+- Add explicit split-pane actions that create an empty pane, plus an in-pane connection picker for filling it.
+- Keep the last-tab close behavior aligned with the agreed empty-pane behavior rather than collapsing that pane.
+- Add automated UI-level tests for pane tab switching, close behavior, focus and resize. Pure split-tree tests already run in Windows CI.
 
 ### M6.1 — Tiling foundation (original checklist)
 
