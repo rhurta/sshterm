@@ -24,8 +24,8 @@ export function removeSession(node: SplitNode | null, sessionId: string, preserv
     const remaining = node.sessionIds.filter((id) => id !== sessionId);
     return remaining.length || preserveEmptyPane ? { ...node, sessionIds: remaining } : null;
   }
-  const first = removeSession(node.first, sessionId);
-  const second = removeSession(node.second, sessionId);
+  const first = removeSession(node.first, sessionId, preserveEmptyPane);
+  const second = removeSession(node.second, sessionId, preserveEmptyPane);
   if (!first) return second;
   if (!second) return first;
   return { ...node, first, second };
@@ -97,7 +97,8 @@ export function splitPaneWithEmptyLeaf(
   }
   return node;
 }
-\n/** Add a session as a tab in the pane containing the stable pane ID. */
+
+/** Add a session as a tab in the pane containing the stable pane ID. */
 export function addSessionToPane(node: SplitNode | null, paneId: string, sessionId: string): SplitNode | null {
   if (!node || !paneId || !sessionId || sessionsInTree(node).includes(sessionId)) return node;
   if (node.type === "leaf") {
@@ -117,7 +118,8 @@ export function addSessionToPane(node: SplitNode | null, paneId: string, session
 function findPane(node: SplitNode, paneId: string): boolean {
   return node.type === "leaf" ? node.sessionId === paneId : findPane(node.first, paneId) || findPane(node.second, paneId);
 }
-\n/** Update exactly one split, identified by its path from the root. */
+
+/** Update exactly one split, identified by its path from the root. */
 export function setSplitRatioAtPath(node: SplitNode | null, path: SplitPath, ratio: number): SplitNode | null {
   if (!node || node.type === "leaf") return node;
   const bounded = Math.max(0.15, Math.min(0.85, ratio));
