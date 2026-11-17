@@ -28,7 +28,6 @@
   let layoutGeometry = $derived(getLayoutGeometry(layoutTree));
   let paneActiveIds = $state<Record<string, string>>({});
   let pendingPaneId = $state<string | null>(null);
-  let visibleSessionIds = $derived(layoutGeometry.leaves.map((item) => item.sessionId));
   let panesElement = $state<HTMLDivElement | null>(null);
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
