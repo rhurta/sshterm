@@ -381,6 +381,7 @@
               </div>
             {/each}
             {#each layoutGeometry.dividers as divider}
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
               <div class="layout-divider" class:vertical={divider.axis === "horizontal"} class:horizontal={divider.axis === "vertical"}
                 style={dividerStyle(divider.axis, divider.rect)} role="separator"
                 aria-orientation={divider.axis === "horizontal" ? "vertical" : "horizontal"}
@@ -536,71 +537,6 @@
     display: flex;
     flex-direction: column;
     background: var(--app-bg);
-  }
-  .tabs {
-    flex: 0 0 auto;
-    display: flex;
-    gap: 0.25rem;
-    padding: 0.4rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-  }
-  .tab {
-    display: flex;
-    align-items: center;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-  .tab.active {
-    border-color: var(--accent);
-  }
-  .tab button {
-    font: inherit;
-    font-size: 0.8rem;
-    color: var(--text);
-    background: transparent;
-    border: 0;
-    padding: 0.3rem 0.55rem;
-    cursor: pointer;
-  }
-  .tab .tab-name {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.12rem;
-    min-width: 0;
-  }
-  .tab-chain {
-    max-width: 24rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--muted);
-    font-size: 0.62rem;
-    font-weight: 400;
-    white-space: nowrap;
-  }
-  .tab-forwards {
-    max-width: 24rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--success);
-    font-size: 0.62rem;
-    font-weight: 400;
-    white-space: nowrap;
-  }
-  .tab-close {
-    color: var(--muted) !important;
-  }
-  .new-tab {
-    font: inherit;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0.2rem 0.6rem;
-    cursor: pointer;
   }
   .workspace-layout { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
   .panes { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--app-bg); }
