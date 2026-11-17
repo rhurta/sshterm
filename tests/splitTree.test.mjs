@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createLayoutTree,
+  getLayoutGeometry,
   leaf,
   removeSession,
   sessionsInTree,
@@ -46,4 +47,15 @@ test("split ratio updates only the addressed split and clamps bounds", () => {
     assert.equal(updated.first.type === "split" ? updated.first.ratio : 0, 0.85);
     assert.equal(updated.second.type === "split" ? updated.second.ratio : 0, 0.5);
   }
+});
+
+test("layout geometry positions nested leaves and dividers within normalized bounds", () => {
+  const tree = createLayoutTree(["a", "b", "c", "d"], "grid", "a");
+  const geometry = getLayoutGeometry(tree);
+  assert.deepEqual(geometry.leaves.map((item) => item.sessionId), ["a", "b", "c", "d"]);
+  assert.equal(geometry.dividers.length, 3);
+  assert.deepEqual(geometry.leaves[0].rect, { x: 0, y: 0, width: 0.5, height: 0.5 });
+  assert.deepEqual(geometry.leaves[1].rect, { x: 0, y: 0.5, width: 0.5, height: 0.5 });
+  assert.deepEqual(geometry.leaves[2].rect, { x: 0.5, y: 0, width: 0.5, height: 0.5 });
+  assert.deepEqual(geometry.leaves[3].rect, { x: 0.5, y: 0.5, width: 0.5, height: 0.5 });
 });
