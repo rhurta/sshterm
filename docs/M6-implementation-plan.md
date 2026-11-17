@@ -77,13 +77,23 @@ Acceptance: multiline drafts can be composed, pasted, edited and sent explicitly
 
 ### M6.3 — Broadcast targeting and safeguards
 
-1. Add protected to ConnectionSummary (no credentials) and expose it in target selection.
-2. Implement active, selected and all-open target resolution.
-3. Exclude protected sessions by default and require explicit opt-in.
-4. Confirm multi-line broadcast with target names/count and a clear warning that execution is independent per host.
-5. Report dispatch errors per session; do not claim remote command success.
+**Target selection and safe dispatch implemented; Windows CI and interactive validation remain.**
 
-Acceptance: tests cover target resolution, protected exclusion, stale/closed sessions and partial dispatch failure.
+- The credential-free Rust `ConnectionSummary` now exposes the saved `protected` flag, and each open frontend session retains that flag in its tab metadata.
+- The console supports Active session, Selected sessions and All open sessions.
+- Selected mode defaults to the active session when first entered; users can add/remove open sessions individually.
+- Protected connections are excluded from Selected/All by default. An explicit "Include protected connections" opt-in is shown when protected sessions are open. Active-session mode remains a deliberate single-session action.
+- The target count and names are displayed above the editor, including the number of protected sessions excluded.
+- Multi-line sends and sends to more than one session require a second confirmation that names the target set and explains that each host receives the bytes independently.
+- Targets are resolved again at dispatch time. Writes are sent sequentially, preserve exact UTF-8 bytes, do not append a newline, and are never retried automatically.
+- The console reports the number of accepted write requests and each per-session dispatch failure. It does not claim remote command completion.
+- Pure target-resolution tests cover active, selected, all, protected opt-in/exclusion, stale IDs and duplicate IDs; Windows CI runs these tests.
+
+Remaining:
+- Verify the three target modes, protected opt-in, confirmation, and partial failures in the Windows app.
+- Add an integration-level dispatch test if a suitable session-write test seam is introduced.
+
+Acceptance: target resolution is tested for stale/closed sessions and protected exclusion; the UI makes the exact target set explicit and reports partial dispatch failures.
 
 ### M6.4 — Persistence and polish
 
