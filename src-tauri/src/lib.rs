@@ -128,6 +128,8 @@ pub fn run() {
             commands::config_set_theme,
             commands::config_get_terminal_settings,
             commands::config_set_terminal_settings,
+            commands::config_get_command_console_settings,
+            commands::config_set_command_console_settings,
             store::conn_list,
             store::conn_get,
             store::conn_upsert,

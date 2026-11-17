@@ -143,3 +143,19 @@ pub fn config_set_terminal_settings(settings: config::TerminalSettings) -> Resul
     cfg.terminal = settings;
     cfg.save(&path).map_err(|e| e.to_string())
 }
+
+/// Command-console layout preferences are non-secret and never include the draft.
+#[tauri::command]
+pub fn config_get_command_console_settings() -> config::CommandConsoleSettings {
+    Config::load(&paths::config_path()).command_console.normalized()
+}
+
+#[tauri::command]
+pub fn config_set_command_console_settings(
+    settings: config::CommandConsoleSettings,
+) -> Result<(), String> {
+    let path = paths::config_path();
+    let mut cfg = Config::load(&path);
+    cfg.command_console = settings.normalized();
+    cfg.save(&path).map_err(|e| e.to_string())
+}

@@ -24,6 +24,16 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   keep_disconnected_sessions: false,
 }
 
+export interface CommandConsoleSettings {
+  visible: boolean;
+  height: number;
+}
+
+export const DEFAULT_COMMAND_CONSOLE_SETTINGS: CommandConsoleSettings = {
+  visible: true,
+  height: 180,
+}
+
 export type Auth =
   | { type: "password"; password: string }
   | { type: "key"; path: string; passphrase?: string | null }

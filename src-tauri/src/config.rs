@@ -68,6 +68,27 @@ impl Default for TerminalSettings {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CommandConsoleSettings {
+    pub visible: bool,
+    pub height: u16,
+}
+
+impl Default for CommandConsoleSettings {
+    fn default() -> Self {
+        Self { visible: true, height: 180 }
+    }
+}
+
+impl CommandConsoleSettings {
+    /// Keep persisted values within the console's supported size range.
+    pub fn normalized(mut self) -> Self {
+        self.height = self.height.clamp(110, 900);
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)] // missing fields take their default value
 pub struct Config {
@@ -80,6 +101,8 @@ pub struct Config {
     pub log_mode: LogMode,
     /// Terminal clipboard and mouse behavior.
     pub terminal: TerminalSettings,
+    /// Command-console visibility and preferred height (never contains command drafts).
+    pub command_console: CommandConsoleSettings,
 }
 
 impl Default for Config {
@@ -90,6 +113,7 @@ impl Default for Config {
             log_output: true,
             log_mode: LogMode::Screen,
             terminal: TerminalSettings::default(),
+            command_console: CommandConsoleSettings::default(),
         }
     }
 }
@@ -212,6 +236,30 @@ mod tests {
         assert!(loaded.terminal.right_click_paste);
         assert!(!loaded.terminal.confirm_multiline_paste);
         assert!(loaded.terminal.keep_disconnected_sessions);
+    }
+
+    #[test]
+    fn command_console_settings_default_for_older_config_files() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "language = \"es\"\n").unwrap();
+        assert_eq!(Config::load(&path).command_console, CommandConsoleSettings::default());
+    }
+
+    #[test]
+    fn command_console_settings_roundtrip_and_normalize_height() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut cfg = Config::default();
+        cfg.command_console.visible = false;
+        cfg.command_console.height = 1;
+        cfg.command_console = cfg.command_console.normalized();
+        cfg.save(&path).unwrap();
+
+        let loaded = Config::load(&path);
+        assert!(!loaded.command_console.visible);
+        assert_eq!(loaded.command_console.height, 110);
+        assert_eq!(CommandConsoleSettings { visible: true, height: 5000 }.normalized().height, 900);
     }
 
     #[test]

@@ -9,8 +9,8 @@
   import CommandConsole from "./CommandConsole.svelte";
   import type { BroadcastSession } from "$lib/broadcastTargets";
   import LanguageSelect from "./LanguageSelect.svelte";
-  import type { AppTheme, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
-  import { DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
+  import type { AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
+  import { DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
   import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
@@ -32,8 +32,9 @@
   let pendingPaneId = $state<string | null>(null);
   let panesElement = $state<HTMLDivElement | null>(null);
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
-  let consoleVisible = $state(true);
-  let consoleHeight = $state(180);
+  let consoleVisible = $state(DEFAULT_COMMAND_CONSOLE_SETTINGS.visible);
+  let consoleHeight = $state(DEFAULT_COMMAND_CONSOLE_SETTINGS.height);
+  let consoleSettingsDirty = false;
   let consoleDrag = $state<{ startY: number; startHeight: number } | null>(null);
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let picker = $state(false);
@@ -73,9 +74,41 @@
     return detail ? `${base} — ${detail}` : base;
   }
 
+  function maxConsoleHeight(): number {
+    return Math.max(160, Math.min(900, Math.floor(window.innerHeight * 0.65)));
+  }
+
+  function clampConsoleHeight(value: number): number {
+    return Math.max(110, Math.min(maxConsoleHeight(), Math.round(value)));
+  }
+
+  async function persistConsoleSettings() {
+    try {
+      await invoke("config_set_command_console_settings", {
+        settings: { visible: consoleVisible, height: Math.round(consoleHeight) },
+      });
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  function toggleCommandConsole() {
+    consoleSettingsDirty = true;
+    consoleVisible = !consoleVisible;
+    void persistConsoleSettings();
+  }
+
   onMount(() => {
     void invoke<TerminalSettings>("config_get_terminal_settings")
       .then((value) => (settings = value))
+      .catch(() => {});
+    void invoke<CommandConsoleSettings>("config_get_command_console_settings")
+      .then((value) => {
+        if (!consoleSettingsDirty) {
+          consoleVisible = value.visible;
+          consoleHeight = clampConsoleHeight(value.height);
+        }
+      })
       .catch(() => {});
     return subscribeSessionErrors((sessionId, message) => {
       const tab = tabs.find((item) => item.sessionId === sessionId);
@@ -254,6 +287,36 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (
+      !e.repeat
+      && !e.getModifierState("AltGraph")
+      && e.ctrlKey
+      && e.altKey
+      && !e.metaKey
+      && !settingsOpen
+      && !picker
+      && !multilinePaste
+    ) {
+      const key = e.key.toLowerCase();
+      if (key === "k" && tabs.length > 0) {
+        e.preventDefault();
+        toggleCommandConsole();
+        return;
+      }
+      const presets: Record<string, LayoutPreset> = {
+        "1": "single",
+        "2": "left-right",
+        "3": "top-bottom",
+        "4": "grid",
+      };
+      const preset = presets[key];
+      if (preset && tabs.length > 0) {
+        e.preventDefault();
+        chooseLayout(preset);
+        return;
+      }
+    }
+
     if (e.key === "Escape" && multilinePaste) {
       e.preventDefault();
       settleMultilinePaste(false);
@@ -367,25 +430,33 @@
   function startConsoleResize(event: PointerEvent) {
     event.preventDefault();
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    consoleSettingsDirty = true;
     consoleDrag = { startY: event.clientY, startHeight: consoleHeight };
   }
 
   function moveConsoleResize(event: PointerEvent) {
     if (!consoleDrag) return;
-    const maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.65));
-    consoleHeight = Math.max(110, Math.min(maxHeight, consoleDrag.startHeight + consoleDrag.startY - event.clientY));
+    consoleHeight = clampConsoleHeight(consoleDrag.startHeight + consoleDrag.startY - event.clientY);
   }
 
   function endConsoleResize() {
+    if (!consoleDrag) return;
     consoleDrag = null;
+    void persistConsoleSettings();
   }
 
   function adjustConsoleHeight(event: KeyboardEvent) {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     event.preventDefault();
+    consoleSettingsDirty = true;
     const delta = event.key === "ArrowUp" ? 12 : -12;
-    const maxHeight = Math.max(160, Math.floor(window.innerHeight * 0.65));
-    consoleHeight = Math.max(110, Math.min(maxHeight, consoleHeight + delta));
+    consoleHeight = clampConsoleHeight(consoleHeight + delta);
+  }
+
+  function saveConsoleResizeAfterKeyboard(event: KeyboardEvent) {
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      void persistConsoleSettings();
+    }
   }
 
   async function closeTab(sessionId: string) {
@@ -418,22 +489,22 @@
     <main>
       {#if tabs.length > 0}
         <div class="workspace-layout">
-          <div class="layout-tools" aria-label="Terminal layout">
+          <div class="layout-tools" role="toolbar" aria-label={t("workspace.layout")}>
             <button bind:this={newTabButton} class="tool-add" title={t("workspace.newTab")} onclick={openPicker}>+</button>
-            <button class:chosen={layoutPreset === "single"} title="Single pane" aria-pressed={layoutPreset === "single"} onclick={() => chooseLayout("single")}>1</button>
-            <button class:chosen={layoutPreset === "left-right"} title="Left and right" aria-pressed={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}>▥</button>
-            <button class:chosen={layoutPreset === "top-bottom"} title="Top and bottom" aria-pressed={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}>▤</button>
-            <button class:chosen={layoutPreset === "grid"} title="2 by 2 grid" aria-pressed={layoutPreset === "grid"} onclick={() => chooseLayout("grid")}>▦</button>
+            <button class:chosen={layoutPreset === "single"} title={t("workspace.layout.single")} aria-label={t("workspace.layout.single")} aria-pressed={layoutPreset === "single"} onclick={() => chooseLayout("single")}>1</button>
+            <button class:chosen={layoutPreset === "left-right"} title={t("workspace.layout.leftRight")} aria-label={t("workspace.layout.leftRight")} aria-pressed={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}>▥</button>
+            <button class:chosen={layoutPreset === "top-bottom"} title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}>▤</button>
+            <button class:chosen={layoutPreset === "grid"} title={t("workspace.layout.grid")} aria-label={t("workspace.layout.grid")} aria-pressed={layoutPreset === "grid"} onclick={() => chooseLayout("grid")}>▦</button>
             <span class="tool-separator"></span>
-            <button title="Split focused pane left/right" disabled={!activeId} onclick={() => splitFocusedPane("horizontal")}>↔</button>
-            <button title="Split focused pane top/bottom" disabled={!activeId} onclick={() => splitFocusedPane("vertical")}>↕</button>
+            <button title={t("workspace.splitLeftRight")} aria-label={t("workspace.splitLeftRight")} disabled={!activeId} onclick={() => splitFocusedPane("horizontal")}>↔</button>
+            <button title={t("workspace.splitTopBottom")} aria-label={t("workspace.splitTopBottom")} disabled={!activeId} onclick={() => splitFocusedPane("vertical")}>↕</button>
             <span class="tool-separator"></span>
-            <button class:chosen={consoleVisible} title={consoleVisible ? "Hide command console" : "Show command console"} aria-label={consoleVisible ? "Hide command console" : "Show command console"} aria-pressed={consoleVisible} onclick={() => (consoleVisible = !consoleVisible)}>⌨</button>
+            <button class:chosen={consoleVisible} title={consoleVisible ? t("workspace.commandConsole.hide") : t("workspace.commandConsole.show")} aria-label={consoleVisible ? t("workspace.commandConsole.hide") : t("workspace.commandConsole.show")} aria-pressed={consoleVisible} onclick={toggleCommandConsole}>⌨</button>
           </div>
           <div class="panes" bind:this={panesElement}>
             {#each layoutGeometry.leaves as pane (pane.sessionId)}
               <div class="pane-slot" class:focused={pane.sessionIds.includes(activeId ?? "")} class:split-layout={layoutGeometry.leaves.length > 1} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
-                <div class="pane-tabs" role="tablist" aria-label="Sessions in pane">
+                <div class="pane-tabs" role="tablist" aria-label={t("workspace.paneTabs")}>
                   {#each pane.sessionIds as sessionId (sessionId)}
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
                     {#if tab}
@@ -464,14 +535,14 @@
                       </div>
                     {/if}
                   {/each}
-                  <button class="pane-add" title="Open a connection in this pane" aria-label="Open a connection in this pane" onclick={() => openPickerForPane(pane.sessionId)}>+</button>
+                  <button class="pane-add" title={t("workspace.openConnectionInPane")} aria-label={t("workspace.openConnectionInPane")} onclick={() => openPickerForPane(pane.sessionId)}>+</button>
                   {#if pane.sessionIds.length === 0 && layoutGeometry.leaves.length > 1}
-                    <button class="pane-remove" title="Remove empty pane" aria-label="Remove empty pane" onclick={() => removePane(pane.sessionId)}>×</button>
+                    <button class="pane-remove" title={t("workspace.removeEmptyPane")} aria-label={t("workspace.removeEmptyPane")} onclick={() => removePane(pane.sessionId)}>×</button>
                   {/if}
                 </div>
                 <div class="pane-terminals">
                   {#if pane.sessionIds.length === 0}
-                    <div class="empty-pane"><button onclick={() => openPickerForPane(pane.sessionId)}>Open a connection</button></div>
+                    <div class="empty-pane"><button onclick={() => openPickerForPane(pane.sessionId)}>{t("workspace.openConnection")}</button></div>
                   {/if}
                   {#each pane.sessionIds as sessionId (sessionId)}
                     <TerminalPane sessionId={sessionId} active={paneActiveIds[pane.sessionId] === sessionId}
@@ -486,7 +557,7 @@
               <div class="layout-divider" class:vertical={divider.axis === "horizontal"} class:horizontal={divider.axis === "vertical"}
                 style={dividerStyle(divider.axis, divider.rect)} role="separator"
                 aria-orientation={divider.axis === "horizontal" ? "vertical" : "horizontal"}
-                aria-label="Resize terminal panes" aria-valuemin="15" aria-valuemax="85"
+                aria-label={t("workspace.resizePanes")} aria-valuemin="15" aria-valuemax="85"
                 aria-valuenow={Math.round(divider.ratio * 100)} tabindex="0"
                 onpointerdown={(event) => startDividerDrag(event, divider)}
                 onpointermove={(event) => moveDividerDrag(event, divider)}
@@ -504,9 +575,9 @@
       {#if consoleVisible && tabs.length > 0}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
         <div class="console-resizer" role="separator" aria-orientation="horizontal"
-          aria-label="Resize command console" aria-valuemin="110" aria-valuemax="900"
+          aria-label={t("workspace.resizeConsole")} aria-valuemin="110" aria-valuemax={maxConsoleHeight()}
           aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize}
-          onkeydown={adjustConsoleHeight} title="Drag to resize command console"></div>
+          onkeydown={adjustConsoleHeight} onkeyup={saveConsoleResizeAfterKeyboard} title={t("workspace.resizeConsole")}></div>
       {/if}
       <CommandConsole visible={consoleVisible && tabs.length > 0} sessions={consoleSessions} activeSessionId={activeId} height={consoleHeight} />
     </main>
@@ -522,6 +593,10 @@
         </div>
         <h3>{t("settings.language")}</h3>
         <LanguageSelect />
+        <h3>{t("workspace.keyboardShortcuts")}</h3>
+        <p class="hint">{t("workspace.shortcutConsoleHelp")}</p>
+        <p class="hint">{t("workspace.shortcutLayoutHelp")}</p>
+        <p class="hint">{t("console.shortcutSendHelp")}</p>
         <h3>{t("settings.terminal")}</h3>
         <label class="setting"><input type="checkbox" checked={settings.copy_on_selection} onchange={(e) => setTerminalSetting("copy_on_selection", e.currentTarget.checked)} />{t("settings.copyOnSelection")}</label>
         <label class="setting"><input type="checkbox" checked={settings.right_click_copy} onchange={(e) => setTerminalSetting("right_click_copy", e.currentTarget.checked)} />{t("settings.rightClickCopy")}</label>

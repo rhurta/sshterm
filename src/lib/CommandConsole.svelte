@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { toBase64 } from "$lib/encoding";
+  import { t } from "$lib/i18n/index.svelte";
   import { resolveBroadcastTargets, type BroadcastSession, type BroadcastTargetMode } from "$lib/broadcastTargets";
 
   let {
@@ -109,7 +110,7 @@
     const targets = resolution.targets;
     if (targets.length === 0) {
       confirmingMultiline = false;
-      status = "No eligible open sessions are selected.";
+      status = t("console.noEligibleSessions");
       statusError = true;
       return;
     }
@@ -133,8 +134,8 @@
         }
       }
 
-      const summary = `Write requests accepted by ${accepted.length} of ${targets.length} sessions. Remote command completion is not verified.`;
-      status = failed.length ? `${summary} Failed: ${failed.join(" | ")}` : summary;
+      const summary = t("console.writeAccepted", { accepted: accepted.length, total: targets.length });
+      status = failed.length ? `${summary} ${t("console.failed", { details: failed.join(" | ") })}` : summary;
       statusError = failed.length > 0;
     } finally {
       sending = false;
@@ -159,23 +160,23 @@
   }
 </script>
 
-<section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label="Command console">
+<section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label={t("console.commandConsole")}>
   <div class="console-heading">
-    <strong>Command console</strong>
+    <strong>{t("console.commandConsole")}</strong>
   </div>
 
   <div class="console-layout">
-    <aside class="target-panel" aria-label="Command targets">
+    <aside class="target-panel" aria-label={t("console.commandTargets")}>
       <div class="session-picker-heading">
-        <span>Open connections</span>
-        <span>{sessions.filter((session) => session.connected).length} live</span>
+        <span>{t("console.openConnections")}</span>
+        <span>{t("console.liveCount", { count: sessions.filter((session) => session.connected).length })}</span>
       </div>
       <label class="target-mode">
-        <span>Send to</span>
-        <select value={targetMode} onchange={onTargetModeChange} disabled={sending} aria-label="Command target">
-          <option value="active">Active session</option>
-          <option value="selected">Selected sessions</option>
-          <option value="all">All open sessions</option>
+        <span>{t("console.sendTo")}</span>
+        <select value={targetMode} onchange={onTargetModeChange} disabled={sending} aria-label={t("console.commandTarget")}>
+          <option value="active">{t("console.target.active")}</option>
+          <option value="selected">{t("console.target.selected")}</option>
+          <option value="all">{t("console.target.all")}</option>
         </select>
       </label>
 
@@ -183,18 +184,18 @@
         class="session-search"
         type="search"
         bind:value={sessionQuery}
-        placeholder="Filter connections…"
-        aria-label="Filter open connections"
+        placeholder={t("console.filterConnections")}
+        aria-label={t("console.filterOpenConnections")}
         disabled={sending}
       />
 
-      <div class="session-choices" aria-label="Open connections">
+      <div class="session-choices" role="list" aria-label={t("console.openConnections")}>
         {#if visibleSessions.length === 0}
-          <span class="session-empty">No sessions match this filter.</span>
+          <span class="session-empty" role="status">{t("console.noFilterMatches")}</span>
         {:else}
           {#each visibleSessions as session (session.sessionId)}
             {#if targetMode === "selected"}
-              <label class:protected={session.protected} class:disconnected={!session.connected} class="session-row">
+              <label role="listitem" class:protected={session.protected} class:disconnected={!session.connected} class="session-row">
                 <input
                   type="checkbox"
                   checked={session.connected && selectedSessionIds.includes(session.sessionId)}
@@ -202,17 +203,17 @@
                   disabled={sending || !session.connected}
                 />
                 <span class="session-name">{session.name}</span>
-                {#if session.protected}<small class="protected-tag">Protected</small>{/if}
-                {#if !session.connected}<small class="offline">Disconnected</small>{/if}
+                {#if session.protected}<small class="protected-tag">{t("console.protected")}</small>{/if}
+                {#if !session.connected}<small class="offline">{t("console.disconnected")}</small>{/if}
               </label>
             {:else}
-              <div class:protected={session.protected} class:disconnected={!session.connected} class="session-row">
+              <div role="listitem" class:protected={session.protected} class:disconnected={!session.connected} class="session-row">
                 <span class="session-target-state" class:targeted={isTargeted(session)} aria-hidden="true">
                   {isTargeted(session) ? "●" : "·"}
                 </span>
                 <span class="session-name">{session.name}</span>
-                {#if session.protected}<small class="protected-tag">Protected</small>{/if}
-                {#if !session.connected}<small class="offline">Disconnected</small>{/if}
+                {#if session.protected}<small class="protected-tag">{t("console.protected")}</small>{/if}
+                {#if !session.connected}<small class="offline">{t("console.disconnected")}</small>{/if}
               </div>
             {/if}
           {/each}
@@ -222,16 +223,16 @@
       {#if targetMode !== "active" && hasProtectedSessions}
         <label class="protected-opt-in">
           <input type="checkbox" checked={includeProtected} onchange={toggleProtected} disabled={sending} />
-          Include protected connections
+          {t("console.includeProtected")}
         </label>
       {/if}
     </aside>
 
     <div class="editor-panel">
       <div class="target-summary" aria-live="polite">
-        <span>Targets ({targetResolution.targets.length}): {targetNames || "No eligible sessions"}</span>
+        <span>{t("console.targetSummary", { count: targetResolution.targets.length, names: targetNames || t("console.noEligible") })}</span>
         {#if targetResolution.excludedProtected > 0}
-          <span class="excluded">{targetResolution.excludedProtected} protected excluded</span>
+          <span class="excluded">{t("console.protectedExcluded", { count: targetResolution.excludedProtected })}</span>
         {/if}
       </div>
 
@@ -239,8 +240,8 @@
         bind:this={editor}
         bind:value={draft}
         onkeydown={onEditorKeydown}
-        placeholder="Write or paste commands here. Enter adds a new line; it does not execute."
-        aria-label="Command text"
+        placeholder={t("console.editorPlaceholder")}
+        aria-label={t("console.commandText")}
         spellcheck="false"
         disabled={targetResolution.targets.length === 0 || sending}
       ></textarea>
@@ -248,16 +249,21 @@
       <div class="console-actions">
         {#if confirmingMultiline}
           <span class="confirmation" role="alert">
-            Send {lineCount} line{lineCount === 1 ? "" : "s"} to {targetResolution.targets.length} session{targetResolution.targets.length === 1 ? "" : "s"}: {targetNames}.
-            Each host receives the same bytes independently; remote completion is not verified.
+            {t("console.confirmation", {
+              lines: lineCount,
+              lineLabel: lineCount === 1 ? t("console.line") : t("console.lines"),
+              sessions: targetResolution.targets.length,
+              sessionLabel: targetResolution.targets.length === 1 ? t("console.session") : t("console.sessions"),
+              names: targetNames,
+            })}
           </span>
-          <button class="send" onclick={sendDraft} disabled={sending || targetResolution.targets.length === 0}>Confirm send</button>
-          <button class="secondary" onclick={() => (confirmingMultiline = false)}>Cancel</button>
+          <button class="send" onclick={sendDraft} disabled={sending || targetResolution.targets.length === 0}>{t("console.confirmSend")}</button>
+          <button class="secondary" onclick={() => (confirmingMultiline = false)}>{t("console.cancel")}</button>
         {:else}
           <span class="status" class:error={statusError} role="status">{status}</span>
-          <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>Clear</button>
+          <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>{t("console.clear")}</button>
           <button class="send" onclick={requestSend} disabled={targetResolution.targets.length === 0 || draft.length === 0 || sending}>
-            {sending ? "Sending…" : "Send"}
+            {sending ? t("console.sending") : t("console.send")}
           </button>
         {/if}
       </div>
