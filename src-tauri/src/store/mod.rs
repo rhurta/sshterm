@@ -26,6 +26,7 @@ pub struct ConnectionSummary {
     /// Configured jump IDs currently disabled by the user.
     pub jump_disabled: Vec<String>,
     pub tunnel_count: usize,
+    pub protected: bool,
 }
 
 impl From<&Connection> for ConnectionSummary {
@@ -43,6 +44,7 @@ impl From<&Connection> for ConnectionSummary {
                 | Tunnel::Remote { enabled, .. }
                 | Tunnel::Dynamic { enabled, .. } => *enabled,
             }).count(),
+            protected: c.protected,
         }
     }
 }
@@ -639,11 +641,13 @@ mod tests {
             host: "h".into(),
             user: "u".into(),
             auth: Auth::Password { password: "secret".into() },
+            protected: true,
             ..Connection::default()
         });
         let json = serde_json::to_string(&summary).unwrap();
         assert!(!json.contains("secret"));
         assert!(!json.contains("password"));
+        assert!(summary.protected);
     }
 
     #[test]
