@@ -59,6 +59,7 @@
     sessionId: tab.sessionId,
     name: tab.name,
     protected: tab.protected,
+    connected: tab.connected,
   })));
 
   /** The backend sends short codes; here they are converted to messages. */
@@ -191,7 +192,15 @@
         cols: 80,
         rows: 24,
       });
-      tabs = [...tabs, { sessionId, connId: c.id, name: c.name, jumpNames, tunnelCount: c.tunnel_count ?? 0, protected: c.protected }];
+      tabs = [...tabs, {
+        sessionId,
+        connId: c.id,
+        name: c.name,
+        jumpNames,
+        tunnelCount: c.tunnel_count ?? 0,
+        protected: c.protected,
+        connected: true,
+      }];
       const focusedPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
       const targetPaneId = pendingPaneId ?? focusedPane?.sessionId ?? layoutGeometry.leaves[0]?.sessionId;
       if (!layoutTree || !targetPaneId) {
@@ -272,6 +281,20 @@
       nextActive[pane.sessionId] = pane.sessionIds.includes(activeId ?? "") ? activeId! : pane.sessionIds[0];
     }
     paneActiveIds = nextActive;
+  }
+
+  function handleSessionClosed(sessionId: string) {
+    if (!tabs.some((tab) => tab.sessionId === sessionId)) return;
+    // The PTY has reached EOF. Remove the dead transport from the backend even
+    // when the visible terminal is retained for error inspection.
+    void invoke("session_close", { id: sessionId }).catch(() => {});
+    if (settings.keep_disconnected_sessions) {
+      tabs = tabs.map((tab) => tab.sessionId === sessionId
+        ? { ...tab, connected: false }
+        : tab);
+    } else {
+      dropTab(sessionId);
+    }
   }
 
   function dropTab(sessionId: string) {
@@ -414,12 +437,25 @@
                   {#each pane.sessionIds as sessionId (sessionId)}
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
                     {#if tab}
-                      <div class="pane-tab" class:active={paneActiveIds[pane.sessionId] === sessionId}>
+                      <div class="pane-tab" class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
                         <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
-                          aria-label={activeId === sessionId ? `${tab.name}, active pane` : tab.name}
+                          aria-label={`${tab.name}${activeId === sessionId ? ", active pane" : ""}${!tab.connected ? `, ${t("workspace.disconnected")}` : ""}`}
                           title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
                           onclick={() => activateSession(sessionId)}>
                           <span class="pane-tab-name">{tab.name}</span>
+                          {#if tab.jumpNames.length > 0}
+                            <span class="pane-tab-indicator jump" title={t("workspace.jumpVia", { route: tab.jumpNames.join(" → ") })}>
+                              ↗ {tab.jumpNames[0]}{tab.jumpNames.length > 1 ? ` +${tab.jumpNames.length - 1}` : ""}
+                            </span>
+                          {/if}
+                          {#if tab.tunnelCount > 0}
+                            <span class="pane-tab-indicator tunnels" title={t("workspace.tunnelsConfigured", { count: tab.tunnelCount })}>
+                              ⇄ {tab.tunnelCount}
+                            </span>
+                          {/if}
+                          {#if !tab.connected}
+                            <span class="pane-tab-indicator disconnected" title={t("workspace.disconnected")}>OFF</span>
+                          {/if}
                           {#if activeId === sessionId}
                             <span class="pane-focus-dot" aria-hidden="true"></span>
                           {/if}
@@ -439,7 +475,7 @@
                   {/if}
                   {#each pane.sessionIds as sessionId (sessionId)}
                     <TerminalPane sessionId={sessionId} active={paneActiveIds[pane.sessionId] === sessionId}
-                      focused={activeId === sessionId} onactivate={activateSession} onclosed={dropTab}
+                      focused={activeId === sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
                       onmultilinepaste={requestMultilinePaste} {settings} {theme} />
                   {/each}
                 </div>
@@ -494,6 +530,7 @@
         <label class="setting"><input type="checkbox" checked={settings.middle_click_paste} onchange={(e) => setTerminalSetting("middle_click_paste", e.currentTarget.checked)} />{t("settings.middleClickPaste")}</label>
         <label class="setting"><input type="checkbox" checked={settings.ctrl_c_copy} onchange={(e) => setTerminalSetting("ctrl_c_copy", e.currentTarget.checked)} />{t("settings.ctrlCCopy")}</label>
         <label class="setting"><input type="checkbox" checked={settings.confirm_multiline_paste} onchange={(e) => setTerminalSetting("confirm_multiline_paste", e.currentTarget.checked)} />{t("settings.confirmMultilinePaste")}</label>
+        <label class="setting"><input type="checkbox" checked={settings.keep_disconnected_sessions} onchange={(e) => setTerminalSetting("keep_disconnected_sessions", e.currentTarget.checked)} />{t("settings.keepDisconnectedSessions")}</label>
         <button class="ghost" onclick={() => (settingsOpen = false)}>{t("editor.cancel")}</button>
       </div>
     </div>
@@ -632,6 +669,22 @@
   .pane-tab.active { border-color: var(--accent); background: var(--surface-raised); }
   .pane-tab button { min-width: 0; display: flex; align-items: center; gap: 0.35rem; overflow: hidden; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: 0.68rem; cursor: pointer; }
   .pane-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pane-tab-indicator {
+    flex: 0 0 auto;
+    max-width: 4.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0.04rem 0.22rem;
+    border-radius: 3px;
+    font-size: 0.58rem;
+    line-height: 1.35;
+  }
+  .pane-tab-indicator.jump { color: var(--accent); background: var(--surface-hover); }
+  .pane-tab-indicator.tunnels { color: #78bfa5; background: var(--surface-hover); }
+  .pane-tab-indicator.disconnected { color: var(--danger); background: var(--danger-bg); font-weight: 700; }
+  .pane-tab.disconnected { border-style: dashed; }
+  .pane-tab.disconnected button { color: var(--text-secondary); }
   .pane-focus-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); }
   .pane-tab.active button { color: var(--text); }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }

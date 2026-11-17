@@ -19,6 +19,7 @@
   let targetMode = $state<BroadcastTargetMode>("active");
   let selectedSessionIds = $state<string[]>([]);
   let includeProtected = $state(false);
+  let sessionQuery = $state("");
   let confirmingMultiline = $state(false);
   let sending = $state(false);
   let status = $state("");
@@ -35,13 +36,21 @@
     includeProtected,
   ));
   let targetNames = $derived(targetResolution.targets.map((session) => session.name).join(", "));
-  let hasProtectedSessions = $derived(sessions.some((session) => session.protected));
+  let hasProtectedSessions = $derived(sessions.some((session) => session.connected && session.protected));
+  let visibleSessions = $derived.by(() => {
+    const query = sessionQuery.trim().toLocaleLowerCase();
+    return query
+      ? sessions.filter((session) => session.name.toLocaleLowerCase().includes(query))
+      : sessions;
+  });
 
   function onTargetModeChange(event: Event) {
     targetMode = (event.currentTarget as HTMLSelectElement).value as BroadcastTargetMode;
-    if (targetMode === "selected" && selectedSessionIds.length === 0 && activeSessionId) {
+    if (targetMode === "selected" && selectedSessionIds.length === 0 && activeSessionId
+      && sessions.some((session) => session.sessionId === activeSessionId && session.connected)) {
       selectedSessionIds = [activeSessionId];
     }
+    sessionQuery = "";
     confirmingMultiline = false;
     status = "";
   }
@@ -155,19 +164,38 @@
   </div>
 
   {#if targetMode === "selected"}
-    <div class="session-choices" aria-label="Select target sessions">
-      {#each sessions as session (session.sessionId)}
-        <label class:protected={session.protected}>
-          <input
-            type="checkbox"
-            checked={selectedSessionIds.includes(session.sessionId)}
-            onchange={(event) => toggleSelected(session.sessionId, event.currentTarget.checked)}
-            disabled={sending}
-          />
-          <span>{session.name}</span>
-          {#if session.protected}<small>Protected</small>{/if}
-        </label>
-      {/each}
+    <div class="session-picker">
+      <div class="session-picker-heading">
+        <span>Select open connections</span>
+        <span>{visibleSessions.length} / {sessions.length}</span>
+      </div>
+      <input
+        class="session-search"
+        type="search"
+        bind:value={sessionQuery}
+        placeholder="Filter by connection name…"
+        aria-label="Filter open connections"
+        disabled={sending}
+      />
+      <div class="session-choices" aria-label="Select target sessions">
+        {#if visibleSessions.length === 0}
+          <span class="session-empty">No sessions match this filter.</span>
+        {:else}
+          {#each visibleSessions as session (session.sessionId)}
+            <label class:protected={session.protected} class:disconnected={!session.connected}>
+              <input
+                type="checkbox"
+                checked={selectedSessionIds.includes(session.sessionId)}
+                onchange={(event) => toggleSelected(session.sessionId, event.currentTarget.checked)}
+                disabled={sending || !session.connected}
+              />
+              <span class="session-name">{session.name}</span>
+              {#if session.protected}<small>Protected</small>{/if}
+              {#if !session.connected}<small class="offline">Disconnected</small>{/if}
+            </label>
+          {/each}
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -255,22 +283,56 @@
     line-height: 1.25;
   }
   .excluded { color: var(--warning, #d6a85f); }
+  .session-picker { display: flex; flex-direction: column; gap: 0.22rem; min-height: 0; }
+  .session-picker-heading {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-secondary);
+    font-size: 0.65rem;
+  }
+  .session-search {
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 1.35rem;
+    box-sizing: border-box;
+    padding: 0.15rem 0.35rem;
+    color: var(--text);
+    background: var(--app-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font: inherit;
+    font-size: 0.68rem;
+  }
+  .session-search:focus { outline: none; border-color: var(--accent); }
   .session-choices {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.2rem 0.7rem;
-    max-height: 3.2rem;
+    flex-direction: column;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 4.15rem;
     overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 3px;
     color: var(--text-secondary);
-    font-size: 0.7rem;
+    font-size: 0.68rem;
   }
-  .session-choices label, .protected-opt-in {
-    display: inline-flex;
+  .session-choices label {
+    display: flex;
+    flex: 0 0 auto;
     align-items: center;
-    gap: 0.3rem;
+    min-height: 1.25rem;
+    gap: 0.4rem;
+    padding: 0.08rem 0.35rem;
+    border-bottom: 1px solid var(--border);
   }
-  .session-choices input, .protected-opt-in input { accent-color: var(--accent); }
-  .session-choices small { color: var(--warning, #d6a85f); font-size: 0.62rem; }
+  .session-choices label:last-child { border-bottom: 0; }
+  .session-choices label.protected { background: color-mix(in srgb, var(--warning, #d6a85f) 6%, transparent); }
+  .session-choices label.disconnected { opacity: 0.6; }
+  .session-choices input, .protected-opt-in input { flex: 0 0 auto; accent-color: var(--accent); }
+  .session-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session-choices small { flex: 0 0 auto; color: var(--warning, #d6a85f); font-size: 0.6rem; }
+  .session-choices small.offline { color: var(--danger); }
+  .session-empty { padding: 0.35rem; color: var(--muted); }
   .protected-opt-in { color: var(--warning, #d6a85f); font-size: 0.68rem; }
   textarea {
     width: 100%;

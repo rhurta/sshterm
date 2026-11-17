@@ -112,3 +112,10 @@ Acceptance: target resolution is tested for stale/closed sessions and protected 
 ## Security and operational notes
 
 Broadcast writes directly to existing interactive PTYs. It does not bypass SSH authentication, but it can execute privileged or destructive commands on multiple hosts. The UI must make the target set unambiguous, keep protected sessions opt-in, require explicit Send, and never retry automatically. The console draft is ordinary frontend memory and must not be written into the encrypted vault or diagnostic logs.
+
+
+### M6.3 usability follow-up
+
+- Selected-session targeting uses a searchable, vertically scrollable list of workspace sessions rather than a wrapping checkbox strip. Disconnected retained tabs are visible but cannot be selected for dispatch.
+- Pane tabs show compact Jump Host route and configured-forward indicators again. The forward badge is a configured count, not a live end-to-end tunnel health probe.
+- Optional `keep_disconnected_sessions` setting retains the final terminal screen after the SSH process exits, marks the tab disconnected, disables input, and removes it from broadcast targets. The user closes the retained tab manually after inspecting its output.

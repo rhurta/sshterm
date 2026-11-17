@@ -10,6 +10,7 @@ export interface TerminalSettings {
   middle_click_paste: boolean;
   ctrl_c_copy: boolean;
   confirm_multiline_paste: boolean;
+  keep_disconnected_sessions: boolean;
 }
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
@@ -20,6 +21,7 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   middle_click_paste: true,
   ctrl_c_copy: true,
   confirm_multiline_paste: true,
+  keep_disconnected_sessions: false,
 }
 
 export type Auth =
@@ -122,4 +124,6 @@ export interface Tab {
   /** Configured local/reverse forwards owned by this SSH session. */
   tunnelCount: number;
   protected: boolean;
+  /** Whether the SSH process is still alive and can receive terminal input. */
+  connected: boolean;
 }

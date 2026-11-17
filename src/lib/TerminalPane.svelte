@@ -40,6 +40,7 @@
   let lastRows = PROVISIONAL.rows;
   // Set once xterm is mounted, so the focus effect runs after `open()`.
   let mounted = $state(false);
+  let disconnected = $state(false);
 
   /** Fits the terminal to its box and tells the PTY, but only when the size really
    * changed: every resize makes ConPTY repaint the whole screen. */
@@ -54,7 +55,7 @@
     if (cols === lastCols && rows === lastRows) return;
     lastCols = cols;
     lastRows = rows;
-    void invoke("session_resize", { id: sessionId, cols, rows });
+    if (!disconnected) void invoke("session_resize", { id: sessionId, cols, rows });
   }
 
   onMount(() => {
@@ -109,7 +110,7 @@
       if (clearAfterCopy) t.clearSelection();
     };
     const pasteClipboard = () => {
-      if (!navigator.clipboard?.readText) return;
+      if (disconnected || !navigator.clipboard?.readText) return;
       // Clear before starting the asynchronous clipboard read so a previous
       // terminal selection never remains highlighted after a paste gesture.
       t.clearSelection();
@@ -137,6 +138,10 @@
     // normal key handling sends ETX (Ctrl+C) to the remote shell.
     // Ctrl+V is handled explicitly so it works consistently in WebView2.
     t.attachCustomKeyEventHandler((event) => {
+      if (disconnected) {
+        event.preventDefault();
+        return false;
+      }
       if (event.type !== "keydown") return true;
       const mod = event.ctrlKey || event.metaKey;
       if (!mod || event.altKey) return true;
@@ -189,6 +194,7 @@
     host.addEventListener("mousedown", onMouseDown);
 
     t.onData((data) => {
+      if (disconnected) return;
       void invoke("session_write", {
         id: sessionId,
         data: toBase64(new TextEncoder().encode(data)),
@@ -199,9 +205,11 @@
       subscribeData(sessionId, (bytes) => t.write(bytes)),
       subscribeClosed(sessionId, () => {
         // xterm parses writes asynchronously: wait until the last output is in the
-        // buffer before the log is closed and the tab is dropped.
+        // buffer before locking input and reporting that the SSH process has exited.
         t.write("", () => {
           finishLog();
+          disconnected = true;
+          t.options.disableStdin = true;
           onclosed(sessionId);
         });
       }),
