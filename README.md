@@ -20,13 +20,13 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M3 | Per-session log files | ✅ Complete |
 | M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
-| M6 | Tiling, broadcast, syntax highlighting | 📋 Planned |
+| M6 | Tiling, command console and broadcast | 🟡 In planning / implementation |
 | M7 | Local and reverse TCP forwarding (`-L` / `-R`) | 🟡 Partial |
 | M8 | Native SFTP (`russh-sftp`) | 📋 Planned |
 | M9 | Polish (colors, host-key UI, auto-reconnect) | 📋 Planned |
 | M10 | Native `russh` engine replaces phase 1 | 📋 Planned |
 
-## Portable layout
+M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.md](docs/M6-implementation-plan.md). Syntax highlighting remains tracked separately as M6b.\n\n## Portable layout
 
 ```
 sshterm.exe
