@@ -47,11 +47,9 @@ This document is the implementation plan for M6. It deliberately separates works
 
 ### M6.1 — Tiling foundation
 
-**Core tiling and pane-tab UX implemented; empty-pane split actions and UI-level coverage remain.** The workspace renders a recursive split tree with single, left/right, top/bottom and 2×2 presets. Splitters are draggable and keyboard accessible. Each pane has its own session tab strip; opening a connection adds it to the focused pane, and switching tabs is isolated to that pane. Existing TerminalPane instances remain keyed by session ID so switching pane tabs does not recreate live xterm sessions. Pure split-tree helpers cover insertion, tab removal, collapse, pane tab grouping, balanced presets, geometry and path-addressed ratio updates; tests run in Windows CI. The layout presets are in a vertical side toolbar. Terminal scrollbars and connection-tree scrollbars now share a thin scrollbar treatment.
+**Core tiling and pane-tab UX implemented; UI-level coverage remains.** The workspace renders a recursive split tree with single, left/right, top/bottom and 2×2 presets. Splitters are draggable and keyboard accessible. Each pane has its own session tab strip; opening a connection adds it to the focused pane, and switching tabs is isolated to that pane. Existing TerminalPane instances remain keyed by session ID so switching pane tabs does not recreate live xterm sessions. Pure split-tree helpers cover insertion, tab removal, collapse, pane tab grouping, balanced presets, geometry and path-addressed ratio updates; tests run in Windows CI. The layout presets and explicit horizontal/vertical split actions are in a vertical side toolbar. Splitting creates an empty pane; its in-pane plus action opens the connection picker for that pane. Closing the last tab leaves its pane empty. Terminal scrollbars and connection-tree scrollbars now share a thin scrollbar treatment.
 ### M6.1 — Remaining work
 
-- Add explicit split-pane actions that create an empty pane, plus an in-pane connection picker for filling it.
-- Keep the last-tab close behavior aligned with the agreed empty-pane behavior rather than collapsing that pane.
 - Add automated UI-level tests for pane tab switching, close behavior, focus and resize. Pure split-tree tests already run in Windows CI.
 
 ### M6.1 — Tiling foundation (original checklist)
