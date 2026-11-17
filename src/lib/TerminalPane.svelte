@@ -13,6 +13,7 @@
   let {
     sessionId,
     active,
+    focused,
     onclosed,
     settings,
     theme,
@@ -20,6 +21,7 @@
   }: {
     sessionId: string;
     active: boolean;
+    focused: boolean;
     onclosed: (id: string) => void;
     settings: TerminalSettings;
     theme: AppTheme;
@@ -221,14 +223,14 @@
     if (mounted && term) term.options.theme = palette;
   });
 
-  // M4: a newly opened session (or a tab switch) must take keyboard focus so
-  // typing goes straight into the terminal, not into the sidebar or tab bar.
-  // The pane is only focusable once it is visible and xterm has been opened.
+  // Visible panes are fitted independently; only the selected pane receives
+  // keyboard focus so tiled terminals do not race focus between instances.
   $effect(() => {
-    if (active && mounted) {
-      syncSize();
-      term?.focus();
-    }
+    if (active && mounted) syncSize();
+  });
+
+  $effect(() => {
+    if (focused && active && mounted) term?.focus();
   });
 </script>
 
