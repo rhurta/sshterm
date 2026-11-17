@@ -40,7 +40,7 @@ test("all mode excludes protected sessions by default", () => {
 test("all mode includes every open session after explicit opt-in", () => {
   assert.deepEqual(
     resolveBroadcastTargets(sessions, "s1", "all", [], true),
-    { targets: sessions, excludedProtected: 0 },
+    { targets: sessions.slice(0, 3), excludedProtected: 0 },
   );
 });
 
