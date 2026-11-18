@@ -159,6 +159,7 @@
             const bufferLine = buffer.getLine(segment.row);
             if (!bufferLine) continue;
             const toCellColumn = (characterOffset: number) => {
+              if (characterOffset <= 0) return 0;
               let characterCount = 0;
               for (let column = 0; column < t.cols; column++) {
                 const cell = bufferLine.getCell(column);

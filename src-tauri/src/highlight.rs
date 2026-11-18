@@ -17,7 +17,7 @@ const MAX_RULES: usize = 128;
 const MAX_PATTERN_BYTES: usize = 2 * 1024;
 const MAX_MATCHES_PER_RULE: usize = 500;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum RuleScope { Prompt, Command, Output, Any }
 
@@ -342,7 +342,7 @@ fg = "#12"
             rules: vec![HighlightRule {
                 name: "ip".into(),
                 scope: RuleScope::Any,
-                pattern: r"10\\.0\\.0\\.1".into(),
+                pattern: r"10\.0\.0\.1".into(),
                 fg: Some("#e3b341".into()),
                 bg: None,
                 bold: true,
