@@ -278,6 +278,17 @@ mod tests {
     }
 
     #[test]
+    fn old_folder_nodes_default_to_no_highlight_rules() {
+        let node: TreeNode = serde_json::from_str(
+            r#"{"type":"folder","id":"f1","name":"Legacy","children":[]}"#,
+        ).unwrap();
+        match node {
+            TreeNode::Folder { highlight, .. } => assert!(highlight.is_empty()),
+            _ => panic!("expected folder"),
+        }
+    }
+
+    #[test]
     fn typed_payload_roundtrips() {
         let json = serde_json::to_string(&sample_payload()).unwrap();
         let back: VaultData = serde_json::from_str(&json).unwrap();

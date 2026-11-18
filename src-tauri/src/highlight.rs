@@ -210,12 +210,12 @@ mod tests {
         let path = dir.path().join("linux.toml");
         fs::write(&path, r##"
 name = "linux"
-prompt = '^\\w+@\\w+'
+prompt = '^\w+@\w+'
 
 [[rule]]
 name = "ip"
 scope = "any"
-pattern = '\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b'
+pattern = '\b(?:\d{1,3}\.){3}\d{1,3}\b'
 fg = "#e3b341"
 bold = true
 "##).unwrap();
@@ -226,17 +226,30 @@ bold = true
     }
 
     #[test]
-    fn rejects_invalid_regex_and_colors() {
+    fn rejects_invalid_regex() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("bad.toml");
+        let path = dir.path().join("bad-regex.toml");
         fs::write(&path, r##"
 name = "bad"
 [[rule]]
 name = "broken"
 pattern = "("
-fg = "#12"
 "##).unwrap();
         assert!(parse_rule_set(&path).unwrap_err().contains("invalid regex"));
+    }
+
+    #[test]
+    fn rejects_invalid_colors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad-color.toml");
+        fs::write(&path, r##"
+name = "bad"
+[[rule]]
+name = "ip"
+pattern = 'ip'
+fg = "#12"
+"##).unwrap();
+        assert!(parse_rule_set(&path).unwrap_err().contains("invalid color"));
     }
 
     #[test]
