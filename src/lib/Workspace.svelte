@@ -47,6 +47,7 @@
       .some((value) => value.toLocaleLowerCase().includes(query)));
   });
   let pickerDialog = $state<HTMLDivElement | null>(null);
+  let pickerSearchInput = $state<HTMLInputElement | null>(null);
   let newTabButton = $state<HTMLButtonElement | null>(null);
   let refreshToken = $state(0);
   let error = $state("");
@@ -259,10 +260,12 @@
       pickerList = await invoke<ConnectionSummary[]>("conn_list");
       pickerQuery = "";
       picker = true;
-      // Move keyboard focus out of xterm, otherwise Escape would be sent to
-      // the remote host instead of dismissing the dialog.
+      // Put focus directly in the searchable list whenever the picker opens.
+      // This keeps both the + button and empty-pane entry points keyboard-first.
       await tick();
-      pickerDialog?.focus();
+      pickerSearchInput?.focus();
+      pickerSearchInput?.select();
+      if (!pickerSearchInput) pickerDialog?.focus();
     } catch (e) {
       error = errorText(String(e));
     }
@@ -675,6 +678,7 @@
         </div>
         <input
           class="picker-search"
+          bind:this={pickerSearchInput}
           type="search"
           bind:value={pickerQuery}
           placeholder={t("tree.search")}
