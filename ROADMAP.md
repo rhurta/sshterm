@@ -396,3 +396,10 @@ The vault model already contains a `Dynamic` variant for forward compatibility, 
 - New sessions open with the size of the last fitted terminal instead of 80x24, avoiding an extra ConPTY repaint.
 - `session_write` calls from the pane are chained so input keeps its order.
 - `UserKnownHostsFile` with spaces was already quoted; in the jump config the path uses forward slashes.
+
+### Keyboard navigation pass (branch `ui/bits-ui-pilot`)
+
+- Design rule recorded in `docs/ui-components.md`: every UI is keyboard-complete; lists have a search box focused on open; app shortcuts are Ctrl+Alt+key.
+- New: Ctrl+Alt+Arrows (neighboring pane, `src/lib/paneNav.ts`, `npm run test:pane-nav`), Ctrl+Alt+PageUp/PageDown (tabs in the focused pane), Ctrl+Alt+F (connection search). The terminal no longer forwards these to the remote shell.
+- Connection tree: Up/Down/Home/End and Right/Left (expand/collapse); Down from the search box enters the results; Escape clears the filter.
+- Connection picker: the search box is focused on open, Enter opens the first match, Down/Up move through the list.

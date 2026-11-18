@@ -41,6 +41,12 @@
   // Workspace opens each session with the last fitted size (80x24 for the very
   // first one); a resize is only sent when the real fit differs from that.
   // sessionId never changes for a mounted pane, so reading it once is intended.
+  // Keys of the Ctrl+Alt shortcuts in Workspace (console, layouts, pane/tab
+  // navigation, connection search).
+  const APP_SHORTCUT_KEYS = new Set([
+    "k", "f", "1", "2", "3", "4",
+    "arrowleft", "arrowright", "arrowup", "arrowdown", "pageup", "pagedown",
+  ]);
   const PROVISIONAL = untrack(() => takeOpenSize(sessionId)) ?? { cols: 80, rows: 24 };
 
   // session_write calls are chained so keystrokes and pastes reach ssh in the
@@ -298,6 +304,17 @@
         return false;
       }
       if (event.type !== "keydown") return true;
+      // App-level Ctrl+Alt shortcuts (handled in Workspace) must not also be
+      // sent to the remote shell as escape sequences.
+      if (
+        event.ctrlKey
+        && event.altKey
+        && !event.metaKey
+        && !event.getModifierState("AltGraph")
+        && APP_SHORTCUT_KEYS.has(event.key.toLowerCase())
+      ) {
+        return false;
+      }
       const mod = event.ctrlKey || event.metaKey;
       if (!mod || event.altKey) return true;
       const key = event.key.toLowerCase();

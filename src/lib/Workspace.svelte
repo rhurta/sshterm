@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { neighborPane, type Direction } from "$lib/paneNav";
   import { getLastPaneSize, rememberOpenSize, subscribeSessionErrors } from "$lib/sessionBus";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionSidebar from "./ConnectionSidebar.svelte";
@@ -276,6 +277,57 @@
   }
 
 
+  function onPickerSearchKeydown(e: KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      const first = pickerDialog?.querySelector<HTMLButtonElement>(".picker-list button");
+      if (first) {
+        e.preventDefault();
+        first.focus();
+      }
+    } else if (e.key === "Enter" && filteredPickerList.length > 0) {
+      e.preventDefault();
+      void connect(filteredPickerList[0]);
+    }
+  }
+
+  function onPickerListKeydown(e: KeyboardEvent) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const items = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>("button")];
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    e.preventDefault();
+    if ((e.key === "ArrowUp" && index <= 0)) {
+      pickerSearchInput?.focus();
+      return;
+    }
+    const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : index + (e.key === "ArrowDown" ? 1 : -1);
+    items[Math.max(0, Math.min(items.length - 1, next))]?.focus();
+  }
+
+  /** Ctrl+Alt+Arrows: move focus to the neighboring pane of a split layout. */
+  function focusNeighborPane(direction: Direction) {
+    const current = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
+    if (!current) return;
+    const next = neighborPane(layoutGeometry.leaves, current.sessionId, direction);
+    if (!next) return;
+    activateSession(paneActiveIds[next.sessionId] ?? next.sessionIds[0]);
+  }
+
+  /** Ctrl+Alt+PageUp/PageDown: previous/next tab inside the focused pane. */
+  function cyclePaneTab(step: 1 | -1) {
+    const current = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
+    if (!current || current.sessionIds.length < 2) return;
+    const index = current.sessionIds.indexOf(activeId ?? "");
+    const count = current.sessionIds.length;
+    activateSession(current.sessionIds[(index + step + count) % count]);
+  }
+
+  /** Ctrl+Alt+F: jump to the connection search box (also from a terminal). */
+  function focusConnectionSearch() {
+    const input = document.querySelector<HTMLInputElement>('[data-nav="connection-search"]');
+    input?.focus();
+    input?.select();
+  }
+
   async function openPickerForPane(paneId: string) {
     pendingPaneId = paneId;
     await openPicker();
@@ -311,6 +363,27 @@
       if (key === "k" && tabs.length > 0) {
         e.preventDefault();
         toggleCommandConsole();
+        return;
+      }
+      const directions: Record<string, Direction> = {
+        arrowleft: "left",
+        arrowright: "right",
+        arrowup: "up",
+        arrowdown: "down",
+      };
+      if (directions[key]) {
+        e.preventDefault();
+        focusNeighborPane(directions[key]);
+        return;
+      }
+      if (key === "pageup" || key === "pagedown") {
+        e.preventDefault();
+        cyclePaneTab(key === "pagedown" ? 1 : -1);
+        return;
+      }
+      if (key === "f") {
+        e.preventDefault();
+        focusConnectionSearch();
         return;
       }
       const presets: Record<string, LayoutPreset> = {
@@ -726,6 +799,7 @@
           bind:this={pickerSearchInput}
           type="search"
           bind:value={pickerQuery}
+          onkeydown={onPickerSearchKeydown}
           placeholder={t("tree.search")}
           aria-label={t("tree.search")}
           autocomplete="off"
@@ -736,7 +810,7 @@
         {:else if filteredPickerList.length === 0}
           <p class="hint">{t("tree.noMatches")}</p>
         {:else}
-          <div class="picker-list">
+          <div class="picker-list" role="presentation" onkeydown={onPickerListKeydown}>
             {#each filteredPickerList as c (c.id)}
               <button onclick={() => connect(c)}>
                 <span class="name">{c.name}</span>

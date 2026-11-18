@@ -10,6 +10,20 @@
     count: number | null;
     onchange: (value: string) => void;
   } = $props();
+
+  // Down moves into the results; Escape clears the filter.
+  function onKeydown(event: KeyboardEvent) {
+    if (event.key === "ArrowDown") {
+      const row = document.querySelector<HTMLElement>('[data-nav="connection-tree"] button.row');
+      if (row) {
+        event.preventDefault();
+        row.focus();
+      }
+    } else if (event.key === "Escape" && value) {
+      event.preventDefault();
+      onchange("");
+    }
+  }
 </script>
 
 <div class="box">
@@ -18,6 +32,9 @@
     placeholder={t("tree.search")}
     {value}
     oninput={(event) => onchange(event.currentTarget.value)}
+    onkeydown={onKeydown}
+    data-nav="connection-search"
+    aria-label={t("tree.search")}
     autocomplete="off"
     spellcheck="false"
   />

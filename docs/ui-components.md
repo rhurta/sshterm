@@ -17,6 +17,34 @@ ARIA, positioning); it ships no styles, so nothing about the look changes with i
 - Do not call `preventDefault()` on an event Bits listens to (for example `contextmenu`);
   Bits ignores events that are already default-prevented.
 
+## Keyboard (applies to every new or changed UI)
+
+Every screen must be fully usable without a mouse. Checklist for new work:
+
+- **Lists get a search box on top, focused when the list opens**; typing filters at once,
+  Down moves into the results, Up from the first result returns to the box, Enter on the
+  box picks the first match, Escape closes or clears.
+- **Roving focus in lists and trees**: Up/Down/Home/End; Right/Left expand/collapse folders.
+- **App-level shortcuts use Ctrl+Alt+key** (never plain keys or Ctrl+letter, which terminal
+  programs need). The terminal key handler must also swallow them so they are not sent to
+  the remote shell (`APP_SHORTCUT_KEYS` in `TerminalPane.svelte`). Add new ones to both places.
+- Dialogs: focus moves inside on open and returns to the opener on close; Escape closes.
+- Every action reachable by mouse (context menu, buttons) has a key path; context menus open
+  with Shift+F10 or the Menu key.
+
+Current keymap:
+
+| Keys | Action |
+| --- | --- |
+| Ctrl+Alt+Arrows | Move focus to the neighboring pane in a split layout |
+| Ctrl+Alt+PageUp / PageDown | Previous / next tab in the focused pane |
+| Ctrl+Alt+F | Focus the connection search box (also from a terminal) |
+| Ctrl+Alt+K | Toggle the command console |
+| Ctrl+Alt+1–4 | Layout presets |
+| Down (in search) | Move into the tree results |
+| Up/Down/Home/End, Right/Left | Navigate the tree; expand/collapse folders |
+| Enter, F2, Shift+F10 | Open, rename, context menu on the focused tree row |
+
 ## Migrated
 
 - Connection tree context menu (`ConnectionTree.svelte`, `src/lib/ui/menu.css`): arrow keys,

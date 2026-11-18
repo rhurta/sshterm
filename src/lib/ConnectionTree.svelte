@@ -160,6 +160,37 @@
     menu = { node, parentId, index };
   }
 
+  /**
+   * Keyboard navigation: Up/Down/Home/End move focus between visible rows,
+   * Right/Left expand/collapse the focused folder. Enter/Space activate the
+   * focused row button, Shift+F10 or the Menu key open the context menu, F2
+   * renames. Modified keys (Ctrl+Alt shortcuts) are left to the workspace.
+   */
+  function onTreeKeydown(event: KeyboardEvent) {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.target instanceof HTMLInputElement) return; // rename field
+    const rows = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>("button.row")];
+    if (rows.length === 0) return;
+    const index = rows.indexOf(document.activeElement as HTMLButtonElement);
+    const focusRow = (i: number) => {
+      event.preventDefault();
+      rows[Math.max(0, Math.min(rows.length - 1, i))].focus();
+    };
+    if (event.key === "ArrowDown") focusRow(index < 0 ? 0 : index + 1);
+    else if (event.key === "ArrowUp") focusRow(index < 0 ? 0 : index - 1);
+    else if (event.key === "Home") focusRow(0);
+    else if (event.key === "End") focusRow(rows.length - 1);
+    else if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && index >= 0) {
+      const node = findNode(tree, rows[index].dataset.nodeId ?? "");
+      if (node?.type !== "folder" || query.trim()) return;
+      const open = isOpen(node);
+      if ((event.key === "ArrowRight" && !open) || (event.key === "ArrowLeft" && open)) {
+        event.preventDefault();
+        ontoggle(node.id);
+      }
+    }
+  }
+
   /** Right click on empty tree space: offer only the root-level actions. */
   function onTreeContextMenu(event: MouseEvent) {
     if (!(event.target as Element | null)?.closest(".line")) menu = null;
@@ -293,6 +324,7 @@
     {:else}
       <button
         class="row"
+        data-node-id={node.id}
         class:folder={node.type === "folder"}
         class:selected={selectedId === node.id}
         class:into={drop?.id === node.id && drop.position === "into"}
@@ -347,6 +379,8 @@
       if (!(event.currentTarget as Element).contains(event.relatedTarget as Node | null)) rootDrop = false;
     }}
     oncontextmenu={onTreeContextMenu}
+    onkeydown={onTreeKeydown}
+    data-nav="connection-tree"
   >
     {#snippet child({ props })}
       <div {...props} class="tree" class:root-drop={rootDrop}>

@@ -11,6 +11,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
+    "test:pane-nav": "node --experimental-strip-types --test tests/paneNav.test.mjs",
     "test:split-tree": "node --experimental-strip-types --test tests/splitTree.test.mjs",
     "test:broadcast-targets": "node --experimental-strip-types --test tests/broadcastTargets.test.mjs"
   },
