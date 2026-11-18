@@ -24,6 +24,9 @@ pub enum TreeNode {
         name: String,
         #[serde(default)]
         children: Vec<TreeNode>,
+        /// Rule sets inherited by descendants unless a connection overrides them.
+        #[serde(default)]
+        highlight: Vec<String>,
     },
     Connection {
         id: String,
@@ -267,6 +270,7 @@ mod tests {
                 id: "f1".into(),
                 name: "Production".into(),
                 children: vec![TreeNode::Connection { id: "c1".into() }],
+                highlight: Vec::new(),
             }],
             connections,
             ..VaultData::default()

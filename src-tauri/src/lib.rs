@@ -2,6 +2,7 @@ mod askpass;
 mod commands;
 mod config;
 mod logger;
+mod highlight;
 mod paths;
 mod session;
 mod store;
@@ -117,6 +118,8 @@ pub fn run() {
         .manage(session::SessionState::default())
         .invoke_handler(tauri::generate_handler![
             app_info,
+            highlight::highlight_list,
+            highlight::highlight_test,
             commands::vault_status,
             commands::vault_create,
             commands::vault_unlock,

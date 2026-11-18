@@ -83,7 +83,7 @@ export interface ConnectionSummary {
 }
 
 export type TreeNode =
-  | { type: "folder"; id: string; name: string; children: TreeNode[] }
+  | { type: "folder"; id: string; name: string; children: TreeNode[]; highlight?: string[] }
   | { type: "connection"; id: string };
 
 export interface SearchHit {

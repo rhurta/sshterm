@@ -91,6 +91,7 @@ fn ensure_default_folder(tree: &mut Vec<TreeNode>) -> &mut Vec<TreeNode> {
             id: DEFAULT_FOLDER_ID.into(),
             name: DEFAULT_FOLDER_NAME.into(),
             children: Vec::new(),
+            highlight: Vec::new(),
         });
     }
     let idx = tree.iter().position(is_default).unwrap();
@@ -98,6 +99,40 @@ fn ensure_default_folder(tree: &mut Vec<TreeNode>) -> &mut Vec<TreeNode> {
         TreeNode::Folder { children, .. } => children,
         _ => unreachable!("position() only matched the default folder"),
     }
+}
+
+
+/// Resolve effective M6b rule sets for a connection. Folder rule sets accumulate
+/// from the root toward the connection, preserving order and removing duplicates.
+/// A non-empty connection assignment is an explicit override of folder inheritance.
+pub fn resolve_highlight_rules(
+    tree: &[TreeNode],
+    connection_id: &str,
+    connection_rules: &[String],
+) -> Option<Vec<String>> {
+    fn visit(nodes: &[TreeNode], connection_id: &str, inherited: &[String]) -> Option<Vec<String>> {
+        for node in nodes {
+            match node {
+                TreeNode::Connection { id } if id == connection_id => return Some(inherited.to_vec()),
+                TreeNode::Folder { children, highlight, .. } => {
+                    let mut next = inherited.to_vec();
+                    for rule_set in highlight {
+                        if !next.contains(rule_set) {
+                            next.push(rule_set.clone());
+                        }
+                    }
+                    if let Some(found) = visit(children, connection_id, &next) {
+                        return Some(found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    let inherited = visit(tree, connection_id, &[])?;
+    Some(if connection_rules.is_empty() { inherited } else { connection_rules.to_vec() })
 }
 
 pub fn contains_id(nodes: &[TreeNode], id: &str) -> bool {
@@ -198,6 +233,7 @@ pub fn upsert_folder(
             id: folder_id.clone(),
             name,
             children: Vec::new(),
+            highlight: Vec::new(),
         });
         Ok(folder_id)
     }
@@ -348,6 +384,7 @@ pub fn ensure_path(
                     id: id.clone(),
                     name: name.to_string(),
                     children: Vec::new(),
+                    highlight: Vec::new(),
                 });
                 created += 1;
                 current = Some(id);
@@ -432,11 +469,36 @@ mod tests {
     }
 
     fn folder(id: &str, name: &str, children: Vec<TreeNode>) -> TreeNode {
-        TreeNode::Folder { id: id.into(), name: name.into(), children }
+        TreeNode::Folder { id: id.into(), name: name.into(), children, highlight: Vec::new() }
     }
 
     fn link_to(id: &str) -> TreeNode {
         TreeNode::Connection { id: id.into() }
+    }
+
+
+    fn folder_with_rules(id: &str, name: &str, highlight: Vec<String>, children: Vec<TreeNode>) -> TreeNode {
+        TreeNode::Folder { id: id.into(), name: name.into(), children, highlight }
+    }
+
+    #[test]
+    fn folder_highlight_rules_inherit_and_connection_rules_override() {
+        let tree = vec![folder_with_rules(
+            "root", "Root", vec!["linux".into(), "common".into()],
+            vec![folder_with_rules(
+                "nested", "Nested", vec!["network".into(), "common".into()],
+                vec![link_to("c1")],
+            )],
+        )];
+        assert_eq!(
+            resolve_highlight_rules(&tree, "c1", &[]),
+            Some(vec!["linux".into(), "common".into(), "network".into()])
+        );
+        assert_eq!(
+            resolve_highlight_rules(&tree, "c1", &["custom".into()]),
+            Some(vec!["custom".into()])
+        );
+        assert_eq!(resolve_highlight_rules(&tree, "missing", &[]), None);
     }
 
     #[test]
@@ -446,7 +508,7 @@ mod tests {
         assert!(reconcile(&mut tree, &connections));
         assert_eq!(tree.len(), 1);
         match &tree[0] {
-            TreeNode::Folder { id, name, children } => {
+            TreeNode::Folder { id, name, children, .. } => {
                 assert_eq!(id, DEFAULT_FOLDER_ID);
                 assert_eq!(name, DEFAULT_FOLDER_NAME);
                 assert_eq!(children.len(), 2);
