@@ -210,6 +210,31 @@ pub struct HighlightBufferMatch {
     pub scope: String,
     pub fg: Option<String>,
     pub bg: Option<String>,
+    pub bold: bool,
+}
+
+fn match_rule_sets(rule_sets: &[RuleSet], lines: &[String]) -> Result<Vec<HighlightBufferMatch>, String> {
+    let mut output = Vec::new();
+    for set in rule_sets {
+        for rule in &set.rules {
+            let regex = compile(&rule.pattern)?;
+            for (line_index, line) in lines.iter().enumerate() {
+                for found in regex.find_iter(line).take(MAX_MATCHES_PER_RULE) {
+                    output.push(HighlightBufferMatch {
+                        line: line_index,
+                        start: line[..found.start()].chars().count(),
+                        end: line[..found.end()].chars().count(),
+                        rule_name: rule.name.clone(),
+                        scope: rule.scope.as_str().into(),
+                        fg: rule.fg.clone(),
+                        bg: rule.bg.clone(),
+                        bold: rule.bold,
+                    });
+                }
+            }
+        }
+    }
+    Ok(output)
 }
 
 /// Match already-parsed terminal lines using Rust's bounded regex engine.
@@ -229,30 +254,15 @@ pub fn highlight_match(rule_sets: Vec<String>, lines: Vec<String>) -> Result<Vec
     }
 
     let wanted: std::collections::BTreeSet<&str> = rule_sets.iter().map(String::as_str).collect();
-    let mut output = Vec::new();
+    let mut parsed_sets = Vec::new();
     for path in rule_files(&paths::highlight_dir())? {
         let set = match parse_rule_set(&path) {
             Ok(set) if wanted.contains(set.name.as_str()) => set,
             _ => continue,
         };
-        for rule in &set.rules {
-            let regex = compile(&rule.pattern)?;
-            for (line_index, line) in lines.iter().enumerate() {
-                for found in regex.find_iter(line).take(MAX_MATCHES_PER_RULE) {
-                    output.push(HighlightBufferMatch {
-                        line: line_index,
-                        start: line[..found.start()].chars().count(),
-                        end: line[..found.end()].chars().count(),
-                        rule_name: rule.name.clone(),
-                        scope: rule.scope.as_str().into(),
-                        fg: rule.fg.clone(),
-                        bg: rule.bg.clone(),
-                    });
-                }
-            }
-        }
+        parsed_sets.push(set);
     }
-    Ok(output)
+    match_rule_sets(&parsed_sets, &lines)
 }
 
 #[cfg(test)]
@@ -305,6 +315,28 @@ pattern = 'ip'
 fg = "#12"
 "##).unwrap();
         assert!(parse_rule_set(&path).unwrap_err().contains("invalid color"));
+    }
+
+
+    #[test]
+    fn matches_multiple_buffer_lines_with_character_ranges() {
+        let set = RuleSet {
+            name: "test".into(),
+            prompt: None,
+            rules: vec![HighlightRule {
+                name: "ip".into(),
+                scope: RuleScope::Any,
+                pattern: r"10\\.0\\.0\\.1".into(),
+                fg: Some("#e3b341".into()),
+                bg: None,
+                bold: true,
+            }],
+        };
+        let lines = vec!["host 10.0.0.1".into(), "no address".into()];
+        let matches = match_rule_sets(&[set], &lines).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!((matches[0].line, matches[0].start, matches[0].end), (0, 5, 13));
+        assert!(matches[0].bold);
     }
 
     #[test]

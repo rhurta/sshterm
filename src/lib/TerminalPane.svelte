@@ -118,7 +118,7 @@
         clearHighlightDecorations();
         return;
       }
-      const requestId = ++highlightRequest;
+      const requestId = highlightRequest;
       const firstLine = buffer.viewportY;
       const lines: string[] = [];
       for (let row = 0; row < t.rows; row++) {
@@ -131,7 +131,7 @@
       try {
         const matches = await invoke<{
           line: number; start: number; end: number; rule_name: string;
-          scope: string; fg: string | null; bg: string | null;
+          scope: string; fg: string | null; bg: string | null; bold: boolean;
         }[]>("highlight_match", { ruleSets: highlightSets, lines });
         if (highlightDisposed || requestId !== highlightRequest || t.buffer.active.type !== "normal") return;
         clearHighlightDecorations();
@@ -141,15 +141,41 @@
           const marker = t.registerMarker(firstLine + match.line - cursorAbsoluteLine);
           if (!marker) continue;
           highlightDecorations.push(marker);
+          const bufferLine = buffer.getLine(firstLine + match.line);
+          if (!bufferLine) continue;
+          const toCellColumn = (characterOffset: number) => {
+            let characterCount = 0;
+            for (let column = 0; column < t.cols; column++) {
+              const cell = bufferLine.getCell(column);
+              if (!cell) break;
+              const cellCharacters = Array.from(cell.getChars()).length;
+              if (characterOffset < characterCount + cellCharacters) return column;
+              characterCount += cellCharacters;
+              const cellWidth = cell.getWidth();
+              if (cellWidth === 2) column++;
+              if (characterCount >= characterOffset) return Math.min(t.cols, column + 1);
+            }
+            return t.cols;
+          };
+          const startColumn = toCellColumn(match.start);
+          const endColumn = toCellColumn(match.end);
+          if (endColumn <= startColumn) continue;
           const decoration = t.registerDecoration({
             marker,
-            x: match.start,
-            width: match.end - match.start,
+            x: startColumn,
+            width: endColumn - startColumn,
             ...(match.fg ? { foregroundColor: match.fg } : {}),
             ...(match.bg ? { backgroundColor: match.bg } : {}),
             layer: "bottom",
           });
-          if (decoration) highlightDecorations.push(decoration);
+          if (decoration) {
+            highlightDecorations.push(decoration);
+            if (match.bold) {
+              highlightDecorations.push(decoration.onRender((element) => {
+                element.style.fontWeight = "bold";
+              }));
+            }
+          }
         }
       } catch {
         // Missing/invalid rule files must never interrupt terminal rendering.
@@ -158,6 +184,9 @@
     const scheduleHighlights = () => {
       if (!highlightSets.length || highlightDisposed) return;
       clearTimeout(highlightTimer);
+      // Invalidate any outstanding IPC result immediately, so a scroll or
+      // buffer switch cannot briefly repaint decorations for an older viewport.
+      highlightRequest += 1;
       highlightTimer = setTimeout(() => void renderHighlights(), 70);
     };
     const highlightListeners = [
