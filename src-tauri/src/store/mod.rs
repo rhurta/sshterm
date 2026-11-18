@@ -299,6 +299,11 @@ fn normalize(mut c: Connection) -> Result<Connection, &'static str> {
     // keepalive_secs == 0 is meaningful for ssh (ServerAliveInterval 0 = off),
     // so it is kept as the user typed it. New connections default to 30.
     normalize_tunnels(&mut c.tunnels)?;
+    if c.highlight.len() > 32 || c.highlight.iter().any(|name| name.trim().is_empty() || name.len() > 128) {
+        return Err("highlight_bad_assignment");
+    }
+    let mut seen_highlight = std::collections::HashSet::new();
+    c.highlight.retain(|name| seen_highlight.insert(name.clone()));
     // Consume a legacy password field if the editor sent one back unchanged.
     c.migrate_legacy();
     c.legacy_password = None;
@@ -395,9 +400,11 @@ pub fn folder_set_highlight(
     id: String,
     highlight: Vec<String>,
 ) -> Result<(), String> {
-    if highlight.len() > 32 {
-        return Err("highlight_too_many_rule_sets".into());
+    if highlight.len() > 32 || highlight.iter().any(|name| name.trim().is_empty() || name.len() > 128) {
+        return Err("highlight_bad_assignment".into());
     }
+    let mut seen = std::collections::HashSet::new();
+    let highlight: Vec<String> = highlight.into_iter().filter(|name| seen.insert(name.clone())).collect();
     let mut g = guard(&state);
     let vault = g.as_mut().ok_or("locked")?;
     if !tree::set_folder_highlight(&mut vault.data.tree, &id, highlight) {

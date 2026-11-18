@@ -77,6 +77,7 @@ export interface HighlightRuleSetStatus {
 }
 
 export interface HighlightTestMatch {
+  line: number;
   rule_name: string;
   scope: string;
   start: number;
