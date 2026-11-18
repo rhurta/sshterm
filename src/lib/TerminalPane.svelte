@@ -1,12 +1,18 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import "@xterm/xterm/css/xterm.css";
   import { toBase64 } from "$lib/encoding";
   import { LogCapture } from "$lib/logCapture";
-  import { subscribeClosed, subscribeData, releaseSession } from "$lib/sessionBus";
+  import {
+    subscribeClosed,
+    subscribeData,
+    releaseSession,
+    takeOpenSize,
+    setLastPaneSize,
+  } from "$lib/sessionBus";
   import type { AppTheme, TerminalSettings } from "$lib/types";
   import { getTerminalTheme } from "$lib/theme";
 
@@ -30,8 +36,20 @@
     onmultilinepaste: (text: string) => Promise<boolean>;
   } = $props();
 
-  // Workspace opens every session at 80x24; the first real fit may match it.
-  const PROVISIONAL = { cols: 80, rows: 24 };
+  // Workspace opens each session with the last fitted size (80x24 for the very
+  // first one); a resize is only sent when the real fit differs from that.
+  // sessionId never changes for a mounted pane, so reading it once is intended.
+  const PROVISIONAL = untrack(() => takeOpenSize(sessionId)) ?? { cols: 80, rows: 24 };
+
+  // session_write calls are chained so keystrokes and pastes reach ssh in the
+  // order they were produced; independent invokes may be scheduled out of order.
+  let writeChain: Promise<unknown> = Promise.resolve();
+  function sendInput(text: string) {
+    const data = toBase64(new TextEncoder().encode(text));
+    writeChain = writeChain
+      .then(() => invoke("session_write", { id: sessionId, data }))
+      .catch(() => {});
+  }
 
   let host: HTMLDivElement;
   let term: Terminal | undefined;
@@ -55,6 +73,7 @@
     if (cols === lastCols && rows === lastRows) return;
     lastCols = cols;
     lastRows = rows;
+    setLastPaneSize(cols, rows);
     if (!disconnected) void invoke("session_resize", { id: sessionId, cols, rows });
   }
 
@@ -162,10 +181,7 @@
         } else {
           // With no selection (or when copy-on-Ctrl+C is disabled), deliver
           // the interrupt directly to the remote PTY.
-          void invoke("session_write", {
-            id: sessionId,
-            data: toBase64(new TextEncoder().encode("\u0003")),
-          });
+          sendInput("\u0003");
         }
         return false;
       }
@@ -204,10 +220,7 @@
 
     t.onData((data) => {
       if (disconnected) return;
-      void invoke("session_write", {
-        id: sessionId,
-        data: toBase64(new TextEncoder().encode(data)),
-      });
+      sendInput(data);
     });
 
     const cleanups = [

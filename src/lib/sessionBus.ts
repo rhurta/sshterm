@@ -90,7 +90,32 @@ export function subscribeClosed(id: string, handler: ClosedHandler): () => void 
   return () => handlers!.delete(handler);
 }
 
+/** Size a session was opened with, so its pane does not send a redundant resize
+ * (each resize makes ConPTY repaint the whole screen). */
+const openSizes = new Map<string, { cols: number; rows: number }>();
+let lastPaneSize = { cols: 120, rows: 30 };
+
+export function rememberOpenSize(id: string, cols: number, rows: number): void {
+  openSizes.set(id, { cols, rows });
+}
+
+export function takeOpenSize(id: string): { cols: number; rows: number } | undefined {
+  const size = openSizes.get(id);
+  openSizes.delete(id);
+  return size;
+}
+
+/** Size of the most recently fitted terminal: new sessions open with it. */
+export function getLastPaneSize(): { cols: number; rows: number } {
+  return lastPaneSize;
+}
+
+export function setLastPaneSize(cols: number, rows: number): void {
+  if (cols >= 20 && rows >= 5) lastPaneSize = { cols, rows };
+}
+
 export function releaseSession(id: string): void {
+  openSizes.delete(id);
   dataHandlers.delete(id);
   closedHandlers.delete(id);
   buffered.delete(id);

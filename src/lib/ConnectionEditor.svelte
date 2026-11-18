@@ -253,7 +253,7 @@
     {:else if section === "advanced"}
       <label>
         {t("editor.keepalive")}
-        <input type="number" min="1" max="3600" bind:value={form.keepalive_secs} />
+        <input type="number" min="0" max="3600" bind:value={form.keepalive_secs} />
       </label>
       <label class="check">
         <input type="checkbox" bind:checked={form.protected} />

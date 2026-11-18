@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { subscribeSessionErrors } from "$lib/sessionBus";
+  import { getLastPaneSize, rememberOpenSize, subscribeSessionErrors } from "$lib/sessionBus";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionSidebar from "./ConnectionSidebar.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
@@ -219,12 +219,15 @@
       const jumpNames = c.jump?.length
         ? resolveJumpNames(c, await invoke<ConnectionSummary[]>("conn_list"))
         : [];
-      // 80x24 is provisional: TerminalPane adjusts to the real size on open.
+      // Open with the size of the last fitted terminal so ssh starts at about
+      // the right dimensions; the pane only resizes if it really differs.
+      const size = getLastPaneSize();
       const sessionId = await invoke<string>("session_open", {
         connId: c.id,
-        cols: 80,
-        rows: 24,
+        cols: size.cols,
+        rows: size.rows,
       });
+      rememberOpenSize(sessionId, size.cols, size.rows);
       tabs = [...tabs, {
         sessionId,
         connId: c.id,
