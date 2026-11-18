@@ -120,10 +120,24 @@
       }
       const requestId = highlightRequest;
       const firstLine = buffer.viewportY;
-      const lines: string[] = [];
+      const logicalLines: { text: string; segments: { row: number; start: number; end: number }[] }[] = [];
       for (let row = 0; row < t.rows; row++) {
-        lines.push(buffer.getLine(firstLine + row)?.translateToString(true) ?? "");
+        const bufferRow = firstLine + row;
+        const sourceLine = buffer.getLine(bufferRow);
+        const text = sourceLine?.translateToString(true) ?? "";
+        if (sourceLine?.isWrapped && logicalLines.length) {
+          const logical = logicalLines[logicalLines.length - 1];
+          const start = logical.text.length;
+          logical.text += text;
+          logical.segments.push({ row: bufferRow, start: Array.from(logical.text.slice(0, start)).length, end: Array.from(logical.text).length });
+        } else {
+          logicalLines.push({
+            text,
+            segments: [{ row: bufferRow, start: 0, end: Array.from(text).length }],
+          });
+        }
       }
+      const lines = logicalLines.map((line) => line.text);
       if (!lines.some((line) => line.length > 0)) {
         clearHighlightDecorations();
         return;
@@ -135,45 +149,53 @@
         }[]>("highlight_match", { ruleSets: highlightSets, lines });
         if (highlightDisposed || requestId !== highlightRequest || t.buffer.active.type !== "normal") return;
         clearHighlightDecorations();
-        const cursorAbsoluteLine = buffer.baseY + buffer.cursorY;
         for (const match of matches) {
-          if (match.line < 0 || match.line >= t.rows || match.end <= match.start) continue;
-          const marker = t.registerMarker(firstLine + match.line - cursorAbsoluteLine);
-          if (!marker) continue;
-          highlightDecorations.push(marker);
-          const bufferLine = buffer.getLine(firstLine + match.line);
-          if (!bufferLine) continue;
-          const toCellColumn = (characterOffset: number) => {
-            let characterCount = 0;
-            for (let column = 0; column < t.cols; column++) {
-              const cell = bufferLine.getCell(column);
-              if (!cell) break;
-              const cellCharacters = Array.from(cell.getChars()).length;
-              if (characterOffset < characterCount + cellCharacters) return column;
-              characterCount += cellCharacters;
-              const cellWidth = cell.getWidth();
-              if (cellWidth === 2) column++;
-              if (characterCount >= characterOffset) return Math.min(t.cols, column + 1);
-            }
-            return t.cols;
-          };
-          const startColumn = toCellColumn(match.start);
-          const endColumn = toCellColumn(match.end);
-          if (endColumn <= startColumn) continue;
-          const decoration = t.registerDecoration({
-            marker,
-            x: startColumn,
-            width: endColumn - startColumn,
-            ...(match.fg ? { foregroundColor: match.fg } : {}),
-            ...(match.bg ? { backgroundColor: match.bg } : {}),
-            layer: "bottom",
-          });
-          if (decoration) {
-            highlightDecorations.push(decoration);
-            if (match.bold) {
-              highlightDecorations.push(decoration.onRender((element) => {
-                element.style.fontWeight = "bold";
-              }));
+          if (match.line < 0 || match.line >= logicalLines.length || match.end <= match.start) continue;
+          const logical = logicalLines[match.line];
+          for (const segment of logical.segments) {
+            const segmentStart = Math.max(match.start, segment.start);
+            const segmentEnd = Math.min(match.end, segment.end);
+            if (segmentEnd <= segmentStart) continue;
+            const bufferLine = buffer.getLine(segment.row);
+            if (!bufferLine) continue;
+            const toCellColumn = (characterOffset: number) => {
+              let characterCount = 0;
+              for (let column = 0; column < t.cols; column++) {
+                const cell = bufferLine.getCell(column);
+                if (!cell) break;
+                const cellCharacters = Array.from(cell.getChars()).length;
+                if (characterOffset < characterCount + cellCharacters) return column;
+                characterCount += cellCharacters;
+                const cellWidth = cell.getWidth();
+                if (cellWidth === 2) column++;
+                if (characterCount >= characterOffset) return Math.min(t.cols, column + 1);
+              }
+              return t.cols;
+            };
+            const localStart = segmentStart - segment.start;
+            const localEnd = segmentEnd - segment.start;
+            const startColumn = toCellColumn(localStart);
+            const endColumn = toCellColumn(localEnd);
+            if (endColumn <= startColumn) continue;
+            const cursorAbsoluteLine = buffer.baseY + buffer.cursorY;
+            const marker = t.registerMarker(segment.row - cursorAbsoluteLine);
+            if (!marker) continue;
+            highlightDecorations.push(marker);
+            const decoration = t.registerDecoration({
+              marker,
+              x: startColumn,
+              width: endColumn - startColumn,
+              ...(match.fg ? { foregroundColor: match.fg } : {}),
+              ...(match.bg ? { backgroundColor: match.bg } : {}),
+              layer: "bottom",
+            });
+            if (decoration) {
+              highlightDecorations.push(decoration);
+              if (match.bold) {
+                highlightDecorations.push(decoration.onRender((element) => {
+                  element.style.fontWeight = "bold";
+                }));
+              }
             }
           }
         }

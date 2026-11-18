@@ -216,14 +216,30 @@ pub struct HighlightBufferMatch {
 fn match_rule_sets(rule_sets: &[RuleSet], lines: &[String]) -> Result<Vec<HighlightBufferMatch>, String> {
     let mut output = Vec::new();
     for set in rule_sets {
-        for rule in &set.rules {
-            let regex = compile(&rule.pattern)?;
-            for (line_index, line) in lines.iter().enumerate() {
-                for found in regex.find_iter(line).take(MAX_MATCHES_PER_RULE) {
+        let prompt_regex = set.prompt.as_deref().map(compile).transpose()?;
+        for (line_index, line) in lines.iter().enumerate() {
+            let prompt_end = prompt_regex.as_ref()
+                .and_then(|regex| regex.find(line))
+                .map(|found| found.end());
+            for rule in &set.rules {
+                let regex = compile(&rule.pattern)?;
+                let (text, offset) = match rule.scope {
+                    RuleScope::Prompt => match prompt_end {
+                        Some(end) => (&line[..end], 0),
+                        None => continue,
+                    },
+                    RuleScope::Command => match prompt_end {
+                        Some(end) => (&line[end..], end),
+                        None => continue,
+                    },
+                    RuleScope::Output if prompt_end.is_some() => continue,
+                    RuleScope::Output | RuleScope::Any => (line.as_str(), 0),
+                };
+                for found in regex.find_iter(text).take(MAX_MATCHES_PER_RULE) {
                     output.push(HighlightBufferMatch {
                         line: line_index,
-                        start: line[..found.start()].chars().count(),
-                        end: line[..found.end()].chars().count(),
+                        start: line[..offset + found.start()].chars().count(),
+                        end: line[..offset + found.end()].chars().count(),
                         rule_name: rule.name.clone(),
                         scope: rule.scope.as_str().into(),
                         fg: rule.fg.clone(),
