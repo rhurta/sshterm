@@ -135,6 +135,19 @@ pub fn resolve_highlight_rules(
     Some(if connection_rules.is_empty() { inherited } else { connection_rules.to_vec() })
 }
 
+
+/// Replace the rule-set assignments on one folder without disturbing its children.
+pub fn set_folder_highlight(nodes: &mut [TreeNode], id: &str, highlight: Vec<String>) -> bool {
+    let Some(node) = folder_mut(nodes, id) else { return false };
+    match node {
+        TreeNode::Folder { highlight: current, .. } => {
+            *current = highlight;
+            true
+        }
+        TreeNode::Connection { .. } => false,
+    }
+}
+
 pub fn contains_id(nodes: &[TreeNode], id: &str) -> bool {
     nodes.iter().any(|node| match node {
         TreeNode::Folder { children, .. } => node.id() == id || contains_id(children, id),

@@ -141,6 +141,7 @@ pub fn run() {
             store::conn_delete,
             store::tree_get,
             store::folder_upsert,
+            store::folder_set_highlight,
             store::folder_delete,
             store::move_node,
             store::search,

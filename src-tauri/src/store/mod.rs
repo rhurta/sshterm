@@ -388,6 +388,24 @@ pub fn tree_get(state: State<'_, VaultState>) -> Result<Vec<TreeNode>, String> {
     Ok(vault.data.tree.clone())
 }
 
+
+#[tauri::command]
+pub fn folder_set_highlight(
+    state: State<'_, VaultState>,
+    id: String,
+    highlight: Vec<String>,
+) -> Result<(), String> {
+    if highlight.len() > 32 {
+        return Err("highlight_too_many_rule_sets".into());
+    }
+    let mut g = guard(&state);
+    let vault = g.as_mut().ok_or("locked")?;
+    if !tree::set_folder_highlight(&mut vault.data.tree, &id, highlight) {
+        return Err("folder_not_found".into());
+    }
+    vault.save().map_err(|e| e.code().to_string())
+}
+
 #[tauri::command]
 pub fn folder_upsert(
     state: State<'_, VaultState>,
