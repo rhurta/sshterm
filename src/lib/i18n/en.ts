@@ -35,6 +35,8 @@ export const en = {
   "workspace.commandConsole.hide": "Hide command console (Ctrl+Alt+K)",
   "workspace.resizeConsole": "Resize command console",
   "workspace.resizePanes": "Resize terminal panes",
+  "workspace.session.protect": "Protect this session from broadcast",
+  "workspace.session.unprotect": "Allow this session in broadcast",
   "workspace.paneTabs": "Sessions in pane",
   "workspace.openConnectionInPane": "Open a connection in this pane",
   "workspace.removeEmptyPane": "Remove empty pane",

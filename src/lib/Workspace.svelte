@@ -10,7 +10,7 @@
   import HighlightRulesPanel from "./HighlightRulesPanel.svelte";
   import type { BroadcastSession } from "$lib/broadcastTargets";
   import LanguageSelect from "./LanguageSelect.svelte";
-  import type { AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
+  import type { AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
   import { DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
   import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
@@ -345,6 +345,36 @@
     if (pane) paneActiveIds = { ...paneActiveIds, [pane.sessionId]: sessionId };
   }
 
+  function findConnectionParent(nodes: TreeNode[], connectionId: string, parentId: string | null = null): string | null | undefined {
+    for (const node of nodes) {
+      if (node.type === "connection" && node.id === connectionId) return parentId;
+      if (node.type === "folder") {
+        const found = findConnectionParent(node.children, connectionId, node.id);
+        if (found !== undefined) return found;
+      }
+    }
+    return undefined;
+  }
+
+  async function toggleSessionProtection(sessionId: string) {
+    const tab = tabs.find((item) => item.sessionId === sessionId);
+    if (!tab || !tab.connected) return;
+    const protectedNext = !tab.protected;
+    try {
+      const [connection, tree] = await Promise.all([
+        invoke<Connection | null>("conn_get", { id: tab.connId }),
+        invoke<TreeNode[]>("tree_get"),
+      ]);
+      if (!connection) throw new Error("connection_not_found");
+      const parentId = findConnectionParent(tree, tab.connId);
+      if (parentId === undefined) throw new Error("connection_not_in_tree");
+      await invoke("conn_upsert", { conn: { ...connection, protected: protectedNext }, parentId });
+      tabs = tabs.map((item) => item.connId === tab.connId ? { ...item, protected: protectedNext } : item);
+      refreshToken += 1;
+      error = "";
+    } catch (e) { error = errorText(String(e)); }
+  }
+
   function chooseLayout(preset: LayoutPreset) {
     layoutPreset = preset;
     pendingPaneId = null;
@@ -541,6 +571,12 @@
                             <span class="pane-focus-dot" aria-hidden="true"></span>
                           {/if}
                         </button>
+                        <button class="pane-tab-protect" class:protected={tab.protected}
+                          aria-label={tab.protected ? t("workspace.session.unprotect") : t("workspace.session.protect")}
+                          aria-pressed={tab.protected}
+                          title={tab.protected ? t("workspace.session.unprotect") : t("workspace.session.protect")}
+                          disabled={!tab.connected} onclick={() => toggleSessionProtection(sessionId)}
+                        >{tab.protected ? "🔒" : "🔓"}</button>
                         <button class="pane-tab-close" aria-label={`Close ${tab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
                       </div>
                     {/if}
@@ -778,6 +814,9 @@
   .pane-tab.disconnected button { color: var(--text-secondary); }
   .pane-focus-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); }
   .pane-tab.active button { color: var(--text); }
+  .pane-tab .pane-tab-protect { flex: 0 0 auto; padding: 0.12rem 0.22rem; color: var(--muted); background: transparent; border: 0; font-size: 0.65rem; line-height: 1; cursor: pointer; }
+  .pane-tab .pane-tab-protect.protected { color: var(--warning, #d6a85f); }
+  .pane-tab .pane-tab-protect:disabled { opacity: 0.35; cursor: default; }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }
   .pane-add, .pane-remove { flex: 0 0 auto; align-self: center; border: 0; background: transparent; font: inherit; cursor: pointer; padding: 0 0.35rem; }
   .pane-add { color: var(--accent); }

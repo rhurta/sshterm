@@ -36,6 +36,8 @@ export const es: Record<MessageKey, string> = {
   "workspace.commandConsole.hide": "Ocultar la consola de comandos (Ctrl+Alt+K)",
   "workspace.resizeConsole": "Cambiar el tamaño de la consola de comandos",
   "workspace.resizePanes": "Cambiar el tamaño de los paneles de terminal",
+  "workspace.session.protect": "Proteger esta sesión de los envíos masivos",
+  "workspace.session.unprotect": "Permitir esta sesión en los envíos masivos",
   "workspace.paneTabs": "Sesiones del panel",
   "workspace.openConnectionInPane": "Abrir una conexión en este panel",
   "workspace.removeEmptyPane": "Quitar el panel vacío",

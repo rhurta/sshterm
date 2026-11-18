@@ -163,6 +163,19 @@
 <section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label={t("console.commandConsole")}>
   <div class="console-heading">
     <strong>{t("console.commandConsole")}</strong>
+    {#if confirmingMultiline}
+      <div class="confirmation-banner" role="alert">
+        <span>{t("console.confirmation", {
+          lines: lineCount,
+          lineLabel: lineCount === 1 ? t("console.line") : t("console.lines"),
+          sessions: targetResolution.targets.length,
+          sessionLabel: targetResolution.targets.length === 1 ? t("console.session") : t("console.sessions"),
+          names: targetNames,
+        })}</span>
+        <button class="send" onclick={sendDraft} disabled={sending || targetResolution.targets.length === 0}>{t("console.confirmSend")}</button>
+        <button class="secondary" onclick={() => (confirmingMultiline = false)}>{t("console.cancel")}</button>
+      </div>
+    {/if}
   </div>
 
   <div class="console-layout">
@@ -247,25 +260,11 @@
       ></textarea>
 
       <div class="console-actions">
-        {#if confirmingMultiline}
-          <span class="confirmation" role="alert">
-            {t("console.confirmation", {
-              lines: lineCount,
-              lineLabel: lineCount === 1 ? t("console.line") : t("console.lines"),
-              sessions: targetResolution.targets.length,
-              sessionLabel: targetResolution.targets.length === 1 ? t("console.session") : t("console.sessions"),
-              names: targetNames,
-            })}
-          </span>
-          <button class="send" onclick={sendDraft} disabled={sending || targetResolution.targets.length === 0}>{t("console.confirmSend")}</button>
-          <button class="secondary" onclick={() => (confirmingMultiline = false)}>{t("console.cancel")}</button>
-        {:else}
-          <span class="status" class:error={statusError} role="status">{status}</span>
-          <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>{t("console.clear")}</button>
-          <button class="send" onclick={requestSend} disabled={targetResolution.targets.length === 0 || draft.length === 0 || sending}>
-            {sending ? t("console.sending") : t("console.send")}
-          </button>
-        {/if}
+        <span class="status" class:error={statusError} role="status">{status}</span>
+        <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>{t("console.clear")}</button>
+        <button class="send" onclick={requestSend} disabled={targetResolution.targets.length === 0 || draft.length === 0 || sending}>
+          {sending ? t("console.sending") : t("console.send")}
+        </button>
       </div>
     </div>
   </div>
@@ -285,12 +284,17 @@
     overflow: hidden;
   }
   .command-console.hidden { display: none; }
-  .console-heading {
-    display: flex;
-    align-items: center;
-    min-height: 1.45rem;
+  .console-heading { display: flex; align-items: center; gap: 0.75rem; min-height: 1.65rem; flex: 0 0 auto; }
+  .console-heading strong { flex: 0 0 auto; font-size: 0.78rem; font-weight: 600; color: var(--text); }
+  .confirmation-banner {
+    display: flex; flex: 1 1 auto; align-items: center; gap: 0.5rem; min-width: 0;
+    padding: 0.28rem 0.45rem; color: var(--warning, #d6a85f);
+    background: color-mix(in srgb, var(--warning, #d6a85f) 12%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--warning, #d6a85f) 55%, var(--border));
+    border-radius: 4px; font-size: 0.72rem; line-height: 1.3;
   }
-  .console-heading strong { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+  .confirmation-banner span { flex: 1 1 auto; min-width: 0; }
+  .confirmation-banner button { padding: 0.22rem 0.5rem; }
   .console-layout {
     display: grid;
     grid-template-columns: minmax(10.5rem, 0.34fr) minmax(0, 1fr);
@@ -423,7 +427,6 @@
   }
   .status, .confirmation { flex: 1; min-width: 0; color: var(--text-secondary); font-size: 0.68rem; }
   .status.error { color: var(--danger); }
-  .confirmation { color: var(--warning, #d6a85f); }
   button {
     flex: 0 0 auto;
     padding: 0.3rem 0.65rem;
@@ -437,6 +440,8 @@
   button.secondary { color: var(--text-secondary); background: transparent; }
   button:disabled { opacity: 0.45; cursor: default; }
   @media (max-width: 720px) {
+    .console-heading { align-items: flex-start; flex-wrap: wrap; }
+    .confirmation-banner { flex-basis: 100%; flex-wrap: wrap; }
     .console-layout { grid-template-columns: minmax(8.5rem, 0.42fr) minmax(0, 1fr); gap: 0.4rem; }
     .target-panel { padding-right: 0.4rem; }
     .session-row { gap: 0.25rem; padding-inline: 0.25rem; }
