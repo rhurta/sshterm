@@ -80,6 +80,19 @@
     status = "";
   }
 
+  async function restoreEditorFocus(selectionStart?: number, selectionEnd?: number) {
+    // Wait for Svelte to apply state changes (including removing the disabled
+    // attribute), then focus after the browser finishes the current click/key event.
+    await tick();
+    requestAnimationFrame(() => {
+      if (!editor || editor.disabled) return;
+      editor.focus();
+      if (selectionStart !== undefined) {
+        editor.setSelectionRange(selectionStart, selectionEnd ?? selectionStart);
+      }
+    });
+  }
+
   async function requestSend() {
     const resolution = resolveBroadcastTargets(
       sessions,
@@ -90,15 +103,11 @@
     );
     if (resolution.targets.length === 0 || draft.length === 0 || sending) return;
     if ((hasMultipleLines || resolution.targets.length > 1) && !confirmingMultiline) {
-      // Keep keyboard entry in the command editor when the confirmation banner
-      // appears, including when Send was activated with the mouse.
       const selectionStart = editor?.selectionStart ?? draft.length;
       const selectionEnd = editor?.selectionEnd ?? selectionStart;
       confirmingMultiline = true;
       status = "";
-      await tick();
-      editor?.focus();
-      editor?.setSelectionRange(selectionStart, selectionEnd);
+      await restoreEditorFocus(selectionStart, selectionEnd);
       return;
     }
     void sendDraft();
@@ -147,6 +156,9 @@
       statusError = failed.length > 0;
     } finally {
       sending = false;
+      // The confirmation button disappears after dispatch. Return focus to the
+      // editor once it is enabled again so typing can continue immediately.
+      await restoreEditorFocus();
     }
   }
 
