@@ -357,6 +357,26 @@ fg = "#12"
         assert!(matches[0].bold);
     }
 
+
+    #[test]
+    fn scoped_rules_distinguish_prompt_command_and_output() {
+        let set = RuleSet {
+            name: "scopes".into(),
+            prompt: Some(r"^user@host:\$ ".into()),
+            rules: vec![
+                HighlightRule { name: "prompt".into(), scope: RuleScope::Prompt, pattern: r"^user@host:".into(), fg: None, bg: None, bold: false },
+                HighlightRule { name: "command".into(), scope: RuleScope::Command, pattern: r"^sudo".into(), fg: None, bg: None, bold: false },
+                HighlightRule { name: "output".into(), scope: RuleScope::Output, pattern: r"ERROR".into(), fg: None, bg: None, bold: false },
+            ],
+        };
+        let lines = vec!["user@host:$ sudo reboot".into(), "ERROR: service stopped".into()];
+        let matches = match_rule_sets(&[set], &lines).unwrap();
+        assert!(matches.iter().any(|item| item.rule_name == "prompt" && item.line == 0));
+        assert!(matches.iter().any(|item| item.rule_name == "command" && item.line == 0));
+        assert!(matches.iter().any(|item| item.rule_name == "output" && item.line == 1));
+        assert!(!matches.iter().any(|item| item.rule_name == "output" && item.line == 0));
+    }
+
     #[test]
     fn rejects_oversized_samples() {
         assert!(highlight_test("missing".into(), "x".repeat(MAX_SAMPLE_BYTES + 1)).is_err());

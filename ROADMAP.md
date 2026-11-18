@@ -292,34 +292,23 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Windows CI runs split-tree tests, broadcast-target resolution tests, frontend checks/build, Rust formatting/tests and the portable Windows executable build.
 - Automated component-level UI tests and live multi-host dispatch integration tests are not currently present. The broadcast confirmation/protected/partial-failure flows still need explicit manual acceptance testing on Windows.
 
-### Syntax highlighting (M6b)
+### Syntax highlighting (M6b — in progress)
 
-Rule files are plain TOML in `highlight/` next to the exe.
+**Implemented foundation and terminal integration:**
 
-```toml
-name   = "linux"
-prompt = '^\S+@\S+:[^\n]*[$#] '
+- TOML rule files are loaded from `highlight/` beside the executable. A working example is tracked at `examples/highlight/linux.toml`; copy it into the portable app's `highlight/` directory to enable the example set.
+- Rule files are validated for TOML shape, unique names, supported scopes, regex validity, color format and size limits. Matching uses Rust's linear-time regex engine rather than browser regexes.
+- The connection editor assigns rule sets by name. Folder context menus assign inherited rule sets; nested folders accumulate assignments and a non-empty connection selection overrides inheritance.
+- Terminal matching reads the rendered xterm.js normal buffer and adds cell decorations. It never changes PTY bytes or sends text to the remote host.
+- Wrapped rows are joined for matching and decorations are mapped back to their terminal cells. Prompt and command scopes are classified using the rule set's prompt expression; output rules apply to non-prompt lines.
+- Highlighting is suppressed in the alternate screen buffer (for example, vim, top and less).
+- Settings includes a sample-text rule tester. Search fields in the rule pickers/tester receive focus when opened.
 
-[[rule]]
-name = "command"; scope = "command"
-pattern = '^\S+'; fg = "#e3b341"; bold = true
+**Still pending before M6b completion:**
 
-[[rule]]
-name = "param"; scope = "command"
-pattern = '(?<=\s)--?[\w-]+'; fg = "#79c0ff"
-
-[[rule]]
-name = "ipv4"; scope = "any"
-pattern = '\b\d{1,3}(\.\d{1,3}){3}(/\d+)?\b'; fg = "#d2a8ff"
-```
-
-- Matching runs on the xterm.js buffer through its decoration API, never by rewriting the byte stream.
-- Scopes: `prompt`, `command`, `output`, `any`.
-- Connections (or folders for all their children) link rule sets by name: `highlight = ["linux", "common"]`.
-- Highlighting off while alternate screen is active (vim, top, less).
-- Validation: JSON schema + `sshterm.exe --check-highlight file.toml` + in-app test panel (paste sample text, see classification and colors).
-- Guard against catastrophic backtracking: pattern-length limit and timing check in the validator.
-
+- Full Windows manual acceptance for live shell prompts, wrapped commands, Unicode/wide cells, scrolling and alternate-screen applications.
+- Additional fixtures and automated integration coverage for xterm decorations; component-level UI automation is not yet present.
+- A command-line `--check-highlight` mode remains a proposal and is not implemented.
 ---
 
 ## 🟡 M7 — Tunnels (partial)

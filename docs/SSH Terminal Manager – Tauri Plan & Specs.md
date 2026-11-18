@@ -57,7 +57,7 @@ Actual path behavior:
 - SSH lookup order is bin/ssh.exe, %SystemRoot%\System32\OpenSSH\ssh.exe, then %SystemRoot%\System32\ssh.exe. If none exists, session startup returns ssh_not_found.
 - config.toml supports language, application theme, logging, terminal clipboard/mouse preferences (including multi-line paste confirmation and retained disconnected tabs), and command-console visibility/height. Font and default-keepalive settings are not implemented there.
 - known_hosts is maintained by OpenSSH through the configured UserKnownHostsFile; it is not currently populated from the known_hosts map in the vault payload.
-- highlight/ has a path helper and is ignored by Git, but the rule loader and rule files are not implemented.
+- highlight/ has a path helper and is ignored by Git. M6b loads TOML rule files from this folder; the tracked example is examples/highlight/linux.toml and must be copied beside the portable executable to enable it.
 - logs/sshterm.log is a separate diagnostic log containing session metadata and byte counts. Per-session terminal logs are separate files.
 
 The generated data files (*.vault, config.toml, known_hosts, logs/, webview-data/ and highlight/) are in .gitignore. The docs/ directory is tracked in Git.
@@ -400,21 +400,21 @@ Not implemented:
 
 Implementation phases, safety requirements and acceptance criteria are maintained in [docs/M6-implementation-plan.md](M6-implementation-plan.md). Saved scripts and command libraries are out of scope for M6.
 
-### M6b — Syntax highlighting (planned)
+### M6b — Syntax highlighting (in progress)
 
-The vault connection model already has a highlight: string[] field, but there is no rule loader, matcher, frontend decoration layer, test panel, or highlight/ rule set in the current implementation. Folder nodes also do not yet have a highlight property, so inherited folder rules require a model change.
+The connection model's highlight: string[] field now selects rule sets, and folder nodes carry a backward-compatible highlight assignment. TOML loading/validation, bounded Rust-regex matching, xterm.js cell decorations, folder inheritance, connection overrides, assignment controls and a sample-text tester are implemented. Full Windows manual acceptance and additional automated UI/integration coverage remain.
 
 Intended design:
 
-- Plain TOML rule files in highlight/ next to the executable; no secrets in rule files.
-- A rule set contains a prompt regex and an ordered list of scoped rules (prompt, command, output, any).
-- Classifications include prompt, command, parameters, output, IP addresses and keywords.
-- Matching runs against the rendered xterm.js buffer through decorations; it must not rewrite PTY bytes.
-- Wrapped lines are joined before matching; highlighting is disabled while the alternate screen is active.
-- Add schema validation and an in-app test panel. A command-line checker (--check-highlight) is a proposal, not an existing command.
-- Guard against pathological regex cost. Prefer a linear-time regex engine or strict validation rather than executing arbitrary backtracking patterns in the UI.
+- Plain TOML rule files are loaded from highlight/ beside the executable; no secrets belong in rule files. Copy examples/highlight/linux.toml there to enable the tracked example.
+- A rule set contains a prompt regex and an ordered list of scoped rules (prompt, command, output, any). Prompt and command scopes use the prompt expression to separate the prompt prefix from command text.
+- Matching runs against rendered xterm.js normal-buffer lines and adds cell decorations; it does not rewrite PTY bytes or send additional data to the remote host.
+- Wrapped rows are joined for matching and mapped back to physical cells. Highlighting is suppressed in the alternate screen buffer.
+- The connection editor selects rule sets; folders add inherited assignments; a non-empty connection assignment overrides inherited rules. Nested folder assignments accumulate.
+- Settings includes a sample-text tester. The proposed command-line checker (--check-highlight) is not implemented.
+- Regexes are compiled by Rust's linear-time regex engine with file, pattern, nesting, rule-count, sample-size and match-count limits; the UI does not execute arbitrary JavaScript regexes.
 
-Example rule-file direction (not currently loaded by the app):
+Tracked example rule file: examples/highlight/linux.toml (copy it to the portable app's highlight/ directory to load it):
 
 ```toml
 name = "linux"
@@ -543,13 +543,13 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M4 | Connection tree, CRUD, search, imports, drag-and-drop and multi-tab workspace | ✅ Complete |
 | M5 | Nested ProxyJump chains and per-hop passwords (within phase-1 limits) | ✅ Complete |
 | M6 | Tiling, command console and broadcast | ✅ Feature implementation complete; UI automation / manual broadcast acceptance follow-up |
-| M6b | Syntax highlighting | 📋 Planned |
+| M6b | Syntax highlighting | 🟡 In progress; rule engine, terminal decorations, inheritance and tester implemented; manual acceptance remains |
 | M7 | Local/reverse forwarding (-L / -R) | 🟡 Partial; bound to interactive sessions |
 | M8 | Native SFTP | 📋 Planned |
 | M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
-The status reflects the source tree, not aspirational feature descriptions. M5 and M6 feature implementations are complete; M7 is partial; global themes are implemented while per-connection coloring remains planned. SFTP, highlighting and dynamic-forward data fields do not imply that their corresponding features are complete. Broadcast uses the protected flag as documented above.
+The status reflects the source tree, not aspirational feature descriptions. M5 and M6 feature implementations are complete; M7 is partial; global themes are implemented while per-connection coloring remains planned. SFTP and dynamic-forward data fields do not imply that their corresponding features are complete; M6b is explicitly partial pending acceptance. Broadcast uses the protected flag as documented above.
 
 ## 12. Decisions, operational workflow and CI
 
