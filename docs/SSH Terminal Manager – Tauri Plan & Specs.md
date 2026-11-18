@@ -428,6 +428,10 @@ fg = "#e3b341"
 bold = true
 ```
 
+## AI agent skill: create highlight rules from examples
+
+The reusable agent skill is available at `.agents/skills/sshterm-highlight-rules/SKILL.md`. It guides an AI agent to analyze supplied terminal examples, author conservative TOML rule sets compatible with the Rust regex engine, validate prompt/scope behavior, and explain installation. Use it when creating or adapting profiles from real terminal output.
+
 ### M8 — Native SFTP (planned)
 
 - Add russh and russh-sftp; neither is currently a dependency.
