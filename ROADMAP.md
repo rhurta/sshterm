@@ -403,6 +403,7 @@ The vault model already contains a `Dynamic` variant for forward compatibility, 
 ### Fixes after the M3 review (branch `fix/m5-jump-config`)
 
 - Jump hops now get the same options as the target (see M5 above); verified with real `ssh` against two local sshd instances starting from an empty known_hosts (`cargo test real_ssh -- --ignored`, needs `SSHTERM_E2E_HOP_PORT`, `SSHTERM_E2E_TARGET_PORT`, `SSHTERM_E2E_USER`).
+- Hops whose saved connection uses password auth get `PubkeyAuthentication no` and `PreferredAuthentications password,keyboard-interactive` in their own `Host` block, so a full ssh-agent cannot exhaust the hop's `MaxAuthTries` before the password is tried (verified with real ssh: 5 agent keys, hop with `MaxAuthTries 3`; `cargo test real_ssh_password_hop -- --ignored`, extra env vars in the test doc).
 - Target `user`/`host` are validated like hop values (no leading `-`, whitespace, quotes, `@`, `,`...) when saving and when opening a session; the destination is passed after `--`.
 - `keepalive_secs = 0` is kept (disabled) instead of becoming 30; the editor allows 0.
 - New sessions open with the size of the last fitted terminal instead of 80x24, avoiding an extra ConPTY repaint.

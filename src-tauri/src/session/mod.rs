@@ -207,6 +207,7 @@ pub async fn session_open(
                 user: hop.user.clone(),
                 host: hop.host.clone(),
                 port: hop.port,
+                password_auth: hop.uses_password_auth(),
             }).collect(),
             forwards,
         };

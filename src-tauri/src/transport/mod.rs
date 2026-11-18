@@ -46,6 +46,10 @@ pub struct JumpHost {
     pub user: String,
     pub host: String,
     pub port: u16,
+    /// The hop's saved connection uses password authentication. The generated
+    /// ssh config then stops ssh from offering agent keys to that hop first,
+    /// which could exhaust the server's MaxAuthTries before the password.
+    pub password_auth: bool,
 }
 
 impl JumpHost {

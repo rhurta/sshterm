@@ -102,6 +102,12 @@ fn render_jump_config(cfg: &SshConfig) -> String {
         out.push_str(&format!("  HostName {}\n", hop.host.trim_matches(|c| c == '[' || c == ']')));
         out.push_str(&format!("  Port {}\n", hop.port));
         out.push_str(&format!("  User {}\n", hop.user));
+        if hop.password_auth {
+            // Same reason as for the destination in build_command: do not let
+            // agent keys use up the hop's authentication attempts.
+            out.push_str("  PubkeyAuthentication no\n");
+            out.push_str("  PreferredAuthentications password,keyboard-interactive\n");
+        }
         if index > 0 {
             out.push_str(&format!("  ProxyJump {}\n", hop_alias(index - 1)));
         }
@@ -493,8 +499,8 @@ mod tests {
 
     fn two_hops() -> Vec<super::super::JumpHost> {
         vec![
-            super::super::JumpHost { user: "bastion".into(), host: "gateway.example".into(), port: 2201 },
-            super::super::JumpHost { user: "relay".into(), host: "10.0.0.8".into(), port: 22 },
+            super::super::JumpHost { user: "bastion".into(), host: "gateway.example".into(), port: 2201, password_auth: false },
+            super::super::JumpHost { user: "relay".into(), host: "10.0.0.8".into(), port: 22, password_auth: true },
         ]
     }
 
@@ -536,9 +542,14 @@ mod tests {
         assert!(!h0.contains("ProxyJump"));
         let h1 = block("sshterm-hop-1");
         assert!(h1.contains("HostName 10.0.0.8") && h1.contains("ProxyJump sshterm-hop-0"));
+        // Only the password hop stops offering agent keys (MaxAuthTries).
+        assert!(h1.contains("PubkeyAuthentication no"));
+        assert!(h1.contains("PreferredAuthentications password,keyboard-interactive"));
+        assert!(!h0.contains("PubkeyAuthentication"), "agent/key hops keep using the agent");
         let t = block(TARGET_ALIAS);
         assert!(t.contains("HostName 10.0.0.5") && t.contains("Port 2222") && t.contains("User admin"));
         assert!(t.contains("ProxyJump sshterm-hop-1"));
+        assert!(!t.contains("PubkeyAuthentication"), "destination options stay on the command line");
         // Shared options live in a wildcard block that matches hops and target.
         assert!(text.contains("Host sshterm-*\n"));
         assert!(text.contains("StrictHostKeyChecking accept-new"));
@@ -547,13 +558,16 @@ mod tests {
         assert!(text.contains(r#"UserKnownHostsFile "C:/Program Files/sshterm/known_hosts""#));
         // The specific blocks must come before the wildcard (first match wins).
         assert!(text.find("Host sshterm-hop-0").unwrap() < text.find("Host sshterm-*").unwrap());
-        assert!(!text.to_lowercase().contains("password"));
+        // No secrets: "password" may only appear as an authentication method name.
+        for line in text.lines().filter(|l| l.to_lowercase().contains("password")) {
+            assert!(line.trim().starts_with("PreferredAuthentications "), "unexpected: {line}");
+        }
     }
 
     #[test]
     fn jump_config_strips_ipv6_brackets() {
         let mut config = cfg();
-        config.jump_hosts = vec![super::super::JumpHost { user: "u".into(), host: "[2001:db8::1]".into(), port: 22 }];
+        config.jump_hosts = vec![super::super::JumpHost { user: "u".into(), host: "[2001:db8::1]".into(), port: 22, password_auth: false }];
         assert!(render_jump_config(&config).contains("HostName 2001:db8::1\n"));
     }
 
@@ -600,6 +614,7 @@ mod tests {
             user: "admin".into(),
             host: "2001:db8::1".into(),
             port: 2222,
+            password_auth: false,
         };
         assert_eq!(hop.proxy_spec(), "admin@[2001:db8::1]:2222");
     }
@@ -636,7 +651,7 @@ mod tests {
         config.jump_hosts = vec![super::super::JumpHost {
             user,
             host: "127.0.0.1".into(),
-            port: hop.parse().unwrap(),
+            port: hop.parse().unwrap(), password_auth: false,
         }];
         let conf_path = write_jump_config(&config).unwrap();
         let mut args = argv(&build_command(&config, None, Some(&conf_path)));
@@ -661,6 +676,53 @@ mod tests {
         assert!(text.contains("SSHTERM_E2E_OK"), "ssh output: {text}");
         let kh = std::fs::read_to_string(&config.known_hosts).unwrap();
         assert_eq!(kh.lines().count(), 2, "both hop and target keys land in OUR known_hosts: {kh}");
+    }
+
+    /// Like the test above, but the hop only accepts a password
+    /// (SSHTERM_E2E_PW_HOP_PORT, user SSHTERM_E2E_PW_HOP_USER, password
+    /// SSHTERM_E2E_PW_HOP_PASSWORD, MaxAuthTries lower than the number of keys
+    /// loaded in the running ssh-agent) and the target accepts SSHTERM_E2E_KEY.
+    /// Without `PubkeyAuthentication no` on the hop, the agent keys use up its
+    /// authentication attempts and the password is never tried.
+    #[test]
+    #[ignore = "needs ssh, a full ssh-agent and sshd instances; see the env vars above"]
+    fn real_ssh_password_hop_is_not_starved_by_agent_keys() {
+        let env = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("set {name}"));
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = cfg();
+        config.program = PathBuf::from("ssh");
+        config.host = "127.0.0.1".into();
+        config.port = env("SSHTERM_E2E_TARGET_PORT").parse().unwrap();
+        config.user = env("SSHTERM_E2E_USER");
+        config.key_path = Some(PathBuf::from(env("SSHTERM_E2E_KEY")));
+        config.known_hosts = dir.path().join("known_hosts");
+        config.jump_hosts = vec![super::super::JumpHost {
+            user: env("SSHTERM_E2E_PW_HOP_USER"),
+            host: "127.0.0.1".into(),
+            port: env("SSHTERM_E2E_PW_HOP_PORT").parse().unwrap(),
+            password_auth: std::env::var("SSHTERM_E2E_EXPECT_FAILURE").is_err(),
+        }];
+        let conf_path = write_jump_config(&config).unwrap();
+        let mut args = argv(&build_command(&config, None, Some(&conf_path)));
+        args.remove(0);
+        args.push("echo SSHTERM_E2E_OK".into());
+        let askpass = dir.path().join("askpass.sh");
+        std::fs::write(&askpass, format!("#!/bin/sh\necho '{}'\n", env("SSHTERM_E2E_PW_HOP_PASSWORD"))).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&askpass, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let out = std::process::Command::new("ssh")
+            .args(&args)
+            .env("SSH_ASKPASS", &askpass)
+            .env("SSH_ASKPASS_REQUIRE", "force")
+            .env("DISPLAY", "sshterm")
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_file(&conf_path);
+        let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+        assert!(text.contains("SSHTERM_E2E_OK"), "ssh output: {text}");
     }
 
     /// Manual diagnostic for the ConPTY -> reader thread path. Ignored by
