@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
-  import type { Auth, Connection, ConnectionSummary, Tunnel } from "$lib/types";
+  import type { Auth, Connection, ConnectionSummary, HighlightRuleSetStatus, Tunnel } from "$lib/types";
 
   let {
     conn,
@@ -16,7 +16,7 @@
     oncancel: () => void;
   } = $props();
 
-  type Section = "general" | "auth" | "advanced" | "jumps" | "tunnels";
+  type Section = "general" | "auth" | "advanced" | "jumps" | "tunnels" | "highlight";
 
   // Snapshot the props once: clone mutable M5/M7 arrays before editing.
   const initial = untrack(() => ({
@@ -29,6 +29,13 @@
   let section = $state<Section>("general");
   let connections = $state<ConnectionSummary[]>([]);
   let connectionsError = $state("");
+  let highlightRuleSets = $state<HighlightRuleSetStatus[]>([]);
+  let highlightQuery = $state("");
+  let highlightSearchInput = $state<HTMLInputElement | null>(null);
+  let filteredHighlightRuleSets = $derived.by(() => {
+    const query = highlightQuery.trim().toLocaleLowerCase();
+    return highlightRuleSets.filter((item) => !query || item.name.toLocaleLowerCase().includes(query) || item.file.toLocaleLowerCase().includes(query));
+  });
   let jumpQuery = $state("");
   let jumpCandidates = $derived.by(() => {
     const query = jumpQuery.trim().toLocaleLowerCase();
@@ -44,7 +51,22 @@
     void invoke<ConnectionSummary[]>("conn_list")
       .then((items) => (connections = items))
       .catch((error) => (connectionsError = errorText(String(error))));
+    void invoke<HighlightRuleSetStatus[]>("highlight_list")
+      .then((items) => (highlightRuleSets = items))
+      .catch((error) => (connectionsError = errorText(String(error))));
   });
+
+  async function openHighlightSection() {
+    section = "highlight";
+    await tick();
+    highlightSearchInput?.focus();
+  }
+
+  function toggleHighlightRuleSet(name: string) {
+    form.highlight = form.highlight.includes(name)
+      ? form.highlight.filter((item) => item !== name)
+      : [...form.highlight, name];
+  }
 
   function addJump(id: string) {
     if (id !== form.id && !form.jump.includes(id)) form.jump = [...form.jump, id];
@@ -204,6 +226,9 @@
       <button type="button" class:current={section === "tunnels"} onclick={() => (section = "tunnels")}>
         {t("editor.section.tunnels")}
       </button>
+      <button type="button" class:current={section === "highlight"} onclick={openHighlightSection}>
+        {t("editor.section.highlight")}
+      </button>
     </div>
 
     {#if section === "general"}
@@ -315,6 +340,36 @@
       {#if connectionsError}
         <p class="validation" role="alert">{connectionsError}</p>
       {/if}
+    {:else if section === "highlight"}
+      <p class="hint">{t("editor.highlightHint")}</p>
+      <input
+        class="jump-search"
+        bind:this={highlightSearchInput}
+        bind:value={highlightQuery}
+        placeholder={t("editor.highlightSearch")}
+        aria-label={t("editor.highlightSearch")}
+        autocomplete="off"
+      />
+      <div class="jump-candidates highlight-candidates">
+        {#each filteredHighlightRuleSets as ruleSet (ruleSet.file)}
+          <label class="check highlight-choice">
+            <input
+              type="checkbox"
+              checked={form.highlight.includes(ruleSet.name)}
+              disabled={!ruleSet.valid}
+              onchange={() => toggleHighlightRuleSet(ruleSet.name)}
+            />
+            <span>{ruleSet.name} ({ruleSet.rule_count})</span>
+            {#if !ruleSet.valid}
+              <small class="validation">{ruleSet.error}</small>
+            {/if}
+          </label>
+        {:else}
+          <p class="hint">{highlightQuery.trim() ? t("editor.highlightNoMatches") : t("editor.highlightNone")}</p>
+        {/each}
+      </div>
+      <p class="hint">{t("editor.highlightOverrideHint")}</p>
+      <button type="button" class="add-tunnel" onclick={() => (form.highlight = [])}>{t("editor.highlightInherit")}</button>
     {:else}
       <p class="hint">{t("editor.tunnelHint")}</p>
       {#if form.tunnels.length > 0}

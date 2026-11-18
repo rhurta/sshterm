@@ -5,6 +5,7 @@
   import ConnectionTree from "./ConnectionTree.svelte";
   import SearchBox from "./SearchBox.svelte";
   import ImportDialog from "./ImportDialog.svelte";
+  import FolderHighlightEditor from "./FolderHighlightEditor.svelte";
   import type {
     Connection,
     ConnectionSummary,
@@ -35,6 +36,7 @@
   let selectedId = $state<string | null>(null);
   let autoRename = $state<string | null>(null);
   let pendingDelete = $state<TreeNode | null>(null);
+  let folderHighlightTarget = $state<Extract<TreeNode, { type: "folder" }> | null>(null);
   let showImport = $state(false);
   let error = $state("");
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -241,6 +243,7 @@
     onnewfolder={(parentId) => createFolder(parentId)}
     onnewconn={(parentId) => onnewconn(parentId)}
     onmove={(id, parentId, index) => moveNode(id, parentId, index)}
+    onfolderhighlight={(folder) => (folderHighlightTarget = folder)}
     onselect={(node) => (selectedId = node.id)}
     ontoggle={(id) => (expanded = { ...expanded, [id]: !expanded[id] })}
   />
@@ -250,6 +253,23 @@
     <span class="hint">{t("tree.hint")}</span>
   </div>
 </aside>
+
+{#if folderHighlightTarget}
+  <FolderHighlightEditor
+    folder={folderHighlightTarget}
+    oncancel={() => (folderHighlightTarget = null)}
+    onsave={async (id, highlight) => {
+      try {
+        await invoke("folder_set_highlight", { id, highlight });
+        folderHighlightTarget = null;
+        await refresh();
+        return null;
+      } catch (e) {
+        return errText(String(e));
+      }
+    }}
+  />
+{/if}
 
 {#if showImport}
   <ImportDialog

@@ -24,6 +24,7 @@
     onduplicate,
     ondelete,
     onmove,
+    onfolderhighlight,
   }: {
     tree: TreeNode[];
     summaries: Record<string, ConnectionSummary>;
@@ -43,6 +44,7 @@
     onduplicate: (c: ConnectionSummary) => void;
     ondelete: (node: TreeNode) => void;
     onmove: (id: string, parentId: string | null, index: number) => void;
+    onfolderhighlight: (folder: Extract<TreeNode, { type: "folder" }>) => void;
   } = $props();
 
   let menu = $state<MenuEntry | null>(null);
@@ -351,6 +353,9 @@
     {/if}
     <button onclick={() => { onnewfolder(menuParent(entry)); menu = null; }}>{t("tree.newFolder")}</button>
     <button onclick={() => { onnewconn(menuParent(entry)); menu = null; }}>{t("tree.newConnection")}</button>
+    {#if entry.node.type === "folder"}
+      <button onclick={() => { onfolderhighlight(entry.node as Extract<TreeNode, { type: "folder" }>); menu = null; }}>{t("tree.highlightRules")}</button>
+    {/if}
     <button onclick={() => startRename(entry.node)}>{t("tree.rename")}</button>
     <div class="separator"></div>
     <button class="danger" onclick={() => { ondelete(entry.node); menu = null; }}>

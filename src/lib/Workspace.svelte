@@ -7,6 +7,7 @@
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import CommandConsole from "./CommandConsole.svelte";
+  import HighlightRulesPanel from "./HighlightRulesPanel.svelte";
   import type { BroadcastSession } from "$lib/broadcastTargets";
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings } from "$lib/types";
@@ -37,6 +38,7 @@
   let consoleSettingsDirty = false;
   let consoleDrag = $state<{ startY: number; startHeight: number } | null>(null);
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
+  let highlightPanelOpen = $state(false);
   let picker = $state(false);
   let pickerList = $state<ConnectionSummary[]>([]);
   let pickerQuery = $state("");
@@ -605,6 +607,7 @@
         <p class="hint">{t("workspace.shortcutLayoutHelp")}</p>
         <p class="hint">{t("console.shortcutSendHelp")}</p>
         <h3>{t("settings.terminal")}</h3>
+        <button class="ghost" onclick={() => (highlightPanelOpen = true)}>{t("settings.highlightRules")}</button>
         <label class="setting"><input type="checkbox" checked={settings.copy_on_selection} onchange={(e) => setTerminalSetting("copy_on_selection", e.currentTarget.checked)} />{t("settings.copyOnSelection")}</label>
         <label class="setting"><input type="checkbox" checked={settings.right_click_copy} onchange={(e) => setTerminalSetting("right_click_copy", e.currentTarget.checked)} />{t("settings.rightClickCopy")}</label>
         <label class="setting"><input type="checkbox" checked={settings.middle_click_copy} onchange={(e) => setTerminalSetting("middle_click_copy", e.currentTarget.checked)} />{t("settings.middleClickCopy")}</label>
@@ -616,6 +619,10 @@
         <button class="ghost" onclick={() => (settingsOpen = false)}>{t("editor.cancel")}</button>
       </div>
     </div>
+  {/if}
+
+  {#if highlightPanelOpen}
+    <HighlightRulesPanel onclose={() => (highlightPanelOpen = false)} />
   {/if}
 
   {#if multilinePaste}

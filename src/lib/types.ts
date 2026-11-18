@@ -68,6 +68,30 @@ export interface Connection {
 }
 
 /** What `conn_list` returns: never contains credentials. */
+export interface HighlightRuleSetStatus {
+  name: string;
+  file: string;
+  rule_count: number;
+  valid: boolean;
+  error: string | null;
+}
+
+export interface HighlightTestMatch {
+  rule_name: string;
+  scope: string;
+  start: number;
+  end: number;
+  fg: string | null;
+  bg: string | null;
+  bold: boolean;
+}
+
+export interface HighlightTestResult {
+  set_name: string;
+  prompt_matches: boolean;
+  matches: HighlightTestMatch[];
+}
+
 export interface ConnectionSummary {
   id: string;
   name: string;
