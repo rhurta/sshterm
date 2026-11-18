@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { tick } from "svelte";
   import { toBase64 } from "$lib/encoding";
   import { t } from "$lib/i18n/index.svelte";
   import { resolveBroadcastTargets, type BroadcastSession, type BroadcastTargetMode } from "$lib/broadcastTargets";
@@ -79,7 +80,7 @@
     status = "";
   }
 
-  function requestSend() {
+  async function requestSend() {
     const resolution = resolveBroadcastTargets(
       sessions,
       activeSessionId,
@@ -89,8 +90,15 @@
     );
     if (resolution.targets.length === 0 || draft.length === 0 || sending) return;
     if ((hasMultipleLines || resolution.targets.length > 1) && !confirmingMultiline) {
+      // Keep keyboard entry in the command editor when the confirmation banner
+      // appears, including when Send was activated with the mouse.
+      const selectionStart = editor?.selectionStart ?? draft.length;
+      const selectionEnd = editor?.selectionEnd ?? selectionStart;
       confirmingMultiline = true;
       status = "";
+      await tick();
+      editor?.focus();
+      editor?.setSelectionRange(selectionStart, selectionEnd);
       return;
     }
     void sendDraft();
