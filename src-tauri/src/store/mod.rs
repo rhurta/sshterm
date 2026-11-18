@@ -74,8 +74,16 @@ fn valid_jump_host(host: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'))
 }
 
+/// Host and user end up in ssh's argv and in the generated ssh config, so they
+/// must never be able to look like an option (`-oProxyCommand=...`) or carry
+/// separators. Applies to the connection itself, not just to jump hops.
+pub fn valid_address(user: &str, host: &str) -> bool {
+    valid_jump_user(user) && valid_jump_host(host)
+}
+
 fn valid_jump_user(user: &str) -> bool {
     !user.is_empty()
+        && !user.starts_with('-')
         && user.chars().all(|ch| {
             ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '+' | '\\')
         })
@@ -282,12 +290,14 @@ fn normalize(mut c: Connection) -> Result<Connection, &'static str> {
     if c.id.is_empty() || c.host.is_empty() || c.user.is_empty() || c.port == 0 {
         return Err("bad_connection");
     }
+    if !valid_address(&c.user, &c.host) {
+        return Err("bad_address");
+    }
     if c.name.is_empty() {
         c.name = c.host.clone();
     }
-    if c.keepalive_secs == 0 {
-        c.keepalive_secs = 30;
-    }
+    // keepalive_secs == 0 is meaningful for ssh (ServerAliveInterval 0 = off),
+    // so it is kept as the user typed it. New connections default to 30.
     normalize_tunnels(&mut c.tunnels)?;
     // Consume a legacy password field if the editor sent one back unchanged.
     c.migrate_legacy();
@@ -467,7 +477,7 @@ mod tests {
         assert_eq!(c.id, "c1");
         assert_eq!(c.name, "10.0.0.5");
         assert_eq!(c.host, "10.0.0.5");
-        assert_eq!(c.keepalive_secs, 30);
+        assert_eq!(c.keepalive_secs, 0, "0 means keepalive disabled and is preserved");
         assert_eq!(c.password().as_deref(), Some("secret"));
     }
 
@@ -611,6 +621,27 @@ mod tests {
             Connection { id: "".into(), ..base.clone() },
         ] {
             assert_eq!(normalize(bad).unwrap_err(), "bad_connection");
+        }
+    }
+
+    #[test]
+    fn normalize_rejects_option_injection_in_user_and_host() {
+        let base = Connection { id: "c1".into(), host: "h".into(), user: "u".into(), ..Connection::default() };
+        for (user, host) in [
+            ("-oProxyCommand=calc", "h"),
+            ("u", "-oProxyCommand=calc"),
+            ("u", "h,evil"),
+            ("u@x", "h"),
+            ("u", "h x"),
+            ("u", "h\"evil"),
+            ("u", ""),
+        ] {
+            let c = Connection { user: user.into(), host: host.into(), ..base.clone() };
+            assert!(normalize(c).is_err(), "{user}@{host} must be rejected");
+        }
+        for (user, host) in [("DOM\\user", "10.0.0.5"), ("admin", "2001:db8::1"), ("a.b-c_d", "srv-1.example.com")] {
+            let c = Connection { user: user.into(), host: host.into(), ..base.clone() };
+            assert!(normalize(c).is_ok(), "{user}@{host} must be accepted");
         }
     }
 

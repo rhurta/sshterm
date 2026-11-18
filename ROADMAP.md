@@ -243,7 +243,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Per-hop enable/disable state is stored separately in `jump_disabled`; older vaults default every configured hop to enabled.
 - The editor can search saved connections by name, host, or user when selecting a jump hop.
 - `store::resolve_jump_chain` expands nested chains into outermost-to-target order and rejects missing references, repeated hops, cycles and routes deeper than 16 hops.
-- `OpenSshTransport` emits one `-J` argument with comma-separated `user@host:port` entries; IPv6 literals are bracketed.
+- Sessions with jump hosts run `ssh -F <temp config> sshterm-target`. The generated config has one `Host` block per hop (`HostName/Port/User`, each hop with `ProxyJump` to the previous one) and a shared `Host sshterm-*` block with our `UserKnownHostsFile`, `StrictHostKeyChecking accept-new`, keepalive and timeout. (Originally one `-J` argument was used; OpenSSH forwards only `-F`, not `-o`, to the hop processes, so the first hop failed with `Host key verification failed`. Fixed on `fix/m5-jump-config`.) The temp file holds no secrets and is removed on session close. While it is in use, `~/.ssh/config` is not read for that session.
 - The askpass pipe matches password prompts against `user@host` and destination key-passphrase prompts against the configured identity-file path. Credentials are held in `Zeroizing<String>` and each match is served at most once.
 - The session-scoped pipe token is retained for the session so multiple hops can authenticate. A generic `Password:` prompt is accepted only when the session has exactly one credential; unknown or ambiguous prompts receive no password.
 - Duplicate `user@host` identities anywhere in the route are rejected because the OpenSSH prompt omits the port and cannot disambiguate them.
@@ -398,3 +398,13 @@ The vault model already contains a `Dynamic` variant for forward compatibility, 
 | M8 | Native SFTP | — | 📋 |
 | M9 | Polish | `main` | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine | — | 📋 |
+
+
+### Fixes after the M3 review (branch `fix/m5-jump-config`)
+
+- Jump hops now get the same options as the target (see M5 above); verified with real `ssh` against two local sshd instances starting from an empty known_hosts (`cargo test real_ssh -- --ignored`, needs `SSHTERM_E2E_HOP_PORT`, `SSHTERM_E2E_TARGET_PORT`, `SSHTERM_E2E_USER`).
+- Target `user`/`host` are validated like hop values (no leading `-`, whitespace, quotes, `@`, `,`...) when saving and when opening a session; the destination is passed after `--`.
+- `keepalive_secs = 0` is kept (disabled) instead of becoming 30; the editor allows 0.
+- New sessions open with the size of the last fitted terminal instead of 80x24, avoiding an extra ConPTY repaint.
+- `session_write` calls from the pane are chained so input keeps its order.
+- `UserKnownHostsFile` with spaces was already quoted; in the jump config the path uses forward slashes.

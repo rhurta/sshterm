@@ -147,6 +147,10 @@ pub async fn session_open(
         let vault = g.as_ref().ok_or_else(|| "locked".to_string())?;
         let conn = store::find(vault, &conn_id)
             .ok_or_else(|| "connection_not_found".to_string())?;
+        // Connections saved by older versions were not validated on write.
+        if !store::valid_address(&conn.user, &conn.host) || conn.port == 0 {
+            return Err("bad_address".to_string());
+        }
         let hops = store::resolve_jump_chain(&vault.data.connections, &conn_id)
             .map_err(str::to_string)?;
         let forwards = store::resolve_forwards(&conn.tunnels).map_err(str::to_string)?;
