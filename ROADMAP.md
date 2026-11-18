@@ -266,7 +266,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 
 ## ✅ M6 — Tiling, command console and broadcast
 
-**Feature implementation complete.** Syntax highlighting is a separate M6b item and is not part of M6 completion.
+**Complete and manually accepted.** Syntax highlighting is tracked separately as M6b. Windows CI and user acceptance cover the tiling, command-console, session-protection and broadcast flows.
 
 ### Tiling
 
@@ -291,9 +291,9 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 ### Verification and remaining follow-up
 
 - Windows CI runs split-tree tests, broadcast-target resolution tests, frontend checks/build, Rust formatting/tests and the portable Windows executable build.
-- Automated component-level UI tests and live multi-host dispatch integration tests are not currently present. The broadcast confirmation/protected/partial-failure flows still need explicit manual acceptance testing on Windows.
+- Manual acceptance is complete, including session protection, multi-line confirmation, focus restoration and broadcast behavior. Automated component-level UI tests and live multi-host dispatch integration tests remain future test-coverage improvements.
 
-### Syntax highlighting (M6b — in progress)
+### Syntax highlighting (M6b — complete)
 
 **Implemented foundation and terminal integration:**
 
@@ -305,11 +305,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Highlighting is suppressed in the alternate screen buffer (for example, vim, top and less).
 - Settings includes a sample-text rule tester. Search fields in the rule pickers/tester receive focus when opened.
 
-**Still pending before M6b completion:**
-
-- Full Windows manual acceptance for live shell prompts, wrapped commands, Unicode/wide cells, scrolling and alternate-screen applications.
-- Additional fixtures and automated integration coverage for xterm decorations; component-level UI automation is not yet present.
-- A command-line `--check-highlight` mode remains a proposal and is not implemented.
+**Acceptance:** User validation is complete with Linux shell profiles and Ericsson MME terminal output. Windows CI also passes the frontend, Rust and portable executable checks. Additional fixtures and automated integration coverage for xterm decorations remain future hardening; a command-line `--check-highlight` mode is optional and is not implemented.
 ---
 
 ## 🟡 M7 — Tunnels (partial)
@@ -383,7 +379,8 @@ The vault model already contains a `Dynamic` variant for forward compatibility, 
 | M3 | Session logging | `bbc0262` | ✅ |
 | M4 | Session tree + multi-tab | `bbb2c6c` / m4 | ✅ |
 | M5 | Jump hosts | `main` | ✅ |
-| M6 | Tiling + command console + broadcast | `e6fa4bc` | ✅ Feature complete; UI-test follow-up |
+| M6 | Tiling + command console + broadcast | `e6fa4bc` | ✅ Complete; manually accepted |
+| M6b | Syntax highlighting | `main` | ✅ Complete; user-validated on Linux and Ericsson MME |
 | M7 | Local / reverse forwards (`-L` / `-R`) | `main` | 🟡 Partial |
 | M8 | Native SFTP | — | 📋 |
 | M9 | Polish | `main` | 🟡 Partial; global themes implemented |
