@@ -170,7 +170,7 @@ The encrypted JSON payload has version 1, a nested tree and a connection map. A 
 - jump is an ordered list of saved connection IDs. jump_disabled records configured hops that are currently disabled; missing jump_disabled fields default to an empty list.
 - tunnels supports local, remote and reserved dynamic variants. Each variant has an enabled flag; old tunnel entries without that field deserialize as enabled.
 - colors, sftp and highlight are reserved/forward-looking fields. Colors are not applied by the UI, there is no SFTP implementation, and highlighting is not loaded.
-- protected is editable and stored. M6 broadcast excludes protected sessions by default in Selected/All modes and requires explicit opt-in to include them; Active mode is a deliberate single-session target.
+- protected is editable and stored. Each open session tab exposes a quick lock/unlock control that updates the saved connection and all open tabs for it. M6 broadcast excludes protected sessions by default in Selected/All modes and requires explicit opt-in to include them; Active mode remains a deliberate single-session target.
 - known_hosts remains in the payload model for compatibility/future use. The current OpenSSH trust database is the plain-text known_hosts file beside the executable.
 
 The payload version and encrypted file format remain at version 1. Unlock migrates older M1–M3 connection records in memory: old top-level password values move to auth, and unlinked flat connections are placed in a default Connections folder. The migration saves the updated payload without a version bump.

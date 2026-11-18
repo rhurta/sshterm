@@ -280,7 +280,8 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 
 - Persistent bottom console with a searchable, vertically scrollable connection list on the left and a multiline command editor on the right.
 - Targets: Active session, Selected sessions, or All open sessions. Disconnected retained tabs are visible but are never eligible for dispatch.
-- Protected sessions are excluded from Selected/All by default; an explicit opt-in is required to include them.
+- Each open session tab has a quick lock/unlock control for its saved connection’s broadcast protection. The setting persists in the vault and updates all open tabs for that connection.
+- Protected sessions are excluded from Selected/All by default; an explicit opt-in is required to include them. Active mode remains a deliberate single-session target.
 - Multi-line payloads and sends to multiple sessions require a second confirmation with the target set shown.
 - Writes are sequential and preserve the exact UTF-8 bytes; no newline is appended and no automatic retry is performed.
 - The UI reports accepted IPC write requests and per-session failures. It cannot confirm that the remote shell completed a command.
