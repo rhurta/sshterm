@@ -384,7 +384,7 @@ Not implemented:
 - OpenSSH receives ServerAliveInterval=<keepalive_secs> and ServerAliveCountMax=3.
 - Automatic reconnect with backoff is not implemented.
 
-### M6 — Tiling, command console and broadcast (feature implementation complete)
+### M6 — Tiling, command console and broadcast (complete and manually accepted)
 
 - The workspace uses a recursive split tree. Supported presets are single, left/right, top/bottom and 2×2; explicit split actions add an empty sibling pane. Each pane has its own tabs. Existing xterm/PTY instances stay mounted when switching pane tabs.
 - Splitters support pointer dragging and keyboard adjustment. The active pane has a thin accent outline and a small bright dot on its active tab. Closing the last tab leaves an empty pane that can be removed explicitly.
@@ -396,13 +396,13 @@ Not implemented:
 - Shortcuts: Ctrl+Alt+K toggles the command console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Enter requests a send. The console divider is keyboard adjustable.
 - New command-console and workspace UI strings/labels are translated in English and Spanish.
 
-**Verification:** Windows CI runs pure split-tree tests, pure broadcast-target resolution tests, frontend checks/build, Rust formatting/tests and a portable Windows executable build. Component-level UI automation and live multi-host dispatch integration tests are not present; explicit Windows UI acceptance is still needed for all broadcast modes, protected opt-in, confirmations and partial failures.
+**Verification:** Windows CI passes split-tree tests, broadcast-target resolution tests, frontend checks/build, Rust formatting/tests and the portable Windows executable build. Manual acceptance is complete, including session protection, protected-session opt-in, multi-line confirmation, partial-failure reporting and restoring editor focus after confirmation. Component-level UI automation and live multi-host dispatch integration tests remain future coverage improvements.
 
 Implementation phases, safety requirements and acceptance criteria are maintained in [docs/M6-implementation-plan.md](M6-implementation-plan.md). Saved scripts and command libraries are out of scope for M6.
 
-### M6b — Syntax highlighting (in progress)
+### M6b — Syntax highlighting (complete)
 
-The connection model's highlight: string[] field now selects rule sets, and folder nodes carry a backward-compatible highlight assignment. TOML loading/validation, bounded Rust-regex matching, xterm.js cell decorations, folder inheritance, connection overrides, assignment controls and a sample-text tester are implemented. Full Windows manual acceptance and additional automated UI/integration coverage remain.
+The connection model's highlight: string[] field selects rule sets, and folder nodes carry a backward-compatible highlight assignment. TOML loading/validation, bounded Rust-regex matching, xterm.js cell decorations, folder inheritance, connection overrides, assignment controls and a sample-text tester are implemented. User acceptance is complete with Linux shell output and Ericsson MME terminal output. Additional automated UI/integration coverage remains a future hardening task.
 
 Intended design:
 
@@ -546,14 +546,14 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M3 | Per-session logging with xterm.js screen-buffer capture | ✅ Complete |
 | M4 | Connection tree, CRUD, search, imports, drag-and-drop and multi-tab workspace | ✅ Complete |
 | M5 | Nested ProxyJump chains and per-hop passwords (within phase-1 limits) | ✅ Complete |
-| M6 | Tiling, command console and broadcast | ✅ Feature implementation complete; UI automation / manual broadcast acceptance follow-up |
-| M6b | Syntax highlighting | 🟡 In progress; rule engine, terminal decorations, inheritance and tester implemented; manual acceptance remains |
+| M6 | Tiling, command console and broadcast | ✅ Complete; manually accepted |
+| M6b | Syntax highlighting | ✅ Complete; user-validated on Linux and Ericsson MME |
 | M7 | Local/reverse forwarding (-L / -R) | 🟡 Partial; bound to interactive sessions |
 | M8 | Native SFTP | 📋 Planned |
 | M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
-The status reflects the source tree, not aspirational feature descriptions. M5 and M6 feature implementations are complete; M7 is partial; global themes are implemented while per-connection coloring remains planned. SFTP and dynamic-forward data fields do not imply that their corresponding features are complete; M6b is explicitly partial pending acceptance. Broadcast uses the protected flag as documented above.
+The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete; M7 is partial; global themes are implemented while per-connection coloring remains planned. SFTP and dynamic-forward data fields do not imply that their corresponding features are complete. Broadcast uses the protected flag as documented above.
 
 ## 12. Decisions, operational workflow and CI
 
