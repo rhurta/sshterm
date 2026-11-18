@@ -120,6 +120,8 @@ pub fn run() {
             app_info,
             highlight::highlight_list,
             highlight::highlight_test,
+            highlight::highlight_match,
+            store::highlight_resolve,
             commands::vault_status,
             commands::vault_create,
             commands::vault_unlock,

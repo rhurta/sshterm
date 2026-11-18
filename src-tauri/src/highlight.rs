@@ -200,6 +200,61 @@ pub fn highlight_test(set_name: String, sample: String) -> Result<HighlightTestR
     Err("highlight_rule_set_not_found".into())
 }
 
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HighlightBufferMatch {
+    pub line: usize,
+    pub start: usize,
+    pub end: usize,
+    pub rule_name: String,
+    pub scope: String,
+    pub fg: Option<String>,
+    pub bg: Option<String>,
+}
+
+/// Match already-parsed terminal lines using Rust's bounded regex engine.
+/// The PTY byte stream is never modified; the frontend uses these ranges only
+/// to register xterm.js cell decorations.
+#[tauri::command]
+pub fn highlight_match(rule_sets: Vec<String>, lines: Vec<String>) -> Result<Vec<HighlightBufferMatch>, String> {
+    if rule_sets.len() > 32 || lines.len() > 100 {
+        return Err("highlight_request_too_large".into());
+    }
+    let total_bytes: usize = lines.iter().map(String::len).sum();
+    if total_bytes > MAX_SAMPLE_BYTES || lines.iter().any(|line| line.len() > 4096) {
+        return Err("highlight_request_too_large".into());
+    }
+    if rule_sets.is_empty() || lines.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let wanted: std::collections::BTreeSet<&str> = rule_sets.iter().map(String::as_str).collect();
+    let mut output = Vec::new();
+    for path in rule_files(&paths::highlight_dir())? {
+        let set = match parse_rule_set(&path) {
+            Ok(set) if wanted.contains(set.name.as_str()) => set,
+            _ => continue,
+        };
+        for rule in &set.rules {
+            let regex = compile(&rule.pattern)?;
+            for (line_index, line) in lines.iter().enumerate() {
+                for found in regex.find_iter(line).take(MAX_MATCHES_PER_RULE) {
+                    output.push(HighlightBufferMatch {
+                        line: line_index,
+                        start: line[..found.start()].chars().count(),
+                        end: line[..found.end()].chars().count(),
+                        rule_name: rule.name.clone(),
+                        scope: rule.scope.as_str().into(),
+                        fg: rule.fg.clone(),
+                        bg: rule.bg.clone(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

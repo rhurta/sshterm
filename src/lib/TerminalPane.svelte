@@ -25,6 +25,7 @@
     settings,
     theme,
     onmultilinepaste,
+    highlightSets = [],
   }: {
     sessionId: string;
     active: boolean;
@@ -34,6 +35,7 @@
     settings: TerminalSettings;
     theme: AppTheme;
     onmultilinepaste: (text: string) => Promise<boolean>;
+    highlightSets?: string[];
   } = $props();
 
   // Workspace opens each session with the last fitted size (80x24 for the very
@@ -85,6 +87,7 @@
       fontSize: 14,
       cursorBlink: true,
       scrollback: 5000,
+      allowProposedApi: true,
       theme: getTerminalTheme(theme),
     });
     term = t;
@@ -93,6 +96,78 @@
     t.loadAddon(f);
     t.open(host);
     mounted = true;
+
+
+    // Highlight only text already parsed into xterm's normal buffer. Matching
+    // is performed by Rust's linear-time regex engine; returned ranges become
+    // visual cell decorations and never enter the PTY input/output stream.
+    const highlightDecorations: { dispose: () => void }[] = [];
+    let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+    let highlightRequest = 0;
+    let highlightDisposed = false;
+    const clearHighlightDecorations = () => {
+      while (highlightDecorations.length) highlightDecorations.pop()?.dispose();
+    };
+    const renderHighlights = async () => {
+      if (highlightDisposed || !highlightSets.length) {
+        clearHighlightDecorations();
+        return;
+      }
+      const buffer = t.buffer.active;
+      if (buffer.type !== "normal") {
+        clearHighlightDecorations();
+        return;
+      }
+      const requestId = ++highlightRequest;
+      const firstLine = buffer.viewportY;
+      const lines: string[] = [];
+      for (let row = 0; row < t.rows; row++) {
+        lines.push(buffer.getLine(firstLine + row)?.translateToString(true) ?? "");
+      }
+      if (!lines.some((line) => line.length > 0)) {
+        clearHighlightDecorations();
+        return;
+      }
+      try {
+        const matches = await invoke<{
+          line: number; start: number; end: number; rule_name: string;
+          scope: string; fg: string | null; bg: string | null;
+        }[]>("highlight_match", { ruleSets: highlightSets, lines });
+        if (highlightDisposed || requestId !== highlightRequest || t.buffer.active.type !== "normal") return;
+        clearHighlightDecorations();
+        const cursorAbsoluteLine = buffer.baseY + buffer.cursorY;
+        for (const match of matches) {
+          if (match.line < 0 || match.line >= t.rows || match.end <= match.start) continue;
+          const marker = t.registerMarker(firstLine + match.line - cursorAbsoluteLine);
+          if (!marker) continue;
+          highlightDecorations.push(marker);
+          const decoration = t.registerDecoration({
+            marker,
+            x: match.start,
+            width: match.end - match.start,
+            ...(match.fg ? { foregroundColor: match.fg } : {}),
+            ...(match.bg ? { backgroundColor: match.bg } : {}),
+            layer: "bottom",
+          });
+          if (decoration) highlightDecorations.push(decoration);
+        }
+      } catch {
+        // Missing/invalid rule files must never interrupt terminal rendering.
+      }
+    };
+    const scheduleHighlights = () => {
+      if (!highlightSets.length || highlightDisposed) return;
+      clearTimeout(highlightTimer);
+      highlightTimer = setTimeout(() => void renderHighlights(), 70);
+    };
+    const highlightListeners = [
+      t.onWriteParsed(scheduleHighlights),
+      t.onScroll(scheduleHighlights),
+      t.buffer.onBufferChange(() => {
+        if (t.buffer.active.type !== "normal") clearHighlightDecorations();
+        else scheduleHighlights();
+      }),
+    ];
 
     // Session log: plain text built from what this terminal displays (see
     // logCapture.ts). Calls are chained so the text reaches the file in order.
@@ -239,6 +314,11 @@
 
     return () => {
       cleanups.forEach((fn) => fn());
+      highlightDisposed = true;
+      highlightRequest += 1;
+      clearTimeout(highlightTimer);
+      highlightListeners.forEach((listener) => listener.dispose());
+      clearHighlightDecorations();
       host.removeEventListener("contextmenu", onContextMenu);
       host.removeEventListener("mousedown", onMouseDown);
       releaseSession(sessionId);

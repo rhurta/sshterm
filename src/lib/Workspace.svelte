@@ -237,6 +237,7 @@
         tunnelCount: c.tunnel_count ?? 0,
         protected: c.protected,
         connected: true,
+        highlightSets,
       }];
       const focusedPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
       const targetPaneId = pendingPaneId ?? focusedPane?.sessionId ?? layoutGeometry.leaves[0]?.sessionId;
@@ -553,7 +554,7 @@
                   {#each pane.sessionIds as sessionId (sessionId)}
                     <TerminalPane sessionId={sessionId} active={paneActiveIds[pane.sessionId] === sessionId}
                       focused={activeId === sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
-                      onmultilinepaste={requestMultilinePaste} {settings} {theme} />
+                      onmultilinepaste={requestMultilinePaste} highlightSets={tabs.find((tab) => tab.sessionId === sessionId)?.highlightSets ?? []} {settings} {theme} />
                   {/each}
                 </div>
               </div>

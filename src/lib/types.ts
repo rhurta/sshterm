@@ -136,4 +136,6 @@ export interface Tab {
   protected: boolean;
   /** Whether the SSH process is still alive and can receive terminal input. */
   connected: boolean;
+  /** Effective inherited/overridden syntax highlighting rule sets. */
+  highlightSets: string[];
 }

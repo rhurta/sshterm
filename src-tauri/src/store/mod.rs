@@ -332,6 +332,22 @@ pub fn conn_get(state: State<'_, VaultState>, id: String) -> Result<Option<Conne
     Ok(find(vault, &id))
 }
 
+
+#[tauri::command]
+pub fn highlight_resolve(
+    state: State<'_, VaultState>,
+    connection_id: String,
+) -> Result<Vec<String>, String> {
+    let g = guard(&state);
+    let vault = g.as_ref().ok_or("locked")?;
+    let connection = vault.data.connections.get(&connection_id).ok_or("connection_not_found")?;
+    tree::resolve_highlight_rules(
+        &vault.data.tree,
+        &connection_id,
+        &connection.highlight,
+    ).ok_or("connection_not_in_tree".into())
+}
+
 #[tauri::command]
 pub fn conn_upsert(
     state: State<'_, VaultState>,
