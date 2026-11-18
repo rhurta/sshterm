@@ -494,6 +494,27 @@ mod tests {
         TreeNode::Folder { id: id.into(), name: name.into(), children, highlight }
     }
 
+
+    #[test]
+    fn set_folder_highlight_changes_only_the_requested_folder() {
+        let mut tree = vec![folder(
+            "root", "Root",
+            vec![folder("nested", "Nested", vec![link_to("c1")])],
+        )];
+        assert!(set_folder_highlight(&mut tree, "nested", vec!["linux".into()]));
+        match &tree[0] {
+            TreeNode::Folder { highlight, children, .. } => {
+                assert!(highlight.is_empty());
+                match &children[0] {
+                    TreeNode::Folder { highlight, .. } => assert_eq!(highlight, &vec!["linux".to_string()]),
+                    _ => panic!("expected nested folder"),
+                }
+            }
+            _ => panic!("expected root folder"),
+        }
+        assert!(!set_folder_highlight(&mut tree, "missing", Vec::new()));
+    }
+
     #[test]
     fn folder_highlight_rules_inherit_and_connection_rules_override() {
         let tree = vec![folder_with_rules(

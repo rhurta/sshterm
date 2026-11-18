@@ -51,8 +51,8 @@
   }
 </script>
 
-<div class="backdrop" onclick={(event) => { if (event.target === event.currentTarget) oncancel(); }}>
-  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="folder-highlight-title" onkeydown={(event) => { if (event.key === "Escape") oncancel(); }}>
+<div class="backdrop">
+  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="folder-highlight-title" tabindex="-1" onkeydown={(event) => { if (event.key === "Escape") oncancel(); }}>
     <div class="head">
       <h2 id="folder-highlight-title">{t("folder.highlightTitle", { name: folder.name })}</h2>
       <button class="close" aria-label={t("workspace.close")} onclick={oncancel}>×</button>

@@ -40,8 +40,8 @@
   }
 </script>
 
-<div class="backdrop" onclick={(event) => { if (event.target === event.currentTarget) onclose(); }}>
-  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="highlight-panel-title" onkeydown={(event) => { if (event.key === "Escape") onclose(); }}>
+<div class="backdrop">
+  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="highlight-panel-title" tabindex="-1" onkeydown={(event) => { if (event.key === "Escape") onclose(); }}>
     <div class="head">
       <h2 id="highlight-panel-title">{t("highlight.panelTitle")}</h2>
       <button class="close" aria-label={t("workspace.close")} onclick={onclose}>×</button>
@@ -73,7 +73,7 @@
           <div class="match">
             <span class="swatch" style={`background:${match.bg ?? "transparent"};color:${match.fg ?? "var(--text)"}`}>Aa</span>
             <span>{match.rule_name} · {match.scope}</span>
-            <code>{sample.slice(match.start, match.end)}</code>
+            <code>{Array.from((sample.split(/\r\n|\r|\n/)[match.line] ?? "")).slice(match.start, match.end).join("")}</code>
           </div>
         {:else}
           <p class="hint">{t("highlight.noMatches")}</p>

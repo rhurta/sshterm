@@ -70,6 +70,7 @@ pub struct RuleSetStatus {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HighlightTestMatch {
+    pub line: usize,
     pub rule_name: String,
     pub scope: String,
     pub start: usize,
@@ -184,17 +185,18 @@ pub fn highlight_test(set_name: String, sample: String) -> Result<HighlightTestR
         if set.name != set_name { continue; }
         let prompt_matches = set.prompt.as_deref().map(compile).transpose()?
             .is_some_and(|regex| regex.is_match(&sample));
-        let mut matches = Vec::new();
-        for rule in &set.rules {
-            let regex = compile(&rule.pattern)?;
-            for found in regex.find_iter(&sample).take(MAX_MATCHES_PER_RULE) {
-                matches.push(HighlightTestMatch {
-                    rule_name: rule.name.clone(), scope: rule.scope.as_str().into(),
-                    start: found.start(), end: found.end(), fg: rule.fg.clone(),
-                    bg: rule.bg.clone(), bold: rule.bold,
-                });
-            }
-        }
+        let lines: Vec<String> = sample.split('\n').map(|line| line.trim_end_matches('\r').to_string()).collect();
+        let buffer_matches = match_rule_sets(std::slice::from_ref(&set), &lines)?;
+        let matches = buffer_matches.into_iter().map(|found| HighlightTestMatch {
+            line: found.line,
+            rule_name: found.rule_name,
+            scope: found.scope,
+            start: found.start,
+            end: found.end,
+            fg: found.fg,
+            bg: found.bg,
+            bold: found.bold,
+        }).collect();
         return Ok(HighlightTestResult { set_name, prompt_matches, matches });
     }
     Err("highlight_rule_set_not_found".into())
