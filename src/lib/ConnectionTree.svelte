@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ContextMenu } from "bits-ui";
+  import "$lib/ui/menu.css";
   import { t } from "$lib/i18n/index.svelte";
   import type { ConnectionSummary, TreeNode } from "$lib/types";
 
@@ -48,8 +50,6 @@
   } = $props();
 
   let menu = $state<MenuEntry | null>(null);
-  let menuX = $state(0);
-  let menuY = $state(0);
   let renaming = $state<string | null>(null);
   let renameText = $state("");
   let dragId = $state<string | null>(null);
@@ -139,7 +139,6 @@
   }
 
   function startRename(node: TreeNode) {
-    menu = null;
     renaming = node.id;
     renameText = node.type === "folder" ? node.name : (summaries[node.id]?.name ?? "");
   }
@@ -153,12 +152,17 @@
     if (node) onrename(node, name);
   }
 
-  function showMenu(event: MouseEvent, node: TreeNode, parentId: string | null, index: number) {
-    event.preventDefault();
+  // The menu itself is a Bits UI ContextMenu: it opens at the pointer, handles
+  // keyboard navigation, focus, Escape and screen readers. It must not be
+  // preventDefault()ed here, or Bits ignores the event.
+  function showMenu(node: TreeNode, parentId: string | null, index: number) {
     onselect(node);
     menu = { node, parentId, index };
-    menuX = Math.min(event.clientX, window.innerWidth - 180);
-    menuY = Math.min(event.clientY, window.innerHeight - 250);
+  }
+
+  /** Right click on empty tree space: offer only the root-level actions. */
+  function onTreeContextMenu(event: MouseEvent) {
+    if (!(event.target as Element | null)?.closest(".line")) menu = null;
   }
 
   function menuParent(entry: MenuEntry): string | null {
@@ -298,7 +302,7 @@
           else if (summary(node)) onopen(summary(node)!);
         }}
         ondblclick={() => (node.type === "connection" && summary(node) ? onopen(summary(node)!) : startRename(node))}
-        oncontextmenu={(event) => showMenu(event, node, parentId, index)}
+        oncontextmenu={() => showMenu(node, parentId, index)}
         onkeydown={(event) => {
           if (event.key === "F2") startRename(node);
         }}
@@ -332,39 +336,63 @@
   {/if}
 {/snippet}
 
-<div class="tree" role="tree" tabindex="0" aria-label={t("workspace.connections")} class:root-drop={rootDrop} ondragover={onRootDragOver} ondrop={onRootDrop} ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) rootDrop = false; }}>
-  {#each visible(tree) as node, index (node.id)}
-    {@render row(node, null, index, 0)}
-  {/each}
-  {#if query.trim() && visible(tree).length === 0}
-    <p class="empty">{t("tree.noMatches")}</p>
-  {/if}
-</div>
-
-{#if menu}
-  {@const entry = menu}
-  <button class="menu-backdrop" aria-label={t("import.close")} onclick={() => (menu = null)}></button>
-  <div class="menu" style="left: {menuX}px; top: {menuY}px">
-    {#if entry.node.type === "connection" && summary(entry.node)}
-      {@const c = summary(entry.node)!}
-      <button onclick={() => { onopen(c); menu = null; }}>{t("tree.open")}</button>
-      <button onclick={() => { onedit(c); menu = null; }}>{t("tree.edit")}</button>
-      <button onclick={() => { onduplicate(c); menu = null; }}>{t("tree.duplicate")}</button>
-    {/if}
-    <button onclick={() => { onnewfolder(menuParent(entry)); menu = null; }}>{t("tree.newFolder")}</button>
-    <button onclick={() => { onnewconn(menuParent(entry)); menu = null; }}>{t("tree.newConnection")}</button>
-    {#if entry.node.type === "folder"}
-      <button onclick={() => { onfolderhighlight(entry.node as Extract<TreeNode, { type: "folder" }>); menu = null; }}>{t("tree.highlightRules")}</button>
-    {/if}
-    <button onclick={() => startRename(entry.node)}>{t("tree.rename")}</button>
-    <div class="separator"></div>
-    <button class="danger" onclick={() => { ondelete(entry.node); menu = null; }}>
-      {entry.node.type === "folder"
-        ? t("tree.confirmFolder", { name: entry.node.name, count: countItems(entry.node) })
-        : t("tree.delete")}
-    </button>
-  </div>
-{/if}
+<ContextMenu.Root>
+  <ContextMenu.Trigger
+    role="tree"
+    tabindex={0}
+    aria-label={t("workspace.connections")}
+    ondragover={onRootDragOver}
+    ondrop={onRootDrop}
+    ondragleave={(event: DragEvent) => {
+      if (!(event.currentTarget as Element).contains(event.relatedTarget as Node | null)) rootDrop = false;
+    }}
+    oncontextmenu={onTreeContextMenu}
+  >
+    {#snippet child({ props })}
+      <div {...props} class="tree" class:root-drop={rootDrop}>
+        {#each visible(tree) as node, index (node.id)}
+          {@render row(node, null, index, 0)}
+        {/each}
+        {#if query.trim() && visible(tree).length === 0}
+          <p class="empty">{t("tree.noMatches")}</p>
+        {/if}
+      </div>
+    {/snippet}
+  </ContextMenu.Trigger>
+  <!-- Portaled into .window-shell, where the theme variables live. -->
+  <ContextMenu.Portal to=".window-shell">
+    <ContextMenu.Content class="ui-menu" collisionPadding={8}>
+      {#if menu && menu.node.type === "connection" && summary(menu.node)}
+        {@const c = summary(menu.node)!}
+        <ContextMenu.Item class="ui-menu-item" onSelect={() => onopen(c)}>{t("tree.open")}</ContextMenu.Item>
+        <ContextMenu.Item class="ui-menu-item" onSelect={() => onedit(c)}>{t("tree.edit")}</ContextMenu.Item>
+        <ContextMenu.Item class="ui-menu-item" onSelect={() => onduplicate(c)}>{t("tree.duplicate")}</ContextMenu.Item>
+      {/if}
+      <ContextMenu.Item class="ui-menu-item" onSelect={() => onnewfolder(menu ? menuParent(menu) : null)}>
+        {t("tree.newFolder")}
+      </ContextMenu.Item>
+      <ContextMenu.Item class="ui-menu-item" onSelect={() => onnewconn(menu ? menuParent(menu) : null)}>
+        {t("tree.newConnection")}
+      </ContextMenu.Item>
+      {#if menu}
+        {@const entry = menu}
+        {#if entry.node.type === "folder"}
+          {@const folder = entry.node}
+          <ContextMenu.Item class="ui-menu-item" onSelect={() => onfolderhighlight(folder)}>
+            {t("tree.highlightRules")}
+          </ContextMenu.Item>
+        {/if}
+        <ContextMenu.Item class="ui-menu-item" onSelect={() => startRename(entry.node)}>{t("tree.rename")}</ContextMenu.Item>
+        <ContextMenu.Separator class="ui-menu-sep" />
+        <ContextMenu.Item class="ui-menu-item danger" onSelect={() => ondelete(entry.node)}>
+          {entry.node.type === "folder"
+            ? t("tree.confirmFolder", { name: entry.node.name, count: countItems(entry.node) })
+            : t("tree.delete")}
+        </ContextMenu.Item>
+      {/if}
+    </ContextMenu.Content>
+  </ContextMenu.Portal>
+</ContextMenu.Root>
 
 <style>
   .tree {
@@ -492,46 +520,5 @@
     font-size: 0.8rem;
     padding: 0.5rem 0.75rem;
     margin: 0;
-  }
-  .menu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    background: transparent;
-    border: 0;
-    cursor: default;
-  }
-  .menu {
-    position: fixed;
-    z-index: 41;
-    width: 11rem;
-    background: var(--surface-hover);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.25rem 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .menu button {
-    font: inherit;
-    font-size: 0.78rem;
-    text-align: left;
-    color: var(--text);
-    background: transparent;
-    border: 0;
-    padding: 0.35rem 0.7rem;
-    cursor: pointer;
-    white-space: normal;
-  }
-  .menu button:hover {
-    background: var(--border);
-  }
-  .menu button.danger {
-    color: var(--danger);
-  }
-  .separator {
-    height: 1px;
-    background: var(--border);
-    margin: 0.2rem 0;
   }
 </style>
