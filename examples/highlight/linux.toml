@@ -1,0 +1,35 @@
+name = "linux"
+prompt = '^\S+@\S+:[^\n]*[$#] '
+
+[[rule]]
+name = "prompt"
+scope = "prompt"
+pattern = '^\S+@\S+:[^\n]*[$#] '
+fg = "#8fb4e8"
+bold = true
+
+[[rule]]
+name = "command"
+scope = "command"
+pattern = '^\s*(?:sudo\s+)?[A-Za-z0-9_.-]+'
+fg = "#e3b341"
+bold = true
+
+[[rule]]
+name = "command-parameter"
+scope = "command"
+pattern = '--[A-Za-z][A-Za-z0-9-]*'
+fg = "#b48ead"
+
+[[rule]]
+name = "ip-address"
+scope = "any"
+pattern = '\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+fg = "#a3be8c"
+
+[[rule]]
+name = "error-keyword"
+scope = "output"
+pattern = '\b(?:ERROR|FAILED|FATAL)\b'
+fg = "#bf616a"
+bold = true
