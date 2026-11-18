@@ -41,7 +41,7 @@
 </script>
 
 <div class="backdrop">
-  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="highlight-panel-title" tabindex="-1" onkeydown={(event) => { if (event.key === "Escape") onclose(); }}>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="highlight-panel-title" tabindex="-1" onkeydown={(event) => { if (event.key === "Escape") onclose(); }}>
     <div class="head">
       <h2 id="highlight-panel-title">{t("highlight.panelTitle")}</h2>
       <button class="close" aria-label={t("workspace.close")} onclick={onclose}>×</button>
@@ -80,7 +80,7 @@
         {/each}
       </div>
     {/if}
-  </section>
+  </div>
 </div>
 
 <style>

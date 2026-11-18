@@ -15,7 +15,7 @@
   } = $props();
 
   let ruleSets = $state<HighlightRuleSetStatus[]>([]);
-  let selected = $state<string[]>([...(folder.highlight ?? [])]);
+  let selected = $state<string[]>([]);
   let query = $state("");
   let searchInput = $state<HTMLInputElement | null>(null);
   let error = $state("");
@@ -26,6 +26,7 @@
   });
 
   onMount(async () => {
+    selected = [...(folder.highlight ?? [])];
     try { ruleSets = await invoke<HighlightRuleSetStatus[]>("highlight_list"); }
     catch (e) { error = String(e); }
     await tick();
@@ -52,7 +53,7 @@
 </script>
 
 <div class="backdrop">
-  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="folder-highlight-title" tabindex="-1" onkeydown={(event) => { if (event.key === "Escape") oncancel(); }}>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="folder-highlight-title" tabindex="-1" onkeydown={(event) => { if (event.key === "Escape") oncancel(); }}>
     <div class="head">
       <h2 id="folder-highlight-title">{t("folder.highlightTitle", { name: folder.name })}</h2>
       <button class="close" aria-label={t("workspace.close")} onclick={oncancel}>×</button>
@@ -76,7 +77,7 @@
       <button class="primary" disabled={saving} onclick={save}>{t("editor.save")}</button>
       <button class="ghost" onclick={oncancel}>{t("editor.cancel")}</button>
     </div>
-  </section>
+  </div>
 </div>
 
 <style>

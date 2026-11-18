@@ -222,6 +222,7 @@
       const jumpNames = c.jump?.length
         ? resolveJumpNames(c, await invoke<ConnectionSummary[]>("conn_list"))
         : [];
+      const highlightSets = await invoke<string[]>("highlight_resolve", { connectionId: c.id });
       // Open with the size of the last fitted terminal so ssh starts at about
       // the right dimensions; the pane only resizes if it really differs.
       const size = getLastPaneSize();
