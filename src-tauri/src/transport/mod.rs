@@ -114,7 +114,7 @@ pub struct SshConfig {
     pub password_auth: bool,
     /// Ordered ProxyJump chain, outermost hop first.
     pub jump_hosts: Vec<JumpHost>,
-    /// Local (-L) and remote (-R) TCP forwards tied to this SSH session.
+    /// Local (-L), remote (-R) and dynamic (-D) forwards for this SSH process.
     pub forwards: Vec<PortForward>,
 }
 

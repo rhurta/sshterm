@@ -7,6 +7,7 @@ mod paths;
 mod session;
 mod store;
 mod transport;
+mod tunnels;
 mod vault;
 
 use serde::{Deserialize, Serialize};
@@ -116,6 +117,7 @@ pub fn run() {
         })
         .manage(commands::VaultState::default())
         .manage(session::SessionState::default())
+        .manage(tunnels::TunnelState::default())
         .invoke_handler(tauri::generate_handler![
             app_info,
             highlight::highlight_list,
@@ -154,6 +156,10 @@ pub fn run() {
             session::session_close_all,
             session::session_log_append,
             session::session_log_close,
+            tunnels::tunnel_list,
+            tunnels::tunnel_start,
+            tunnels::tunnel_stop,
+            tunnels::tunnel_stop_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

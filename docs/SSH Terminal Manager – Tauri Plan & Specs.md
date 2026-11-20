@@ -185,15 +185,16 @@ The frontend calls the registered Tauri commands; it does not invoke Rust module
 | config | Non-secret language, theme, logging, terminal and command-console preferences | config_get_language, config_set_language, config_get_theme, config_set_theme, config_get_terminal_settings, config_set_terminal_settings, config_get_command_console_settings, config_set_command_console_settings | ✅ Implemented |
 | store | Connection CRUD, nested tree, search and imports | conn_list, conn_get, conn_upsert, conn_delete, tree_get, folder_upsert, folder_delete, move_node, search, import_preview, import_apply | ✅ Implemented |
 | transport | Transport trait and OpenSSH/ConPTY implementation | Internal | ✅ OpenSSH only |
-| askpass | Session-scoped named-pipe credential delivery | Internal | ✅ Implemented on Windows |
-| session | Start/write/resize/close sessions and log bridge | session_open, session_write, session_resize, session_close, session_close_all, session_log_append, session_log_close; events session:data, session:closed, session:error | ✅ Implemented |
+| askpass | Process-scoped named-pipe credential delivery | Internal | ✅ Implemented on Windows |
+| session | Start/write/resize/close interactive sessions and log bridge | session_open, session_write, session_resize, session_close, session_close_all, session_log_append, session_log_close; events session:data, session:closed, session:error | ✅ Implemented |
+| tunnels | Own non-interactive SSH processes independently of terminal tabs; publish lifecycle and per-forward diagnostics | tunnel_start, tunnel_stop, tunnel_stop_all, tunnel_list; event tunnel:status | ✅ Backend API implemented M7a/M7b |
 | logger | Per-session logs and diagnostic log output | Internal | ✅ Implemented |
 | broadcast | Resolve safe target sets in the frontend; dispatch through the existing session_write command | CommandConsole.svelte + broadcastTargets.ts; no separate backend command | ✅ Implemented M6 |
 | sftp | Remote file browser and transfer operations | — | 📋 Planned M8 |
 | highlight | Rule loading, validation and buffer decorations | — | 📋 Planned M6b |
 | hostkeys | Dedicated host-key confirmation UI / management | — | 📋 Not implemented; current TOFU is handled by OpenSSH |
 
-There is no standalone tunnel module or tunnel-start/stop command today. Local/reverse forwards are stored on a connection, validated by store, and passed to the OpenSSH process when an interactive session starts.
+The standalone `tunnels` module owns one non-interactive OpenSSH process per saved connection. It groups all enabled local, reverse and dynamic forwards for that connection, resolves the same saved authentication and ProxyJump chain as an interactive session, and keeps runtime status in memory only. Password-authenticated routes require their passwords to be saved in the vault because the tunnel process has no terminal for interactive prompts. The process uses `-N -T`, has no PTY, and is independent of terminal tab visibility or closure. Locking the vault requests tunnel shutdown; dropping the managed TunnelState on application exit also kills its child processes.
 
 ### Transport boundary
 
@@ -353,7 +354,7 @@ The separate logs/sshterm.log file records operational metadata such as session 
 - Different saved passwords per hop are supported through prompt-to-credential matching, subject to the distinct-identity and custom-key limitations in §6.
 - Tests cover nested/ordered route expansion, disabled hops, missing/duplicate/cyclic routes, IPv6 formatting, credential prompt matching, key-passphrase path matching and fail-closed generic prompts.
 
-### Local and reverse TCP forwarding (M7 — partial)
+### Local, reverse and dynamic TCP forwarding (M7 — partial; lifecycle API implemented)
 
 Implemented:
 
@@ -364,19 +365,20 @@ Implemented:
 - IPv6 literals must use brackets, for example [::1]:5432.
 - Enabled endpoints are normalized and validated for port range, malformed values and duplicate listeners of the same forwarding direction.
 - ExitOnForwardFailure=yes tells OpenSSH to exit when a requested listener cannot be created.
-- Forwards start with the interactive SSH session and stop when that session closes.
-- Recognized local/reverse forwarding and connection failures are surfaced in the workspace error banner while the original SSH output remains in the terminal.
-- Session tabs show the number of enabled forwards configured on that connection. This is a configuration indicator only; it does not claim that OpenSSH has accepted every listener or that the destination service is reachable.
-- Use OpenSSH's `ExitOnForwardFailure=yes` as the initial setup guarantee. Recognized forwarding errors and session failures are surfaced in terminal output and the workspace error banner.
-- A future dedicated tunnel-health feature would need per-forward lifecycle events and explicit state; it is not part of the current configured-count badge.
-- For a remote listener to accept connections from hosts other than the SSH server itself, the server-side sshd configuration may need to permit it with GatewayPorts.
+- Forwards configured on an interactive terminal connection start with that SSH session and stop when it closes.
+- The independent tunnel manager starts one `ssh -N -T` process per saved connection, grouped across all its enabled `-L`, `-R` and `-D` forwards. It can be started/stopped without creating an interactive terminal and is not coupled to tab visibility. Password-authenticated target and jump connections require saved vault passwords; there is no interactive prompt in tunnel-only mode.
+- The tunnel lifecycle API is `tunnel_start`, `tunnel_stop`, `tunnel_stop_all` and `tunnel_list`; `tunnel:status` events report Starting/Active/Stopping/Stopped/Failed and per-forward status/error.
+- Start is idempotent while a tunnel is Starting or Active. A restart is rejected while the previous child is still being reaped; retry after cleanup.
+- OpenSSH receives `ExitOnForwardFailure=yes` and verbose diagnostics are parsed for listener creation failures, authentication/jump failures and unexpected process exits. The child, askpass server and generated ProxyJump config are cleaned up together.
+- Locking the vault stops independent tunnel processes; TunnelState drop requests process termination on application shutdown.
+- **Active means SSH authenticated and the requested listener setup has succeeded (or OpenSSH remained alive with ExitOnForwardFailure after authentication).** It is not a probe of the remote destination application or end-to-end traffic.
+- Session tabs still show the configured number of enabled forwards only. That badge is not runtime health.
+- For a remote listener to accept connections from hosts other than the SSH server itself, server-side sshd configuration may need to permit it with GatewayPorts.
+- Dynamic SOCKS (-D) is supported, uses a local listener, and shares listener keys with -L.
 
-Not implemented:
+Not implemented in this milestone:
 
-- Standalone tunnel-only sessions.
-- Start/stop controls independent of opening a terminal.
-- A dedicated tunnel manager and structured active/failed/port-in-use state.
-- Dynamic SOCKS forwarding (-D). The Dynamic vault enum exists for forward compatibility, but enabling one is rejected as tunnel_dynamic_unsupported; the editor displays an unsupported notice for old entries.
+- Dedicated tunnel manager panel for searching and controlling tunnels across connections (M7c UI).
 
 ### Keepalive
 
@@ -548,12 +550,12 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M5 | Nested ProxyJump chains and per-hop passwords (within phase-1 limits) | ✅ Complete |
 | M6 | Tiling, command console and broadcast | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | ✅ Complete; user-validated on Linux and Ericsson MME |
-| M7 | Local/reverse forwarding (-L / -R) | 🟡 Partial; bound to interactive sessions |
+| M7 | Local/reverse/SOCKS forwards plus independent lifecycle/status API | 🟡 Partial; dedicated manager UI deferred |
 | M8 | Native SFTP | 📋 Planned |
 | M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
-The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete; M7 is partial; global themes are implemented while per-connection coloring remains planned. SFTP and dynamic-forward data fields do not imply that their corresponding features are complete. Broadcast uses the protected flag as documented above.
+The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete; M7 has independent tunnel lifecycle and status APIs but its dedicated manager UI remains planned; global themes are implemented while per-connection coloring remains planned. Broadcast uses the protected flag as documented above.
 
 ## 12. Decisions, operational workflow and CI
 

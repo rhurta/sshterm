@@ -44,6 +44,32 @@ export type Tunnel =
   | { kind: "remote"; bind: string; dest: string; enabled: boolean }
   | { kind: "dynamic"; bind: string; enabled: boolean };
 
+/** Runtime-only tunnel status returned by tunnel_list and tunnel:status. */
+export type TunnelLifecycle = "starting" | "active" | "stopping" | "stopped" | "failed";
+export type TunnelForwardLifecycle = "starting" | "active" | "stopped" | "failed";
+
+export interface TunnelForwardInfo {
+  index: number;
+  kind: "local" | "remote" | "dynamic";
+  bind: string;
+  destination: string | null;
+  status: TunnelForwardLifecycle;
+  error: string | null;
+}
+
+export interface TunnelInfo {
+  connection_id: string;
+  connection_name: string;
+  host: string;
+  port: number;
+  user: string;
+  jump_names: string[];
+  status: TunnelLifecycle;
+  forwards: TunnelForwardInfo[];
+  error: string | null;
+  started_at: number;
+}
+
 export interface Colors {
   fg: string;
   bg: string;

@@ -54,7 +54,7 @@ struct SessionErrorEvent {
 /// Returns a useful SSH diagnostic line for connection, jump-host, or
 /// forwarding setup failures. PTY output is still sent unchanged to xterm;
 /// this second channel makes early failures visible in the workspace as well.
-fn ssh_failure_message(line: &str) -> Option<String> {
+pub(crate) fn ssh_failure_message(line: &str) -> Option<String> {
     let lower = line.to_ascii_lowercase();
     let patterns = [
         "stdio forwarding failed",

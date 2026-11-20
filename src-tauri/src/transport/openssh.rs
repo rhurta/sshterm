@@ -157,10 +157,35 @@ fn build_command(
     askpass: Option<(&str, &str)>,
     config_file: Option<&Path>,
 ) -> CommandBuilder {
+    build_command_mode(cfg, askpass, config_file, true)
+}
+
+fn build_tunnel_command(
+    cfg: &SshConfig,
+    askpass: Option<(&str, &str)>,
+    config_file: Option<&Path>,
+) -> CommandBuilder {
+    build_command_mode(cfg, askpass, config_file, false)
+}
+
+fn build_command_mode(
+    cfg: &SshConfig,
+    askpass: Option<(&str, &str)>,
+    config_file: Option<&Path>,
+    interactive: bool,
+) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(&cfg.program);
-    // -tt forces an interactive remote terminal; without it ssh does not
-    // allocate a TTY when it detects its local input is not a real console.
-    cmd.arg("-tt");
+    if interactive {
+        // -tt forces an interactive remote terminal.
+        cmd.arg("-tt");
+    } else {
+        // Tunnel-only mode has no remote shell and must never allocate a PTY.
+        cmd.arg("-N");
+        cmd.arg("-T");
+        // Verbose diagnostics let the manager identify successful listeners
+        // and surface bind/authentication failures as structured status.
+        cmd.arg("-v");
+    }
     if let Some(path) = config_file {
         cmd.arg("-F");
         cmd.arg(path.display().to_string());
@@ -241,6 +266,57 @@ fn build_command(
         cmd.env(TOKEN_ENV, token);
     }
     cmd
+}
+
+/// Starts a non-interactive OpenSSH process for independent tunnels.
+/// The caller owns the returned child and must retain the askpass server for
+/// the process lifetime. A generated jump config is returned for cleanup.
+pub(crate) fn spawn_tunnel_process(
+    cfg: &SshConfig,
+    askpass: Option<&AskpassServer>,
+) -> Result<(std::process::Child, Option<PathBuf>), TransportError> {
+    let config_file = if cfg.jump_hosts.is_empty() {
+        None
+    } else {
+        Some(write_jump_config(cfg).map_err(|e| TransportError::new("jump_config", e.to_string()))?)
+    };
+    let askpass_env = askpass.map(|server| (server.pipe_name(), server.token()));
+    let builder = build_tunnel_command(cfg, askpass_env, config_file.as_deref());
+    let argv = builder.get_argv();
+
+    let mut command = std::process::Command::new(&cfg.program);
+    command
+        .args(argv.iter().skip(1))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // A tunnel has no console UI. Avoid flashing a console window when
+        // started from the portable GUI application.
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+
+    if let Some((pipe, token)) = askpass_env {
+        let helper = format!("\"{}\"", cfg.askpass_program.display());
+        command
+            .env("SSH_ASKPASS", helper)
+            .env("SSH_ASKPASS_REQUIRE", "force")
+            .env("DISPLAY", "sshterm")
+            .env(PIPE_ENV, pipe)
+            .env(TOKEN_ENV, token);
+    }
+
+    match command.spawn() {
+        Ok(child) => Ok((child, config_file)),
+        Err(error) => {
+            if let Some(path) = config_file {
+                let _ = std::fs::remove_file(path);
+            }
+            Err(TransportError::new("ssh_spawn", error.to_string()))
+        }
+    }
 }
 
 #[async_trait]
@@ -427,6 +503,45 @@ mod tests {
             .iter()
             .map(|s| s.to_string_lossy().into_owned())
             .collect()
+    }
+
+    #[test]
+    fn tunnel_command_has_no_remote_shell_or_pty() {
+        let args = argv(&build_tunnel_command(&cfg(), None, None));
+        assert!(args.contains(&"-N".to_string()));
+        assert!(args.contains(&"-T".to_string()));
+        assert!(args.contains(&"-v".to_string()));
+        assert!(!args.contains(&"-tt".to_string()));
+        assert_eq!(args.last().map(String::as_str), Some("admin@10.0.0.5"));
+    }
+
+    #[test]
+    fn tunnel_command_keeps_dynamic_forward_and_exit_on_failure() {
+        let mut config = cfg();
+        config.forwards = vec![super::super::PortForward::Dynamic { bind: "127.0.0.1:1080".into() }];
+        let args = argv(&build_tunnel_command(&config, None, None));
+        assert!(args.contains(&"ExitOnForwardFailure=yes".to_string()));
+        assert!(args.windows(2).any(|w| w[0] == "-D" && w[1] == "127.0.0.1:1080"));
+    }
+
+    #[test]
+    fn tunnel_command_passes_local_and_remote_forwards_without_a_pty() {
+        let mut config = cfg();
+        config.forwards = vec![
+            super::super::PortForward::Local {
+                bind: "127.0.0.1:15432".into(),
+                destination: "db.internal:5432".into(),
+            },
+            super::super::PortForward::Remote {
+                bind: "127.0.0.1:18080".into(),
+                destination: "127.0.0.1:8080".into(),
+            },
+        ];
+        let args = argv(&build_tunnel_command(&config, None, None));
+        assert!(args.windows(2).any(|w| w[0] == "-L" && w[1] == "127.0.0.1:15432:db.internal:5432"));
+        assert!(args.windows(2).any(|w| w[0] == "-R" && w[1] == "127.0.0.1:18080:127.0.0.1:8080"));
+        assert!(args.contains(&"-N".to_string()) && args.contains(&"-T".to_string()));
+        assert!(!args.contains(&"-tt".to_string()));
     }
 
     #[test]

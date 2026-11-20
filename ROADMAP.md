@@ -308,24 +308,26 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 **Acceptance:** User validation is complete with Linux shell profiles and Ericsson MME terminal output. Windows CI also passes the frontend, Rust and portable executable checks. Additional fixtures and automated integration coverage for xterm decorations remain future hardening; a command-line `--check-highlight` mode is optional and is not implemented.
 ---
 
-## 🟡 M7 — Tunnels (partial)
+## 🟡 M7 — Tunnels (lifecycle and status API implemented; manager UI deferred)
 
-### Implemented in phase 1
+### Implemented
 
-- Local (`-L`) and reverse (`-R`) TCP forwards are saved in the existing per-connection `tunnels` vault field; no vault migration is required.
-- The connection editor can add/remove forwards, select local or reverse direction, and enable/disable each saved forward independently.
-- Existing vault tunnel entries deserialize as enabled by default; no vault version bump or migration is needed.
-- Listen endpoints accept `[address:]port`; destinations require `host:port`. IPv6 literals use brackets, e.g. `[::1]:5432`.
-- The backend validates port ranges, malformed endpoints, and duplicate listeners before saving; session startup validates older vault entries again.
-- Forwards are passed as separate OpenSSH arguments. `ExitOnForwardFailure=yes` ensures SSH exits when a listener cannot be created.
-- Forwards run for the lifetime of the interactive SSH session and stop when that session closes. Tabs show the enabled forward count.
-- Recognized SSH diagnostics for unreachable jump hosts and failed local/reverse listeners are also emitted as workspace errors while terminal output is preserved.
-- Dynamic SOCKS forwarding (`-D`) is supported: the editor offers a third forward type with only a listen endpoint (default `127.0.0.1:1080`), it is passed as `-D <bind>` with the same `ExitOnForwardFailure=yes` protection, and it shares listener keys with `-L` (same local address and port is rejected as a duplicate; a reverse forward on the same port is fine because it listens on the server).
+- Local (`-L`), reverse (`-R`) and dynamic SOCKS (`-D`) forwards are saved in the existing per-connection `tunnels` vault field; no vault migration is required.
+- The connection editor can add/remove forwards, select the forwarding kind, and enable/disable each saved forward independently. Existing entries without an enabled field remain enabled.
+- Listen endpoints accept `[address:]port`; destinations require `host:port`. IPv6 literals use brackets, e.g. `[::1]:5432`. Backend validation rejects invalid ports, malformed endpoints and duplicate listeners.
+- Interactive terminal sessions continue to start their configured forwards with the SSH session and stop them when that session closes.
+- A separate tunnel lifecycle starts one non-interactive OpenSSH process per saved connection, groups all enabled forwards for that connection, and works without opening a terminal tab. It reuses the connection's saved authentication and ProxyJump route.
+- Password-authenticated connections and password-authenticated jump hosts must have their passwords saved in the vault; a tunnel-only process has no interactive terminal in which to ask for an unsaved password.
+- Tauri commands: `tunnel_start`, `tunnel_stop`, `tunnel_stop_all`, and `tunnel_list`. The `tunnel:status` event publishes runtime state; statuses are in memory only and are not written to the vault.
+- Lifecycle values are Starting, Active, Stopping, Stopped and Failed. Each configured listener also carries its own status and any identifiable setup error. Repeated start while Starting/Active is idempotent; stop is safe to repeat.
+- `ExitOnForwardFailure=yes` makes OpenSSH fail when a requested listener cannot be created. Verbose SSH diagnostics identify listener setup, authentication, jump-host and unexpected process failures where possible.
+- Locking the vault and application shutdown request termination of independent tunnel processes. Tunnel processes have no PTY and do not appear as terminal sessions.
+- **Active is a listener-setup state only.** It does not test whether the remote destination service is reachable or healthy. For reverse listeners, remote sshd policy such as GatewayPorts still applies.
+- Session tabs retain their compact configured-forward count; it is not a live-health indicator.
 
-### Deferred
+### Deferred (M7c)
 
-- Standalone tunnel-only sessions and on-demand start/stop without opening an interactive terminal.
-- Structured active / failed / port-in-use status and a dedicated tunnel manager panel. At present, listener failures are reported by OpenSSH in the terminal output and by the session ending.
+- Dedicated Tunnels manager UI for browsing, searching, starting/stopping and editing tunnels across saved connections. The lifecycle/status API is available for that UI.
 
 ---
 
@@ -379,7 +381,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 | M5 | Jump hosts | `main` | ✅ |
 | M6 | Tiling + command console + broadcast | `e6fa4bc` | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | `main` | ✅ Complete; user-validated on Linux and Ericsson MME |
-| M7 | Local / reverse forwards (`-L` / `-R`) | `main` | 🟡 Partial |
+| M7 | Independent tunnels, SOCKS and runtime status API | `feature/m7-tunnels` | 🟡 Partial; manager UI deferred |
 | M8 | Native SFTP | — | 📋 |
 | M9 | Polish | `main` | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine | — | 📋 |
