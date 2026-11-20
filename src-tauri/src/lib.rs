@@ -1,6 +1,7 @@
 mod askpass;
 mod commands;
 mod config;
+mod crash;
 mod logger;
 mod highlight;
 mod paths;
@@ -100,6 +101,10 @@ pub fn maybe_run_askpass() -> Option<i32> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // First thing: leave evidence in logs/crash.log if any thread panics
+    // (release builds abort silently: panic = "abort", no console).
+    crash::install();
+
     // WebView2 cache is stored next to the exe (portable application).
     let data = paths::webview_data_dir();
     let _ = std::fs::create_dir_all(&data);
