@@ -194,7 +194,7 @@ The frontend calls the registered Tauri commands; it does not invoke Rust module
 | highlight | Rule loading, validation and buffer decorations | — | 📋 Planned M6b |
 | hostkeys | Dedicated host-key confirmation UI / management | — | 📋 Not implemented; current TOFU is handled by OpenSSH |
 
-The standalone `tunnels` module owns one non-interactive OpenSSH process per saved connection. It groups all enabled local, reverse and dynamic forwards for that connection, resolves the same saved authentication and ProxyJump chain as an interactive session, and keeps runtime status in memory only. Password-authenticated routes require their passwords to be saved in the vault because the tunnel process has no terminal for interactive prompts. The process uses `-N -T`, has no PTY, and is independent of terminal tab visibility or closure. Locking the vault requests tunnel shutdown; dropping the managed TunnelState on application exit also kills its child processes.
+The standalone `tunnels` module owns one non-interactive OpenSSH process per saved connection. It groups all enabled local, reverse and dynamic forwards for that connection, resolves the saved authentication and ProxyJump route, and keeps runtime status in memory only. Password-authenticated routes require saved vault passwords because this process has no terminal for interactive prompts. The process uses `-N -T`, allocates no PTY, and is independent of terminal tabs. Vault locking stops tunnel processes by default; the non-secret `app_behavior.stop_tunnels_on_lock` preference can keep them alive while locked (their SSH and askpass processes and in-memory credentials remain active). Explicit app exit always stops all tunnel process trees.
 
 ### Transport boundary
 
@@ -354,35 +354,20 @@ The separate logs/sshterm.log file records operational metadata such as session 
 - Different saved passwords per hop are supported through prompt-to-credential matching, subject to the distinct-identity and custom-key limitations in §6.
 - Tests cover nested/ordered route expansion, disabled hops, missing/duplicate/cyclic routes, IPv6 formatting, credential prompt matching, key-passphrase path matching and fail-closed generic prompts.
 
-### Local, reverse and dynamic TCP forwarding (M7 — partial; lifecycle API implemented)
+### Local, reverse and dynamic TCP forwarding (M7 — implemented)
 
-Implemented:
-
-- Local (-L) and remote/reverse (-R) forwards are stored per connection.
-- Each saved forward can be enabled or disabled independently. Existing entries without enabled default to enabled.
-- Disabled forwards remain saved but are omitted from the SSH command line.
-- Listen endpoints accept [address:]port; a bare port uses OpenSSH's loopback default. Destinations require host:port.
-- IPv6 literals must use brackets, for example [::1]:5432.
-- Enabled endpoints are normalized and validated for port range, malformed values and duplicate listeners of the same forwarding direction.
-- ExitOnForwardFailure=yes tells OpenSSH to exit when a requested listener cannot be created.
-- Forwards configured on an interactive terminal connection start with that SSH session and stop when it closes.
-- The independent tunnel manager starts one `ssh -N -T` process per saved connection, grouped across all its enabled `-L`, `-R` and `-D` forwards. It can be started/stopped without creating an interactive terminal and is not coupled to tab visibility. Password-authenticated target and jump connections require saved vault passwords; there is no interactive prompt in tunnel-only mode.
-- The tunnel lifecycle API is `tunnel_start`, `tunnel_stop`, `tunnel_stop_all` and `tunnel_list`; `tunnel:status` events report Starting/Active/Stopping/Stopped/Failed and per-forward status/error.
-- Start is idempotent while a tunnel is Starting or Active. A restart is rejected while the previous child is still being reaped; retry after cleanup.
-- OpenSSH receives `ExitOnForwardFailure=yes` and verbose diagnostics are parsed for listener creation failures, authentication/jump failures and unexpected process exits. The child, askpass server and generated ProxyJump config are cleaned up together.
-- Locking the vault requests independent tunnel process-tree termination before clearing the vault. A Tauri `RunEvent::Exit` handler explicitly stops all tunnel trees before application shutdown.
-- On Windows, tunnel termination uses `taskkill.exe /PID <pid> /T /F` to include nested OpenSSH ProxyJump processes, then calls `Child::kill` as a fallback and `Child::wait` to reap the owned process. Repeated stop requests are idempotent.
-- The same process-tree cleanup is used by normal stop, vault lock, app exit and tunnel monitor failure paths. A Rust regression test verifies the owned child is terminated and reaped.
-- **Active means SSH authenticated and the requested listener setup has succeeded (or OpenSSH remained alive with ExitOnForwardFailure after authentication).** It is not a probe of the remote destination application or end-to-end traffic.
-- Session tabs still show the configured number of enabled forwards only. That badge is not runtime health.
-- For a remote listener to accept connections from hosts other than the SSH server itself, server-side sshd configuration may need to permit it with GatewayPorts.
-- Dynamic SOCKS (-D) is supported, uses a local listener, and shares listener keys with -L.
-- The Tunnel Manager is opened from the connections sidebar and works even when no terminal tab is open. Its search input receives focus automatically and filters by connection name, host or user.
-- Each configured connection shows its saved jump route, listener endpoints, per-forward state and diagnostics. Users can start/stop one connection's tunnel, start all configured tunnels, stop all running tunnels, or open the existing connection editor.
-- Stop All retains terminal-independent runtime records in Stopped state so the result stays visible and the tunnel can be started again after the previous child is reaped.
-- A refused connection to a forwarded destination after listener setup does not mark the SSH tunnel/listener as failed. Active continues to mean listener setup only, not destination service health.
-
-M7d hardening adds explicit application-exit cleanup, Windows process-tree termination for ProxyJump descendants, owned-child reaping and idempotent stop handling. Remaining M7 acceptance work is manual Windows testing of local/reverse/SOCKS forwarding, key/password/ProxyJump authentication, listener conflicts, Start All/Stop All, vault locking and application shutdown.
+- Local (`-L`), reverse (`-R`) and dynamic SOCKS (`-D`) forwards are stored per connection. Each saved forward can be enabled/disabled independently; old entries without an explicit enabled field remain enabled.
+- Listen endpoints accept `[address:]port`; destinations require `host:port`. IPv6 literals are bracketed. The backend normalizes and rejects malformed endpoints, invalid ports and duplicate listeners.
+- Interactive terminal sessions launch their configured forwards with the session and close them when it ends.
+- The independent tunnel lifecycle owns one non-interactive OpenSSH `ssh -N -T` process per saved connection, grouping all enabled forwards. It works without a terminal tab, reuses the saved authentication and ProxyJump route, and requires stored vault passwords for password-authenticated tunnel-only routes.
+- Tauri commands: `tunnel_start`, `tunnel_stop`, `tunnel_stop_all`, `tunnel_list`; `tunnel:status` publishes runtime updates. Lifecycle states are Starting, Active, Stopping, Stopped and Failed. Statuses are in memory only.
+- The Tunnel Manager supports search, per-connection Start/Stop, Start All/Stop All, route and per-forward diagnostics, and editing the saved connection. The search input receives focus when opened.
+- The title bar displays a live green-dot/count indicator when at least one independent tunnel is Starting, Active or Stopping. It opens the Tunnel Manager while the vault is unlocked and remains visible while locked if tunnels were configured to stay alive.
+- Application behavior is saved outside the vault in `config.toml`: `stop_tunnels_on_lock` defaults to true; when false, tunnel SSH/askpass processes and their in-memory credentials remain active while locked. `close_to_tray` defaults to false; when true, closing the window hides it to the system tray. The tray menu restores the window or exits; explicit exit always stops tunnel process trees.
+- On Windows, stop uses `taskkill.exe /PID <pid> /T /F` to terminate ProxyJump descendants, then reaps the owned child. Start/stop/stop-all and vault-lock work are delegated to `spawn_blocking`; the WebView UI thread does not wait for process termination. Monitor cleanup does not wait indefinitely for inherited stderr pipes.
+- Repeated stops are idempotent; restart is rejected until the prior process has been reaped. Listener state cannot be changed back to Active by a later diagnostic after a forward has failed.
+- `ExitOnForwardFailure=yes` and SSH verbose diagnostics identify listener/authentication failures. **Active means listener setup succeeded, not that the destination application is reachable or healthy.** A later connection refusal at the forwarded destination does not mark the listener as failed. Reverse forwarding may require server-side `GatewayPorts`.
+- Windows workflow [#448012](https://github.com/rhurta/sshterm/actions/runs/44801295593) passed frontend checks/build, Rust format/tests and the portable Windows executable. The user confirmed the post-hardening app works as expected; the tray preferences and live title-bar indicator are included in that passing build and should receive a final UI smoke test.
 
 ### Keepalive
 
@@ -554,12 +539,12 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M5 | Nested ProxyJump chains and per-hop passwords (within phase-1 limits) | ✅ Complete |
 | M6 | Tiling, command console and broadcast | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | ✅ Complete; user-validated on Linux and Ericsson MME |
-| M7 | Local/reverse/SOCKS forwards, independent lifecycle/status, manager UI and process-tree hardening | 🟡 Implemented; manual acceptance pending |
+| M7 | Local/reverse/SOCKS forwards, independent lifecycle/status, manager UI, tray preferences and live indicator | ✅ Implemented; Windows CI passed |
 | M8 | Native SFTP | 📋 Planned |
 | M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
-The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete; M7 implementation includes independent tunnel lifecycle, runtime diagnostics, the dedicated manager UI and Windows process-tree cleanup, with manual acceptance pending. Global themes are implemented while per-connection coloring remains planned. Broadcast uses the protected flag as documented above.
+The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete. M7 implementation includes independent tunnel lifecycle, runtime diagnostics, the dedicated manager UI, Windows process-tree cleanup, configurable vault-lock behavior, system-tray hiding and a live title-bar indicator. Windows CI passed on the final M7 code commit; the new tray/indicator controls remain on the post-merge smoke-test checklist. Global themes are implemented while per-connection coloring remains planned. Broadcast uses the protected flag as documented above.
 
 ## 12. Decisions, operational workflow and CI
 

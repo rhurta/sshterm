@@ -21,8 +21,8 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
 | M6 | Tiling, command console and broadcast | ✅ Feature complete; UI-test follow-up remains |
-| M7 | Local, reverse and dynamic SOCKS forwarding (`-L` / `-R` / `-D`) | 🟡 Partial |
-| M8 | Native SFTP (`russh-sftp`) | 📋 Planned |
+| M7 | Local, reverse and dynamic SOCKS forwarding, independent lifecycle and manager UI | ✅ Implemented; Windows CI passed |
+| M8 | Native SFTP (`russh` + `russh-sftp`) | 📋 Planned; implementation plan in progress |
 | M9 | Polish (per-connection colors, host-key UI, auto-reconnect) | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine replaces phase 1 | 📋 Planned |
 
@@ -41,7 +41,7 @@ M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.
 ```
 sshterm.exe
 sshterm.vault      encrypted: connections, passwords, tunnels, colors
-config.toml        plain: language, theme, logging, terminal preferences, command-console visibility/height
+config.toml        plain: language, theme, logging, terminal and application-behavior preferences, console layout
 known_hosts        SSH host-key fingerprints (used by ssh.exe in phase 1)
 highlight/         *.toml syntax-highlighting rule files
 logs/              <connection>_<YYYYMMDD-HHMMSS>.log  per-session logs
@@ -237,13 +237,24 @@ Each tab owns an independent session. Opening a session or switching tabs focuse
 
 Scrollbars are styled thin (6px) and matched to the dark theme across all scrollable areas (sidebar, dialogs, terminal viewport). The connection picker opened from the `+` tab button can be dismissed with Escape, the × button, or click-outside.
 
-### Local and reverse SSH tunnels (M7, partial)
+### SSH tunnels (M7 — implemented)
 
-The connection editor can store local (`-L`) and reverse (`-R`) TCP forwards. Each forward has a listen endpoint and a destination endpoint and its own enable/disable switch. Disabled forwards remain saved but are omitted from the SSH command line. Both accept `host:port`; a listen endpoint may also be a bare port (OpenSSH's loopback default). IPv6 addresses must be bracketed, for example `[::1]:5432`.
+The connection editor stores local (`-L`), reverse (`-R`) and dynamic SOCKS (`-D`) forwards per connection. Each forward can be enabled independently. Listen endpoints accept `[address:]port`; destinations require `host:port`. IPv6 literals use brackets, for example `[::1]:5432`.
 
-Local forwarding listens on the client machine and connects to the destination from the SSH server. Reverse forwarding listens on the SSH server and connects to the destination from the client machine. Forwards are attached to the connection's interactive SSH process: they start with the terminal session and close when that session closes. Multiple forwards are passed as separate `-L` and `-R` arguments. `ExitOnForwardFailure=yes` makes OpenSSH terminate the connection if it cannot establish a requested listener (for example, a port is already in use). For a reverse listener to accept connections from machines other than the SSH server itself, the server's `sshd` configuration must permit it with `GatewayPorts`.
+Interactive terminal sessions start their configured forwards with the SSH session. The independent Tunnel Manager instead runs one non-interactive OpenSSH `ssh -N -T` process per saved connection, grouping all enabled forwards and reusing its saved authentication and ProxyJump route. It does not require a terminal tab. Password-authenticated target and jump connections need their passwords saved in the encrypted vault.
 
-The session tab shows the number of enabled forwards. This is a configuration indicator, not a live health check. SSH diagnostics for forwarding and connection failures are also surfaced in the workspace error banner while the original output remains visible in the terminal. Standalone tunnel-only sessions, start/stop controls independent of the terminal, structured active/failed status, and dynamic SOCKS forwarding (`-D`) remain future work.
+The Tunnel Manager is available from the connection sidebar. It lists the saved route, listener endpoints and per-forward status/errors, and offers Start/Stop for one connection plus Start All and Stop All. Its search field receives focus automatically. The title bar shows a live green-dot/count indicator for tunnels that are starting, active or stopping; selecting it opens the manager while the vault is unlocked.
+
+**Active confirms listener setup only.** It does not probe the remote destination service or prove end-to-end traffic. A failed connection to the forwarded destination does not, by itself, mean the listener has failed. Reverse listeners may require server-side `GatewayPorts` configuration.
+
+Application behavior preferences are stored outside the encrypted vault in `config.toml`:
+
+- `stop_tunnels_on_lock` defaults to true. When disabled, independent tunnel processes and their authentication helper remain active in memory while the vault is locked.
+- `close_to_tray` defaults to false. When enabled, closing the window hides it to the Windows system tray; the tray menu or a double-click restores the window. Choosing Exit still shuts down all tunnel process trees.
+
+Windows lifecycle hardening keeps process termination off the WebView UI thread, terminates ProxyJump descendants with `taskkill /T /F`, reaps the owned child, and bounds monitor cleanup so inherited stderr pipes cannot stall tunnel shutdown.
+
+**Verification:** Windows workflow [#448012](https://github.com/rhurta/sshterm/actions/runs/44801295593) passed frontend/Svelte checks, Rust formatting and tests, and the portable Windows executable build. The user confirmed the post-hardening application works as expected; a final UI smoke test of the newer tray preferences and title-bar indicator remains recommended.
 
 ### Jump hosts (M5)
 
@@ -261,13 +272,17 @@ Current phase-1 limitations: a jump host that uses a saved custom private-key pa
 language   = "en"       # "en" | "es"
 log_output = true
 log_mode   = "screen"   # "screen" | "raw"
+
+[app_behavior]
+stop_tunnels_on_lock = true
+close_to_tray = false
 ```
 
 ## Security notes
 
 - No secrets in logs, `config.toml`, or crash output.
 - The named askpass pipe is restricted to the current user; a session-scoped token authorizes requests, and each matched hop credential is returned at most once.
-- `ssh.exe` child processes are killed when the app exits or the vault locks.
+- Interactive SSH sessions are closed on vault lock. Independent tunnel processes stop on vault lock by default; the non-secret application preference can keep them running while locked. All SSH process trees are stopped on explicit application exit.
 - Private key files are stored by path only (the vault keeps the path, not the key content).
 - Host keys: trust-on-first-use; a changed key triggers a hard warning. The custom `UserKnownHostsFile` value is quoted so install paths containing spaces are interpreted as a single file path.
 - Clipboard cleared shortly after copying a password.

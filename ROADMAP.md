@@ -308,7 +308,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 **Acceptance:** User validation is complete with Linux shell profiles and Ericsson MME terminal output. Windows CI also passes the frontend, Rust and portable executable checks. Additional fixtures and automated integration coverage for xterm decorations remain future hardening; a command-line `--check-highlight` mode is optional and is not implemented.
 ---
 
-## 🟡 M7 — Tunnels (implementation complete; manual acceptance pending)
+## ✅ M7 — Tunnels (implementation complete; Windows CI passed)
 
 ### Implemented
 
@@ -342,9 +342,15 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Stop releases the child mutex before process-tree termination; monitor cleanup does not wait indefinitely for inherited stderr pipes.
 - Listener readiness updates cannot overwrite a previously reported forward failure.
 
-### Remaining M7 acceptance
+### Post-merge Windows smoke-test checklist
 
-- Manual Windows acceptance of independent local, reverse and SOCKS tunnels, authentication/ProxyJump, port conflicts, Stop All, vault locking and application shutdown.
+- Exercise local, reverse and SOCKS forwards, password/key/agent authentication and a multi-hop ProxyJump route.
+- Check port conflicts, Start All/Stop All and immediate stop/restart.
+- Toggle Stop tunnels on vault lock and verify the selected behavior.
+- Toggle Hide to system tray, restore from the tray, and choose Exit with tunnels running.
+- Confirm the title-bar indicator updates on start/stop and remains visible while the vault is locked when tunnels are kept alive.
+
+**Verification:** [Windows workflow #448012](https://github.com/rhurta/sshterm/actions/runs/44801295593) passed frontend checks/build, Rust formatting/tests and the portable Windows x64 build. The user confirmed the post-hardening application runs as expected; the new tray/indicator settings are included in that passing build and should receive a final UI smoke test.
 
 ---
 
@@ -398,8 +404,8 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 | M5 | Jump hosts | `main` | ✅ |
 | M6 | Tiling + command console + broadcast | `e6fa4bc` | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | `main` | ✅ Complete; user-validated on Linux and Ericsson MME |
-| M7 | Independent tunnels, SOCKS, runtime status and manager UI | `feature/m7-tunnels` | 🟡 Implemented; manual acceptance pending |
-| M8 | Native SFTP | — | 📋 |
+| M7 | Independent tunnels, SOCKS, runtime status, manager, tray behavior and live indicator | `64f640a` | ✅ Implemented; Windows CI passed |
+| M8 | Native SFTP | — | 📋 Plan: `docs/M8-implementation-plan.md` |
 | M9 | Polish | `main` | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine | — | 📋 |
 
