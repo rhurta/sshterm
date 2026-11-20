@@ -100,25 +100,40 @@
     return connections.find((candidate) => candidate.id === id)?.name ?? id;
   }
 
-  let newTunnelKind = $state<"local" | "remote">("local");
+  let newTunnelKind = $state<"local" | "remote" | "dynamic">("local");
   let tunnelBind = $state("127.0.0.1:15432");
   let tunnelDestination = $state("127.0.0.1:5432");
 
+  /** Suggested listen/destination endpoints for each forward type. */
+  function tunnelDefaults(kind: "local" | "remote" | "dynamic") {
+    if (kind === "dynamic") return { bind: "127.0.0.1:1080", dest: "" };
+    if (kind === "remote") return { bind: "127.0.0.1:18080", dest: "127.0.0.1:8080" };
+    return { bind: "127.0.0.1:15432", dest: "127.0.0.1:5432" };
+  }
+
+  function resetTunnelDefaults() {
+    const defaults = tunnelDefaults(newTunnelKind);
+    tunnelBind = defaults.bind;
+    tunnelDestination = defaults.dest;
+  }
+
   function addTunnel() {
-    if (!tunnelBind.trim() || !tunnelDestination.trim()) {
-      validation = t("editor.tunnelRequired");
+    const dynamic = newTunnelKind === "dynamic";
+    if (!tunnelBind.trim() || (!dynamic && !tunnelDestination.trim())) {
+      validation = dynamic ? t("editor.tunnelRequiredDynamic") : t("editor.tunnelRequired");
       return;
     }
-    const tunnel: Tunnel = {
-      kind: newTunnelKind,
-      bind: tunnelBind.trim(),
-      dest: tunnelDestination.trim(),
-      enabled: true,
-    };
+    const tunnel: Tunnel = dynamic
+      ? { kind: "dynamic", bind: tunnelBind.trim(), enabled: true }
+      : { kind: newTunnelKind as "local" | "remote", bind: tunnelBind.trim(), dest: tunnelDestination.trim(), enabled: true };
     form.tunnels = [...form.tunnels, tunnel];
-    tunnelBind = newTunnelKind === "local" ? "127.0.0.1:15432" : "127.0.0.1:18080";
-    tunnelDestination = newTunnelKind === "local" ? "127.0.0.1:5432" : "127.0.0.1:8080";
+    resetTunnelDefaults();
     validation = "";
+  }
+
+  function tunnelHint(kind: "local" | "remote" | "dynamic"): string {
+    if (kind === "dynamic") return t("editor.tunnel.dynamicHint");
+    return kind === "local" ? t("editor.tunnel.localHint") : t("editor.tunnel.remoteHint");
   }
 
   function removeTunnel(index: number) {
@@ -382,7 +397,7 @@
                   <span class="state-disabled">{t("editor.disabled")}</span>
                 {/if}
                 {#if tunnel.kind === "dynamic"}
-                  <span class="hint">{t("editor.tunnel.dynamicUnsupported")}: {tunnel.bind}</span>
+                  <span class="hint">{t("editor.tunnel.bind")}: {tunnel.bind}</span>
                 {:else}
                   <span class="hint">{t("editor.tunnel.bind")}: {tunnel.bind}</span>
                   <span class="hint">{t("editor.tunnel.destination")}: {tunnel.dest}</span>
@@ -406,20 +421,23 @@
       <h3 class="jump-heading">{t("editor.tunnelAdd")}</h3>
       <label>
         {t("editor.tunnel.type")}
-        <select bind:value={newTunnelKind}>
+        <select bind:value={newTunnelKind} onchange={resetTunnelDefaults}>
           <option value="local">{t("editor.tunnel.local")} (-L)</option>
           <option value="remote">{t("editor.tunnel.remote")} (-R)</option>
+          <option value="dynamic">{t("editor.tunnel.dynamic")} (-D)</option>
         </select>
       </label>
       <label>
         {t("editor.tunnel.bind")}
         <input bind:value={tunnelBind} placeholder="127.0.0.1:15432" autocomplete="off" spellcheck="false" />
       </label>
-      <label>
-        {t("editor.tunnel.destination")}
-        <input bind:value={tunnelDestination} placeholder="127.0.0.1:5432" autocomplete="off" spellcheck="false" />
-      </label>
-      <p class="hint">{newTunnelKind === "local" ? t("editor.tunnel.localHint") : t("editor.tunnel.remoteHint")}</p>
+      {#if newTunnelKind !== "dynamic"}
+        <label>
+          {t("editor.tunnel.destination")}
+          <input bind:value={tunnelDestination} placeholder="127.0.0.1:5432" autocomplete="off" spellcheck="false" />
+        </label>
+      {/if}
+      <p class="hint">{tunnelHint(newTunnelKind)}</p>
       <button type="button" class="add-tunnel" onclick={addTunnel}>{t("editor.tunnel.add")}</button>
     {/if}
 

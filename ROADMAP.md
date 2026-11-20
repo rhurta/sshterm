@@ -320,14 +320,12 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Forwards are passed as separate OpenSSH arguments. `ExitOnForwardFailure=yes` ensures SSH exits when a listener cannot be created.
 - Forwards run for the lifetime of the interactive SSH session and stop when that session closes. Tabs show the enabled forward count.
 - Recognized SSH diagnostics for unreachable jump hosts and failed local/reverse listeners are also emitted as workspace errors while terminal output is preserved.
+- Dynamic SOCKS forwarding (`-D`) is supported: the editor offers a third forward type with only a listen endpoint (default `127.0.0.1:1080`), it is passed as `-D <bind>` with the same `ExitOnForwardFailure=yes` protection, and it shares listener keys with `-L` (same local address and port is rejected as a duplicate; a reverse forward on the same port is fine because it listens on the server).
 
 ### Deferred
 
 - Standalone tunnel-only sessions and on-demand start/stop without opening an interactive terminal.
 - Structured active / failed / port-in-use status and a dedicated tunnel manager panel. At present, listener failures are reported by OpenSSH in the terminal output and by the session ending.
-- Dynamic SOCKS forwarding (`-D`).
-
-The vault model already contains a `Dynamic` variant for forward compatibility, but it is not enabled in the UI or phase-1 transport.
 
 ---
 

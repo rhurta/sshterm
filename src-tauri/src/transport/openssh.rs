@@ -609,6 +609,15 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_forward_is_passed_as_dash_d() {
+        let mut config = cfg();
+        config.forwards = vec![super::super::PortForward::Dynamic { bind: "127.0.0.1:1080".into() }];
+        let args = argv(&build_command(&config, None, None));
+        assert!(args.contains(&"ExitOnForwardFailure=yes".to_string()));
+        assert!(args.windows(2).any(|w| w[0] == "-D" && w[1] == "127.0.0.1:1080"));
+    }
+
+    #[test]
     fn proxyjump_brackets_ipv6_hosts() {
         let hop = super::super::JumpHost {
             user: "admin".into(),

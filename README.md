@@ -21,7 +21,7 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
 | M6 | Tiling, command console and broadcast | ✅ Feature complete; UI-test follow-up remains |
-| M7 | Local and reverse TCP forwarding (`-L` / `-R`) | 🟡 Partial |
+| M7 | Local, reverse and dynamic SOCKS forwarding (`-L` / `-R` / `-D`) | 🟡 Partial |
 | M8 | Native SFTP (`russh-sftp`) | 📋 Planned |
 | M9 | Polish (per-connection colors, host-key UI, auto-reconnect) | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine replaces phase 1 | 📋 Planned |

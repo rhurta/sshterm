@@ -73,6 +73,8 @@ impl JumpHost {
 pub enum PortForward {
     Local { bind: String, destination: String },
     Remote { bind: String, destination: String },
+    /// Dynamic SOCKS proxy (`-D`): listens locally, no fixed destination.
+    Dynamic { bind: String },
 }
 
 impl PortForward {
@@ -80,6 +82,7 @@ impl PortForward {
         match self {
             Self::Local { .. } => "-L",
             Self::Remote { .. } => "-R",
+            Self::Dynamic { .. } => "-D",
         }
     }
 
@@ -88,6 +91,7 @@ impl PortForward {
             Self::Local { bind, destination } | Self::Remote { bind, destination } => {
                 format!("{bind}:{destination}")
             }
+            Self::Dynamic { bind } => bind.clone(),
         }
     }
 }

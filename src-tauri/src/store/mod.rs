@@ -230,7 +230,7 @@ fn normalize_endpoint(value: &str, allow_port_only: bool) -> Result<String, &'st
     Ok(format!("{host}:{port}"))
 }
 
-/// Validate and normalize the saved local/reverse tunnel definitions.
+/// Validate and normalize the saved tunnel definitions (local, reverse, dynamic).
 fn normalize_tunnels(tunnels: &mut [Tunnel]) -> Result<(), &'static str> {
     let mut listeners = std::collections::HashSet::<(&str, String)>::new();
     for tunnel in tunnels {
@@ -245,6 +245,16 @@ fn normalize_tunnels(tunnels: &mut [Tunnel]) -> Result<(), &'static str> {
                     return Err("tunnel_duplicate_listener");
                 }
             }
+            Tunnel::Dynamic { bind, enabled } => {
+                if !*enabled {
+                    continue;
+                }
+                *bind = normalize_endpoint(bind, true)?;
+                // -D listens on this computer like -L, so they share listener keys.
+                if !listeners.insert(("local", bind.to_ascii_lowercase())) {
+                    return Err("tunnel_duplicate_listener");
+                }
+            }
             Tunnel::Remote { bind, dest, enabled } => {
                 if !*enabled {
                     continue;
@@ -255,8 +265,6 @@ fn normalize_tunnels(tunnels: &mut [Tunnel]) -> Result<(), &'static str> {
                     return Err("tunnel_duplicate_listener");
                 }
             }
-            Tunnel::Dynamic { enabled, .. } if !*enabled => continue,
-            Tunnel::Dynamic { .. } => return Err("tunnel_dynamic_unsupported"),
         }
     }
     Ok(())
@@ -277,7 +285,7 @@ pub fn resolve_forwards(tunnels: &[Tunnel]) -> Result<Vec<PortForward>, &'static
         .map(|tunnel| match tunnel {
             Tunnel::Local { bind, dest, .. } => PortForward::Local { bind, destination: dest },
             Tunnel::Remote { bind, dest, .. } => PortForward::Remote { bind, destination: dest },
-            Tunnel::Dynamic { .. } => unreachable!("dynamic tunnels rejected above"),
+            Tunnel::Dynamic { bind, .. } => PortForward::Dynamic { bind },
         })
         .collect())
 }
@@ -569,6 +577,41 @@ mod tests {
             bind: "18080".into(),
             destination: "127.0.0.1:8080".into(),
         }]);
+    }
+
+    #[test]
+    fn dynamic_tunnel_is_normalized_and_resolved_to_a_socks_forward() {
+        let mut tunnels = vec![
+            Tunnel::Dynamic { bind: " 1080 ".into(), enabled: true },
+            Tunnel::Dynamic { bind: "[::1]:1081".into(), enabled: true },
+        ];
+        normalize_tunnels(&mut tunnels).unwrap();
+        let forwards = resolve_forwards(&tunnels).unwrap();
+        assert_eq!(forwards, vec![
+            PortForward::Dynamic { bind: "1080".into() },
+            PortForward::Dynamic { bind: "[::1]:1081".into() },
+        ]);
+        assert_eq!(forwards[0].option(), "-D");
+        assert_eq!(forwards[1].argument(), "[::1]:1081");
+    }
+
+    #[test]
+    fn dynamic_tunnel_rejects_bad_endpoints_and_clashes_with_local_listeners() {
+        for bind in ["", "0", "host:", "-oProxyCommand=x:1", "a b:1", "70000"] {
+            let tunnels = vec![Tunnel::Dynamic { bind: bind.into(), enabled: true }];
+            assert_eq!(resolve_forwards(&tunnels).unwrap_err(), "tunnel_bad_endpoint", "{bind:?}");
+        }
+        let clash = vec![
+            Tunnel::Local { bind: "127.0.0.1:1080".into(), dest: "db:5432".into(), enabled: true },
+            Tunnel::Dynamic { bind: "127.0.0.1:1080".into(), enabled: true },
+        ];
+        assert_eq!(resolve_forwards(&clash).unwrap_err(), "tunnel_duplicate_listener");
+        // A reverse forward listens on the server, so the same port is fine.
+        let ok = vec![
+            Tunnel::Remote { bind: "1080".into(), dest: "127.0.0.1:80".into(), enabled: true },
+            Tunnel::Dynamic { bind: "1080".into(), enabled: true },
+        ];
+        assert_eq!(resolve_forwards(&ok).unwrap().len(), 2);
     }
 
     #[test]
