@@ -72,6 +72,7 @@ pub struct TunnelInfo {
 struct TunnelRuntime {
     info: Arc<Mutex<TunnelInfo>>,
     stop_requested: Arc<AtomicBool>,
+    stop_completed: Arc<AtomicBool>,
     child: Arc<Mutex<Option<Child>>>,
     askpass: Arc<Mutex<Option<AskpassServer>>>,
 }
@@ -389,6 +390,7 @@ fn request_stop(runtime: &TunnelRuntime) {
         if let Some(mut child) = child {
             terminate_process_tree(&mut child);
         }
+        runtime.stop_completed.store(true, Ordering::Release);
     }
 }
 
@@ -420,6 +422,7 @@ fn monitor_process(
     info: Arc<Mutex<TunnelInfo>>,
     child: Arc<Mutex<Option<Child>>>,
     stop_requested: Arc<AtomicBool>,
+    stop_completed: Arc<AtomicBool>,
     askpass: Arc<Mutex<Option<AskpassServer>>>,
     config_file: Option<PathBuf>,
     stderr: Option<ChildStderr>,
@@ -474,7 +477,8 @@ fn monitor_process(
             let mut guard = lock(&child);
             match guard.as_mut() {
                 Some(process) => process.try_wait().map(|status| status.map(Some)),
-                None if stop_requested.load(Ordering::Acquire) => Ok(Some(None)),
+                None if stop_requested.load(Ordering::Acquire)
+                    && stop_completed.load(Ordering::Acquire) => Ok(Some(None)),
                 None => Ok(None),
             }
         };
@@ -628,6 +632,7 @@ fn tunnel_start_blocking(
             let runtime = Arc::new(TunnelRuntime {
                 info: info.clone(),
                 stop_requested: Arc::new(AtomicBool::new(false)),
+                stop_completed: Arc::new(AtomicBool::new(false)),
                 child: Arc::new(Mutex::new(None)),
                 askpass: Arc::new(Mutex::new(None)),
             });
@@ -645,6 +650,7 @@ fn tunnel_start_blocking(
     let runtime = Arc::new(TunnelRuntime {
         info: info.clone(),
         stop_requested: Arc::new(AtomicBool::new(false)),
+        stop_completed: Arc::new(AtomicBool::new(false)),
         child: child.clone(),
         askpass: askpass.clone(),
     });
@@ -654,6 +660,7 @@ fn tunnel_start_blocking(
     let monitor_app = app.clone();
     let monitor_info = info.clone();
     let monitor_stop = runtime.stop_requested.clone();
+    let monitor_stop_completed = runtime.stop_completed.clone();
     let monitor_askpass = askpass;
     let monitor_child = child;
     let cleanup_config_file = config_file.clone();
@@ -664,6 +671,7 @@ fn tunnel_start_blocking(
             monitor_info,
             monitor_child,
             monitor_stop,
+            monitor_stop_completed,
             monitor_askpass,
             config_file,
             stderr,
@@ -829,6 +837,7 @@ mod tests {
         let runtime = TunnelRuntime {
             info,
             stop_requested: Arc::new(AtomicBool::new(false)),
+            stop_completed: Arc::new(AtomicBool::new(false)),
             child: Arc::new(Mutex::new(Some(child))),
             askpass: Arc::new(Mutex::new(None)),
         };
@@ -841,6 +850,7 @@ mod tests {
         let mut child = lock(&runtime.child);
         assert!(child.as_mut().unwrap().try_wait().unwrap().is_some());
         assert!(runtime.stop_requested.load(Ordering::Acquire));
+        assert!(runtime.stop_completed.load(Ordering::Acquire));
     }
 
     #[test]
@@ -862,6 +872,7 @@ mod tests {
             let runtime = Arc::new(TunnelRuntime {
                 info,
                 stop_requested: Arc::new(AtomicBool::new(false)),
+                stop_completed: Arc::new(AtomicBool::new(false)),
                 child: Arc::new(Mutex::new(None)),
                 askpass: Arc::new(Mutex::new(None)),
             });
