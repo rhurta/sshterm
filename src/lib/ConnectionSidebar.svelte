@@ -20,12 +20,14 @@
     onopen,
     onedit,
     onnewconn,
+    ontunnels,
   }: {
     openIds: string[];
     refreshToken: number;
     onopen: (c: ConnectionSummary) => void;
     onedit: (c: ConnectionSummary) => void;
     onnewconn: (parentId: string | null) => void;
+    ontunnels: () => void;
   } = $props();
 
   let tree = $state<TreeNode[]>([]);
@@ -208,6 +210,7 @@
 <aside>
   <div class="head">
     <span class="title">{t("workspace.connections")}</span>
+    <button onclick={ontunnels}>⇄ {t("tunnels.open")}</button>
     <button onclick={() => createFolder(selectedFolder())}>+ {t("tree.newFolder")}</button>
     <button onclick={() => onnewconn(selectedFolder())}>+ {t("tree.newConnection")}</button>
   </div>

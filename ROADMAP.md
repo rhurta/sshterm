@@ -308,7 +308,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 **Acceptance:** User validation is complete with Linux shell profiles and Ericsson MME terminal output. Windows CI also passes the frontend, Rust and portable executable checks. Additional fixtures and automated integration coverage for xterm decorations remain future hardening; a command-line `--check-highlight` mode is optional and is not implemented.
 ---
 
-## 🟡 M7 — Tunnels (lifecycle and status API implemented; manager UI deferred)
+## 🟡 M7 — Tunnels (implementation complete; manual acceptance pending)
 
 ### Implemented
 
@@ -324,10 +324,14 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Locking the vault and application shutdown request termination of independent tunnel processes. Tunnel processes have no PTY and do not appear as terminal sessions.
 - **Active is a listener-setup state only.** It does not test whether the remote destination service is reachable or healthy. For reverse listeners, remote sshd policy such as GatewayPorts still applies.
 - Session tabs retain their compact configured-forward count; it is not a live-health indicator.
+- The dedicated Tunnel Manager opens from the connections sidebar, including when no terminal is open. Its search field receives focus on opening and filters by connection name, host or user.
+- The manager shows the saved route, each configured forward and its live status/error; it offers per-connection Start/Stop, Start All, Stop All and Edit actions.
+- Stop All retains the stopped runtime entries in the manager so their final state remains visible and they can be restarted without overlapping the prior process.
+- Runtime errors distinguish listener setup failures from destination connection failures after setup; an attempted connection to an unavailable forwarded destination does not mark the listener itself failed.
 
-### Deferred (M7c)
+### Remaining M7 work
 
-- Dedicated Tunnels manager UI for browsing, searching, starting/stopping and editing tunnels across saved connections. The lifecycle/status API is available for that UI.
+- Manual Windows acceptance of independent local, reverse and SOCKS tunnels, authentication/ProxyJump, port conflicts, Stop All, vault locking and application shutdown.
 
 ---
 
@@ -381,7 +385,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 | M5 | Jump hosts | `main` | ✅ |
 | M6 | Tiling + command console + broadcast | `e6fa4bc` | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | `main` | ✅ Complete; user-validated on Linux and Ericsson MME |
-| M7 | Independent tunnels, SOCKS and runtime status API | `feature/m7-tunnels` | 🟡 Partial; manager UI deferred |
+| M7 | Independent tunnels, SOCKS, runtime status and manager UI | `feature/m7-tunnels` | 🟡 Implemented; manual acceptance pending |
 | M8 | Native SFTP | — | 📋 |
 | M9 | Polish | `main` | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine | — | 📋 |

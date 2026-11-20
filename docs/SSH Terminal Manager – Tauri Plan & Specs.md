@@ -279,7 +279,7 @@ Security and routing behavior:
 | Workspace.svelte | Recursive tiled workspace, per-pane tabs, layout controls, command-console settings and workspace error banner | ✅ Implemented M6 |
 | TerminalPane.svelte | xterm.js terminal, FitAddon, focus, PTY resize and log capture | ✅ Implemented |
 | CommandConsole.svelte | Searchable target list, Active/Selected/All modes, multiline editor, confirmation and sequential broadcast dispatch | ✅ Implemented M6 |
-| Tunnel manager panel | Start/stop independent tunnels and show live status | 📋 Planned; no dedicated panel |
+| TunnelManager.svelte | Search configured tunnels, show route and per-forward status/errors, start/stop one or all, and edit the saved connection | ✅ Implemented M7c |
 | SFTP panel | Browse/download/upload remote files | 📋 Planned M8 |
 | Highlighting test panel | Paste sample text and test rule classification | 📋 Planned M6b |
 
@@ -375,10 +375,12 @@ Implemented:
 - Session tabs still show the configured number of enabled forwards only. That badge is not runtime health.
 - For a remote listener to accept connections from hosts other than the SSH server itself, server-side sshd configuration may need to permit it with GatewayPorts.
 - Dynamic SOCKS (-D) is supported, uses a local listener, and shares listener keys with -L.
+- The Tunnel Manager is opened from the connections sidebar and works even when no terminal tab is open. Its search input receives focus automatically and filters by connection name, host or user.
+- Each configured connection shows its saved jump route, listener endpoints, per-forward state and diagnostics. Users can start/stop one connection's tunnel, start all configured tunnels, stop all running tunnels, or open the existing connection editor.
+- Stop All retains terminal-independent runtime records in Stopped state so the result stays visible and the tunnel can be started again after the previous child is reaped.
+- A refused connection to a forwarded destination after listener setup does not mark the SSH tunnel/listener as failed. Active continues to mean listener setup only, not destination service health.
 
-Not implemented in this milestone:
-
-- Dedicated tunnel manager panel for searching and controlling tunnels across connections (M7c UI).
+Remaining M7 acceptance work is manual Windows testing of local/reverse/SOCKS forwarding, key/password/ProxyJump authentication, listener conflicts, Start All/Stop All, vault locking and application shutdown.
 
 ### Keepalive
 
@@ -550,12 +552,12 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M5 | Nested ProxyJump chains and per-hop passwords (within phase-1 limits) | ✅ Complete |
 | M6 | Tiling, command console and broadcast | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | ✅ Complete; user-validated on Linux and Ericsson MME |
-| M7 | Local/reverse/SOCKS forwards plus independent lifecycle/status API | 🟡 Partial; dedicated manager UI deferred |
+| M7 | Local/reverse/SOCKS forwards, independent lifecycle/status API and manager UI | 🟡 Implemented; manual acceptance pending |
 | M8 | Native SFTP | 📋 Planned |
 | M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
-The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete; M7 has independent tunnel lifecycle and status APIs but its dedicated manager UI remains planned; global themes are implemented while per-connection coloring remains planned. Broadcast uses the protected flag as documented above.
+The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete; M7 implementation includes independent tunnel lifecycle, runtime diagnostics and the dedicated manager UI, with manual acceptance pending. Global themes are implemented while per-connection coloring remains planned. Broadcast uses the protected flag as documented above.
 
 ## 12. Decisions, operational workflow and CI
 

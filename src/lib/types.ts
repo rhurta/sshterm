@@ -46,7 +46,7 @@ export type Tunnel =
 
 /** Runtime-only tunnel status returned by tunnel_list and tunnel:status. */
 export type TunnelLifecycle = "starting" | "active" | "stopping" | "stopped" | "failed";
-export type TunnelForwardLifecycle = "starting" | "active" | "stopped" | "failed";
+export type TunnelForwardLifecycle = "starting" | "active" | "stopping" | "stopped" | "failed";
 
 export interface TunnelForwardInfo {
   index: number;

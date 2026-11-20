@@ -8,6 +8,7 @@
   import TerminalPane from "./TerminalPane.svelte";
   import CommandConsole from "./CommandConsole.svelte";
   import HighlightRulesPanel from "./HighlightRulesPanel.svelte";
+  import TunnelManager from "./TunnelManager.svelte";
   import type { BroadcastSession } from "$lib/broadcastTargets";
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
@@ -39,6 +40,7 @@
   let consoleDrag = $state<{ startY: number; startHeight: number } | null>(null);
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let highlightPanelOpen = $state(false);
+  let tunnelPanelOpen = $state(false);
   let picker = $state(false);
   let pickerList = $state<ConnectionSummary[]>([]);
   let pickerQuery = $state("");
@@ -304,6 +306,7 @@
       && e.altKey
       && !e.metaKey
       && !settingsOpen
+      && !tunnelPanelOpen
       && !picker
       && !multilinePaste
     ) {
@@ -330,6 +333,9 @@
     if (e.key === "Escape" && multilinePaste) {
       e.preventDefault();
       settleMultilinePaste(false);
+    } else if (e.key === "Escape" && tunnelPanelOpen) {
+      e.preventDefault();
+      tunnelPanelOpen = false;
     } else if (e.key === "Escape" && settingsOpen) {
       e.preventDefault();
       settingsOpen = false;
@@ -524,6 +530,7 @@
       onopen={connect}
       onedit={edit}
       onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })}
+      ontunnels={() => (tunnelPanelOpen = true)}
     />
 
     <main>
@@ -660,6 +667,16 @@
 
   {#if highlightPanelOpen}
     <HighlightRulesPanel onclose={() => (highlightPanelOpen = false)} />
+  {/if}
+
+  {#if tunnelPanelOpen}
+    <TunnelManager
+      onclose={() => (tunnelPanelOpen = false)}
+      onedit={(connection) => {
+        tunnelPanelOpen = false;
+        void edit(connection);
+      }}
+    />
   {/if}
 
   {#if multilinePaste}

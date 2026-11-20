@@ -38,6 +38,7 @@ pub enum TunnelLifecycle {
 pub enum TunnelForwardLifecycle {
     Starting,
     Active,
+    Stopping,
     Stopped,
     Failed,
 }
@@ -241,6 +242,43 @@ fn set_lifecycle(info: &Arc<Mutex<TunnelInfo>>, status: TunnelLifecycle) {
     lock(info).status = status;
 }
 
+fn tunnel_failure_message(line: &str, authenticated: bool) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let forwarding_patterns = [
+        "stdio forwarding failed",
+        "could not request local forwarding",
+        "remote port forwarding failed",
+        "channel_setup_fwd_listener_tcpip",
+        "cannot listen to port",
+        "address already in use",
+        "bind: ",
+    ];
+    let pre_auth_patterns = [
+        "could not resolve hostname",
+        "connection timed out",
+        "operation timed out",
+        "connection refused",
+        "no route to host",
+        "permission denied",
+        "host key verification failed",
+        "remote host identification has changed",
+        "connection closed by",
+    ];
+    let is_failure = forwarding_patterns.iter().any(|pattern| lower.contains(pattern))
+        || (!authenticated && pre_auth_patterns.iter().any(|pattern| lower.contains(pattern)));
+    if !is_failure {
+        return None;
+    }
+    let message = line
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(500)
+        .collect::<String>()
+        .trim()
+        .to_string();
+    (!message.is_empty()).then_some(message)
+}
+
 fn set_all_forward_lifecycle(info: &Arc<Mutex<TunnelInfo>>, status: TunnelForwardLifecycle) {
     for forward in &mut lock(info).forwards {
         forward.status = status;
@@ -312,6 +350,11 @@ fn request_stop(runtime: &TunnelRuntime) {
         let mut info = lock(&runtime.info);
         if !matches!(info.status, TunnelLifecycle::Stopped | TunnelLifecycle::Failed) {
             info.status = TunnelLifecycle::Stopping;
+            for forward in &mut info.forwards {
+                if matches!(forward.status, TunnelForwardLifecycle::Starting | TunnelForwardLifecycle::Active) {
+                    forward.status = TunnelForwardLifecycle::Stopping;
+                }
+            }
         }
     }
     if let Some(child) = lock(&runtime.child).as_mut() {
@@ -382,7 +425,7 @@ fn monitor_process(
             }
             set_active_forwards(&info, &ready);
 
-            if let Some(message) = crate::session::ssh_failure_message(&line) {
+            if let Some(message) = tunnel_failure_message(&line, authenticated) {
                 last_error = Some(message.clone());
                 set_failed(&info, message, &line);
                 publish(&app, &info);
@@ -411,7 +454,7 @@ fn monitor_process(
                     let _ = reader.join();
                 }
                 for line in receiver.try_iter() {
-                    if let Some(message) = crate::session::ssh_failure_message(&line) {
+                    if let Some(message) = tunnel_failure_message(&line, authenticated) {
                         last_error = Some(message.clone());
                         set_failed(&info, message, &line);
                     }
@@ -440,7 +483,7 @@ fn monitor_process(
                     let _ = reader.join();
                 }
                 for line in receiver.try_iter() {
-                    if let Some(message) = crate::session::ssh_failure_message(&line) {
+                    if let Some(message) = tunnel_failure_message(&line, authenticated) {
                         last_error = Some(message.clone());
                         set_failed(&info, message, &line);
                     }
@@ -631,10 +674,7 @@ pub fn tunnel_stop_all(
 ) {
     // Serialize against tunnel_start using the same vault -> tunnel lock order.
     let _vault_guard = vault_state.0.lock().unwrap_or_else(|e| e.into_inner());
-    let runtimes = {
-        let mut entries = lock(&state.entries);
-        entries.drain().map(|(_, runtime)| runtime).collect::<Vec<_>>()
-    };
+    let runtimes = lock(&state.entries).values().cloned().collect::<Vec<_>>();
     for runtime in runtimes {
         request_stop(&runtime);
         publish(&app, &runtime.info);
@@ -664,6 +704,41 @@ impl Drop for TunnelState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn post_start_destination_refusal_does_not_mark_listener_failed() {
+        assert!(tunnel_failure_message("channel 3: open failed: connect failed: Connection refused", true).is_none());
+        assert!(tunnel_failure_message("channel 4: open failed: administratively prohibited", true).is_none());
+        assert!(tunnel_failure_message("connect to host bastion port 22: Connection timed out", false).is_some());
+        assert!(tunnel_failure_message("bind [127.0.0.1]:15432: Address already in use", true).is_some());
+    }
+
+    #[test]
+    fn stop_request_marks_each_active_forward_stopping() {
+        let info = Arc::new(Mutex::new(TunnelInfo {
+            connection_id: "c1".into(),
+            connection_name: "db".into(),
+            host: "example".into(),
+            port: 22,
+            user: "admin".into(),
+            jump_names: vec![],
+            status: TunnelLifecycle::Active,
+            forwards: vec![
+                TunnelForwardInfo { index: 0, kind: "local".into(), bind: "15432".into(), destination: Some("db:5432".into()), status: TunnelForwardLifecycle::Active, error: None },
+            ],
+            error: None,
+            started_at: 1,
+        }));
+        let runtime = TunnelRuntime {
+            info: info.clone(),
+            stop_requested: Arc::new(AtomicBool::new(false)),
+            child: Arc::new(Mutex::new(None)),
+            askpass: Arc::new(Mutex::new(None)),
+        };
+        request_stop(&runtime);
+        assert_eq!(lock(&info).status, TunnelLifecycle::Stopping);
+        assert_eq!(lock(&info).forwards[0].status, TunnelForwardLifecycle::Stopping);
+    }
 
     #[test]
     fn bind_port_handles_bare_ports_and_ipv6() {
