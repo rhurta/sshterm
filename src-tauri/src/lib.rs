@@ -11,7 +11,7 @@ mod tunnels;
 mod vault;
 
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, PhysicalPosition, PhysicalSize, Position, Size, WindowEvent};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, Position, RunEvent, Size, WindowEvent};
 
 #[tauri::command]
 fn app_info() -> String {
@@ -161,6 +161,11 @@ pub fn run() {
             tunnels::tunnel_stop,
             tunnels::tunnel_stop_all,
         ])
-        .run(tauri::generate_context!())
+        .run(|app_handle, event| {
+            if matches!(event, RunEvent::Exit) {
+                let tunnels = app_handle.state::<tunnels::TunnelState>();
+                tunnels::stop_all_for_app_exit(&tunnels);
+            }
+        })
         .expect("error while running tauri application");
 }

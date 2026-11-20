@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Child, ChildStderr};
+use std::process::{Child, ChildStderr, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
@@ -344,8 +344,35 @@ fn set_active_forwards(info: &Arc<Mutex<TunnelInfo>>, indices: &HashSet<usize>) 
     }
 }
 
+/// Terminates OpenSSH and any ProxyJump child processes it created.
+///
+/// On Windows, killing ssh.exe alone can orphan the nested ssh.exe processes
+/// that implement ProxyJump. taskkill /T walks and terminates the full process
+/// tree; Child::kill + wait remains the fallback and reaps the owned process.
+fn terminate_process_tree(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        let taskkill = std::env::var_os("SystemRoot")
+            .map(|root| PathBuf::from(root).join("System32").join("taskkill.exe"))
+            .unwrap_or_else(|| PathBuf::from("taskkill.exe"));
+        let pid = child.id().to_string();
+        let _ = Command::new(taskkill)
+            .args(["/PID", pid.as_str(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+            .status();
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn request_stop(runtime: &TunnelRuntime) {
-    runtime.stop_requested.store(true, Ordering::Release);
+    let already_requested = runtime.stop_requested.swap(true, Ordering::AcqRel);
     {
         let mut info = lock(&runtime.info);
         if !matches!(info.status, TunnelLifecycle::Stopped | TunnelLifecycle::Failed) {
@@ -357,8 +384,10 @@ fn request_stop(runtime: &TunnelRuntime) {
             }
         }
     }
-    if let Some(child) = lock(&runtime.child).as_mut() {
-        let _ = child.kill();
+    if !already_requested {
+        if let Some(child) = lock(&runtime.child).as_mut() {
+            terminate_process_tree(child);
+        }
     }
 }
 
@@ -390,8 +419,7 @@ fn monitor_process(
             Ok(handle) => Some(handle),
             Err(error) => {
                 if let Some(process) = lock(&child).as_mut() {
-                    let _ = process.kill();
-                    let _ = process.wait();
+                    terminate_process_tree(process);
                 }
                 set_failed(&info, format!("tunnel_stderr_monitor: {error}"), "");
                 lock(&child).take();
@@ -429,12 +457,6 @@ fn monitor_process(
                 last_error = Some(message.clone());
                 set_failed(&info, message, &line);
                 publish(&app, &info);
-            }
-        }
-
-        if stop_requested.load(Ordering::Acquire) {
-            if let Some(process) = lock(&child).as_mut() {
-                let _ = process.kill();
             }
         }
 
@@ -476,8 +498,7 @@ fn monitor_process(
                 // If process polling itself fails, terminate and reap the child
                 // before releasing the askpass server or generated SSH config.
                 if let Some(process) = lock(&child).as_mut() {
-                    let _ = process.kill();
-                    let _ = process.wait();
+                    terminate_process_tree(process);
                 }
                 if let Some(reader) = stderr_thread.take() {
                     let _ = reader.join();
@@ -637,8 +658,7 @@ pub fn tunnel_start(
     {
         runtime.stop_requested.store(true, Ordering::Release);
         if let Some(mut process) = lock(&runtime.child).take() {
-            let _ = process.kill();
-            let _ = process.wait();
+            terminate_process_tree(&mut process);
         }
         lock(&runtime.askpass).take();
         if let Some(path) = cleanup_config_file {
@@ -678,6 +698,14 @@ pub fn tunnel_stop_all(
     for runtime in runtimes {
         request_stop(&runtime);
         publish(&app, &runtime.info);
+    }
+}
+
+/// Stop independent tunnel process trees before the Tauri runtime exits.
+pub fn stop_all_for_app_exit(state: &TunnelState) {
+    let runtimes = lock(&state.entries).values().cloned().collect::<Vec<_>>();
+    for runtime in runtimes {
+        request_stop(&runtime);
     }
 }
 
@@ -738,6 +766,78 @@ mod tests {
         request_stop(&runtime);
         assert_eq!(lock(&info).status, TunnelLifecycle::Stopping);
         assert_eq!(lock(&info).forwards[0].status, TunnelForwardLifecycle::Stopping);
+    }
+
+    #[test]
+    fn stop_request_terminates_and_reaps_the_owned_process() {
+        #[cfg(windows)]
+        let child = Command::new("cmd")
+            .args(["/C", "ping -n 30 127.0.0.1 > NUL"])
+            .spawn()
+            .unwrap();
+        #[cfg(not(windows))]
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+
+        let info = Arc::new(Mutex::new(TunnelInfo {
+            connection_id: "process-test".into(),
+            connection_name: "process-test".into(),
+            host: "127.0.0.1".into(),
+            port: 22,
+            user: "test".into(),
+            jump_names: vec![],
+            status: TunnelLifecycle::Active,
+            forwards: vec![],
+            error: None,
+            started_at: 1,
+        }));
+        let runtime = TunnelRuntime {
+            info,
+            stop_requested: Arc::new(AtomicBool::new(false)),
+            child: Arc::new(Mutex::new(Some(child))),
+            askpass: Arc::new(Mutex::new(None)),
+        };
+
+        request_stop(&runtime);
+        // A second stop must not re-run process-tree termination or change
+        // the already requested lifecycle transition.
+        request_stop(&runtime);
+
+        let mut child = lock(&runtime.child);
+        assert!(child.as_mut().unwrap().try_wait().unwrap().is_some());
+        assert!(runtime.stop_requested.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn app_exit_requests_stop_for_every_registered_tunnel() {
+        let state = TunnelState::default();
+        for id in ["one", "two"] {
+            let info = Arc::new(Mutex::new(TunnelInfo {
+                connection_id: id.into(),
+                connection_name: id.into(),
+                host: "127.0.0.1".into(),
+                port: 22,
+                user: "test".into(),
+                jump_names: vec![],
+                status: TunnelLifecycle::Active,
+                forwards: vec![],
+                error: None,
+                started_at: 1,
+            }));
+            let runtime = Arc::new(TunnelRuntime {
+                info,
+                stop_requested: Arc::new(AtomicBool::new(false)),
+                child: Arc::new(Mutex::new(None)),
+                askpass: Arc::new(Mutex::new(None)),
+            });
+            lock(&state.entries).insert(id.into(), runtime);
+        }
+
+        stop_all_for_app_exit(&state);
+
+        let entries = lock(&state.entries);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.values().all(|runtime| runtime.stop_requested.load(Ordering::Acquire)));
+        assert!(entries.values().all(|runtime| lock(&runtime.info).status == TunnelLifecycle::Stopping));
     }
 
     #[test]

@@ -370,7 +370,9 @@ Implemented:
 - The tunnel lifecycle API is `tunnel_start`, `tunnel_stop`, `tunnel_stop_all` and `tunnel_list`; `tunnel:status` events report Starting/Active/Stopping/Stopped/Failed and per-forward status/error.
 - Start is idempotent while a tunnel is Starting or Active. A restart is rejected while the previous child is still being reaped; retry after cleanup.
 - OpenSSH receives `ExitOnForwardFailure=yes` and verbose diagnostics are parsed for listener creation failures, authentication/jump failures and unexpected process exits. The child, askpass server and generated ProxyJump config are cleaned up together.
-- Locking the vault stops independent tunnel processes; TunnelState drop requests process termination on application shutdown.
+- Locking the vault requests independent tunnel process-tree termination before clearing the vault. A Tauri `RunEvent::Exit` handler explicitly stops all tunnel trees before application shutdown.
+- On Windows, tunnel termination uses `taskkill.exe /PID <pid> /T /F` to include nested OpenSSH ProxyJump processes, then calls `Child::kill` as a fallback and `Child::wait` to reap the owned process. Repeated stop requests are idempotent.
+- The same process-tree cleanup is used by normal stop, vault lock, app exit and tunnel monitor failure paths. A Rust regression test verifies the owned child is terminated and reaped.
 - **Active means SSH authenticated and the requested listener setup has succeeded (or OpenSSH remained alive with ExitOnForwardFailure after authentication).** It is not a probe of the remote destination application or end-to-end traffic.
 - Session tabs still show the configured number of enabled forwards only. That badge is not runtime health.
 - For a remote listener to accept connections from hosts other than the SSH server itself, server-side sshd configuration may need to permit it with GatewayPorts.
@@ -380,7 +382,7 @@ Implemented:
 - Stop All retains terminal-independent runtime records in Stopped state so the result stays visible and the tunnel can be started again after the previous child is reaped.
 - A refused connection to a forwarded destination after listener setup does not mark the SSH tunnel/listener as failed. Active continues to mean listener setup only, not destination service health.
 
-Remaining M7 acceptance work is manual Windows testing of local/reverse/SOCKS forwarding, key/password/ProxyJump authentication, listener conflicts, Start All/Stop All, vault locking and application shutdown.
+M7d hardening adds explicit application-exit cleanup, Windows process-tree termination for ProxyJump descendants, owned-child reaping and idempotent stop handling. Remaining M7 acceptance work is manual Windows testing of local/reverse/SOCKS forwarding, key/password/ProxyJump authentication, listener conflicts, Start All/Stop All, vault locking and application shutdown.
 
 ### Keepalive
 
@@ -552,12 +554,12 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M5 | Nested ProxyJump chains and per-hop passwords (within phase-1 limits) | ✅ Complete |
 | M6 | Tiling, command console and broadcast | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | ✅ Complete; user-validated on Linux and Ericsson MME |
-| M7 | Local/reverse/SOCKS forwards, independent lifecycle/status API and manager UI | 🟡 Implemented; manual acceptance pending |
+| M7 | Local/reverse/SOCKS forwards, independent lifecycle/status, manager UI and process-tree hardening | 🟡 Implemented; manual acceptance pending |
 | M8 | Native SFTP | 📋 Planned |
 | M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
-The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete; M7 implementation includes independent tunnel lifecycle, runtime diagnostics and the dedicated manager UI, with manual acceptance pending. Global themes are implemented while per-connection coloring remains planned. Broadcast uses the protected flag as documented above.
+The status reflects the source tree, not aspirational feature descriptions. M5, M6 and M6b are complete; M7 implementation includes independent tunnel lifecycle, runtime diagnostics, the dedicated manager UI and Windows process-tree cleanup, with manual acceptance pending. Global themes are implemented while per-connection coloring remains planned. Broadcast uses the protected flag as documented above.
 
 ## 12. Decisions, operational workflow and CI
 

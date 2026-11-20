@@ -321,7 +321,9 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Tauri commands: `tunnel_start`, `tunnel_stop`, `tunnel_stop_all`, and `tunnel_list`. The `tunnel:status` event publishes runtime state; statuses are in memory only and are not written to the vault.
 - Lifecycle values are Starting, Active, Stopping, Stopped and Failed. Each configured listener also carries its own status and any identifiable setup error. Repeated start while Starting/Active is idempotent; stop is safe to repeat.
 - `ExitOnForwardFailure=yes` makes OpenSSH fail when a requested listener cannot be created. Verbose SSH diagnostics identify listener setup, authentication, jump-host and unexpected process failures where possible.
-- Locking the vault and application shutdown request termination of independent tunnel processes. Tunnel processes have no PTY and do not appear as terminal sessions.
+- Locking the vault requests termination of independent tunnel processes before clearing the vault. Application exit has an explicit Tauri exit hook that stops tunnel process trees.
+- On Windows, stopping a tunnel terminates the OpenSSH process tree (including nested ProxyJump ssh.exe processes) with `taskkill /T /F`, then waits for the owned child to be reaped. Direct child kill/wait remains the fallback.
+- Stop requests are idempotent, and the process-tree termination path is shared by normal stop, vault lock, application exit and monitor-start/polling failure cleanup.
 - **Active is a listener-setup state only.** It does not test whether the remote destination service is reachable or healthy. For reverse listeners, remote sshd policy such as GatewayPorts still applies.
 - Session tabs retain their compact configured-forward count; it is not a live-health indicator.
 - The dedicated Tunnel Manager opens from the connections sidebar, including when no terminal is open. Its search field receives focus on opening and filters by connection name, host or user.
@@ -329,7 +331,13 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Stop All retains the stopped runtime entries in the manager so their final state remains visible and they can be restarted without overlapping the prior process.
 - Runtime errors distinguish listener setup failures from destination connection failures after setup; an attempted connection to an unavailable forwarded destination does not mark the listener itself failed.
 
-### Remaining M7 work
+### M7d — Lifecycle hardening
+
+- Explicit application-exit cleanup for independent tunnel process trees.
+- Windows ProxyJump descendant cleanup and owned-child reaping on stop, vault lock, app exit and monitor failures.
+- Idempotent repeated stop requests and a process-reaping regression test.
+
+### Remaining M7 acceptance
 
 - Manual Windows acceptance of independent local, reverse and SOCKS tunnels, authentication/ProxyJump, port conflicts, Stop All, vault locking and application shutdown.
 
