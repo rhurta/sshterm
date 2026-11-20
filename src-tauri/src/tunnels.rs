@@ -810,6 +810,7 @@ mod tests {
         let runtime = TunnelRuntime {
             info: info.clone(),
             stop_requested: Arc::new(AtomicBool::new(false)),
+            stop_completed: Arc::new(AtomicBool::new(false)),
             child: Arc::new(Mutex::new(None)),
             askpass: Arc::new(Mutex::new(None)),
         };
