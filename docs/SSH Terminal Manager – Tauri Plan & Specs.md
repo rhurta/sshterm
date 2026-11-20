@@ -663,3 +663,12 @@ log_mode = "screen"
 [terminal]
 # Clipboard and paste preferences are documented in §13.
 ```
+
+
+## 15. Tunnel lifecycle responsiveness and monitor cleanup (M7d)
+
+Tunnel start, stop, stop-all and vault lock are asynchronous Tauri commands that delegate blocking OpenSSH/process work to spawn_blocking. The UI thread must not run taskkill, wait for child processes, or hold the vault lock while those operations complete.
+
+Stopping takes ownership of the child handle while briefly holding the child mutex, then performs process-tree termination and reaping after releasing the mutex. The monitor recognizes that ownership transfer as a requested stop. Its stderr reader is detached after a bounded final-diagnostic drain: ProxyJump descendants may inherit the stderr pipe, so monitor completion must not depend on pipe EOF or a reader-thread join.
+
+A listener's readiness diagnostic may precede a later bind failure. Forward status transitions are monotonic during startup: once a forward is Failed, a subsequent listening line cannot change it back to Active. ExitOnForwardFailure still establishes listener setup, not remote destination reachability.

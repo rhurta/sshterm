@@ -14,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::askpass::{AskpassCredential, AskpassServer};
 use crate::commands::VaultState;
@@ -337,7 +337,7 @@ fn set_failed(info: &Arc<Mutex<TunnelInfo>>, message: String, line: &str) {
 fn set_active_forwards(info: &Arc<Mutex<TunnelInfo>>, indices: &HashSet<usize>) {
     let mut current = lock(info);
     for forward in &mut current.forwards {
-        if indices.contains(&forward.index) {
+        if indices.contains(&forward.index) && forward.status == TunnelForwardLifecycle::Starting {
             forward.status = TunnelForwardLifecycle::Active;
             forward.error = None;
         }
@@ -385,9 +385,33 @@ fn request_stop(runtime: &TunnelRuntime) {
         }
     }
     if !already_requested {
-        if let Some(child) = lock(&runtime.child).as_mut() {
-            terminate_process_tree(child);
+        let child = lock(&runtime.child).take();
+        if let Some(mut child) = child {
+            terminate_process_tree(&mut child);
         }
+    }
+}
+
+fn handle_monitor_line(
+    line: &str,
+    app: &AppHandle,
+    info: &Arc<Mutex<TunnelInfo>>,
+    authenticated: &mut bool,
+    ready: &mut HashSet<usize>,
+    last_error: &mut Option<String>,
+) {
+    if line.to_ascii_lowercase().contains("authenticated to ") {
+        *authenticated = true;
+    }
+    let current = lock(info).clone();
+    for index in ready_forward_indices(line, &current) {
+        ready.insert(index);
+    }
+    set_active_forwards(info, ready);
+    if let Some(message) = tunnel_failure_message(line, *authenticated) {
+        *last_error = Some(message.clone());
+        set_failed(info, message, line);
+        publish(app, info);
     }
 }
 
@@ -443,51 +467,41 @@ fn monitor_process(
 
     loop {
         for line in receiver.try_iter() {
-            let lower = line.to_ascii_lowercase();
-            if lower.contains("authenticated to ") {
-                authenticated = true;
-            }
-            let current = lock(&info).clone();
-            for index in ready_forward_indices(&line, &current) {
-                ready.insert(index);
-            }
-            set_active_forwards(&info, &ready);
-
-            if let Some(message) = tunnel_failure_message(&line, authenticated) {
-                last_error = Some(message.clone());
-                set_failed(&info, message, &line);
-                publish(&app, &info);
-            }
+            handle_monitor_line(&line, &app, &info, &mut authenticated, &mut ready, &mut last_error);
         }
 
         let exit = {
             let mut guard = lock(&child);
             match guard.as_mut() {
-                Some(process) => process.try_wait(),
+                Some(process) => process.try_wait().map(|status| status.map(Some)),
+                None if stop_requested.load(Ordering::Acquire) => Ok(Some(None)),
                 None => Ok(None),
             }
         };
 
         match exit {
             Ok(Some(status)) => {
-                // Wait for stderr EOF so final SSH diagnostics are not lost
-                // just because the process handle became signalled first.
-                if let Some(reader) = stderr_thread.take() {
-                    let _ = reader.join();
-                }
-                for line in receiver.try_iter() {
-                    if let Some(message) = tunnel_failure_message(&line, authenticated) {
-                        last_error = Some(message.clone());
-                        set_failed(&info, message, &line);
+                // Drain final diagnostics briefly; never join a reader whose
+                // pipe may be inherited by a ProxyJump descendant.
+                let deadline = Instant::now() + Duration::from_millis(250);
+                loop {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() { break; }
+                    match receiver.recv_timeout(remaining) {
+                        Ok(line) => handle_monitor_line(&line, &app, &info, &mut authenticated, &mut ready, &mut last_error),
+                        Err(_) => break,
                     }
                 }
+                drop(stderr_thread.take());
+
                 if stop_requested.load(Ordering::Acquire) && last_error.is_none() {
                     set_lifecycle(&info, TunnelLifecycle::Stopped);
                     set_all_forward_lifecycle(&info, TunnelForwardLifecycle::Stopped);
                     lock(&info).error = None;
                 } else {
-                    let message = last_error.unwrap_or_else(|| {
-                        format!("ssh_tunnel_exited: OpenSSH exited unexpectedly ({status:?}).")
+                    let message = last_error.unwrap_or_else(|| match status {
+                        Some(status) => format!("ssh_tunnel_exited: OpenSSH exited unexpectedly ({status:?})."),
+                        None => "ssh_tunnel_exited: OpenSSH stopped unexpectedly.".to_string(),
                     });
                     set_failed(&info, message, "");
                 }
@@ -495,19 +509,20 @@ fn monitor_process(
             }
             Ok(None) => {}
             Err(error) => {
-                // If process polling itself fails, terminate and reap the child
-                // before releasing the askpass server or generated SSH config.
-                if let Some(process) = lock(&child).as_mut() {
-                    terminate_process_tree(process);
+                let process = lock(&child).take();
+                if let Some(mut process) = process {
+                    terminate_process_tree(&mut process);
                 }
-                if let Some(reader) = stderr_thread.take() {
-                    let _ = reader.join();
-                }
-                for line in receiver.try_iter() {
-                    if let Some(message) = tunnel_failure_message(&line, authenticated) {
-                        set_failed(&info, message, &line);
+                let deadline = Instant::now() + Duration::from_millis(250);
+                loop {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() { break; }
+                    match receiver.recv_timeout(remaining) {
+                        Ok(line) => handle_monitor_line(&line, &app, &info, &mut authenticated, &mut ready, &mut last_error),
+                        Err(_) => break,
                     }
                 }
+                drop(stderr_thread.take());
                 set_failed(&info, format!("ssh_tunnel_monitor: {error}"), "");
                 break;
             }
@@ -557,11 +572,10 @@ pub fn tunnel_list(state: State<'_, TunnelState>) -> Vec<TunnelInfo> {
     result
 }
 
-#[tauri::command]
-pub fn tunnel_start(
+fn tunnel_start_blocking(
     app: AppHandle,
-    state: State<'_, TunnelState>,
-    vault_state: State<'_, VaultState>,
+    state: &TunnelState,
+    vault_state: &VaultState,
     connection_id: String,
 ) -> Result<TunnelInfo, String> {
     // Keep the vault locked for the whole process registration. vault_lock
@@ -672,32 +686,55 @@ pub fn tunnel_start(
 }
 
 #[tauri::command]
-pub fn tunnel_stop(
-    app: AppHandle,
-    state: State<'_, TunnelState>,
-    connection_id: String,
-) -> Result<(), String> {
+pub async fn tunnel_start(app: AppHandle, connection_id: String) -> Result<TunnelInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_app = app.clone();
+        let state = state_app.state::<TunnelState>();
+        let vault_state = state_app.state::<VaultState>();
+        tunnel_start_blocking(app, &state, &vault_state, connection_id)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn tunnel_stop_blocking(app: AppHandle, state: &TunnelState, connection_id: String) {
     let runtime = lock(&state.entries).get(&connection_id).cloned();
     if let Some(runtime) = runtime {
         request_stop(&runtime);
         publish(&app, &runtime.info);
     }
-    Ok(())
 }
 
 #[tauri::command]
-pub fn tunnel_stop_all(
-    app: AppHandle,
-    state: State<'_, TunnelState>,
-    vault_state: State<'_, VaultState>,
-) {
-    // Serialize against tunnel_start using the same vault -> tunnel lock order.
+pub async fn tunnel_stop(app: AppHandle, connection_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_app = app.clone();
+        let state = state_app.state::<TunnelState>();
+        tunnel_stop_blocking(app, &state, connection_id);
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+fn tunnel_stop_all_blocking(app: AppHandle, state: &TunnelState, vault_state: &VaultState) {
     let _vault_guard = vault_state.0.lock().unwrap_or_else(|e| e.into_inner());
     let runtimes = lock(&state.entries).values().cloned().collect::<Vec<_>>();
     for runtime in runtimes {
         request_stop(&runtime);
         publish(&app, &runtime.info);
     }
+}
+
+#[tauri::command]
+pub async fn tunnel_stop_all(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_app = app.clone();
+        let state = state_app.state::<TunnelState>();
+        let vault_state = state_app.state::<VaultState>();
+        tunnel_stop_all_blocking(app, &state, &vault_state);
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// Stop independent tunnel process trees before the Tauri runtime exits.
@@ -844,6 +881,36 @@ mod tests {
         assert_eq!(bind_port("18080"), "18080");
         assert_eq!(bind_port("127.0.0.1:18080"), "18080");
         assert_eq!(bind_port("[::1]:18080"), "18080");
+    }
+
+    #[test]
+    fn later_listener_diagnostic_does_not_clear_a_failed_forward() {
+        let info = Arc::new(Mutex::new(TunnelInfo {
+            connection_id: "c1".into(),
+            connection_name: "db".into(),
+            host: "example".into(),
+            port: 22,
+            user: "admin".into(),
+            jump_names: vec![],
+            status: TunnelLifecycle::Failed,
+            forwards: vec![TunnelForwardInfo {
+                index: 0,
+                kind: "local".into(),
+                bind: "127.0.0.1:15432".into(),
+                destination: Some("db:5432".into()),
+                status: TunnelForwardLifecycle::Failed,
+                error: Some("Address already in use".into()),
+            }],
+            error: Some("Address already in use".into()),
+            started_at: 1,
+        }));
+
+        set_active_forwards(&info, &HashSet::from([0]));
+
+        let current = lock(&info);
+        assert_eq!(current.status, TunnelLifecycle::Failed);
+        assert_eq!(current.forwards[0].status, TunnelForwardLifecycle::Failed);
+        assert_eq!(current.forwards[0].error.as_deref(), Some("Address already in use"));
     }
 
     #[test]

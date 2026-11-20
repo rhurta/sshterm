@@ -336,6 +336,9 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Explicit application-exit cleanup for independent tunnel process trees.
 - Windows ProxyJump descendant cleanup and owned-child reaping on stop, vault lock, app exit and monitor failures.
 - Idempotent repeated stop requests and a process-reaping regression test.
+- Tunnel start/stop/stop-all and vault lock delegate blocking work to spawn_blocking rather than the WebView UI thread.
+- Stop releases the child mutex before process-tree termination; monitor cleanup does not wait indefinitely for inherited stderr pipes.
+- Listener readiness updates cannot overwrite a previously reported forward failure.
 
 ### Remaining M7 acceptance
 

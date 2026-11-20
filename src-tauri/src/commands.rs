@@ -2,7 +2,7 @@
 
 use std::sync::{Mutex, MutexGuard};
 
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::config::{self, Config};
 use crate::paths;
@@ -71,16 +71,17 @@ pub async fn vault_unlock(state: State<'_, VaultState>, password: String) -> Res
 
 /// Locking = dropping the vault. The key is cleared from memory on drop.
 #[tauri::command]
-pub fn vault_lock(
-    state: State<'_, VaultState>,
-    tunnel_state: State<'_, crate::tunnels::TunnelState>,
-) {
-    // Acquire the vault first, matching tunnel_start's lock order. This makes
-    // start-vs-lock atomic: any start already in progress is registered before
-    // this cleanup drains the tunnel manager, and later starts see "locked".
-    let mut vault = lock(&state);
-    crate::tunnels::stop_all_for_vault_lock(&tunnel_state);
-    *vault = None;
+pub async fn vault_lock(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state_app = app.clone();
+        let state = state_app.state::<VaultState>();
+        let tunnel_state = state_app.state::<crate::tunnels::TunnelState>();
+        let mut vault = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        crate::tunnels::stop_all_for_vault_lock(&tunnel_state);
+        *vault = None;
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
