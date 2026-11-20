@@ -137,7 +137,7 @@ pub fn run() {
                 let open = MenuItem::with_id(app, "open", "Open SSH Term", true, None::<&str>)?;
                 let exit = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&open, &exit])?;
-                let _tray = TrayIconBuilder::new()
+                let tray = TrayIconBuilder::new()
                     .icon(icon)
                     .tooltip("SSH Term")
                     .menu(&menu)
@@ -153,6 +153,8 @@ pub fn run() {
                         }
                     })
                     .build(app)?;
+                // TrayIcon is reference-counted; retain a handle for the app lifetime.
+                app.manage(tray);
             }
             Ok(())
         })
