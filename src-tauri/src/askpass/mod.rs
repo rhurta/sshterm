@@ -113,11 +113,28 @@ impl Drop for AskpassServer {
 fn exchange(pipe: &str, token: &str, prompt: &str) -> Result<String, i32> {
     use std::io::{BufRead, BufReader, Write};
 
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(pipe)
-        .map_err(|_| 3)?;
+    // The server reuses one named-pipe instance for successive SSH
+    // prompts. After disconnecting one client there is a short interval
+    // before the next connect() is pending; a second ProxyJump askpass helper
+    // can arrive during that interval. Retry only the transient Windows pipe
+    // errors rather than failing a valid credential request due to this race.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut file = loop {
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(pipe)
+        {
+            Ok(file) => break file,
+            Err(error)
+                if matches!(error.raw_os_error(), Some(2 | 231))
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(_) => return Err(3),
+        }
+    };
     let request = serde_json::to_string(&Request {
         token: token.to_string(),
         prompt: prompt.to_string(),
