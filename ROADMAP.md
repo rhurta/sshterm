@@ -354,16 +354,21 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 
 ---
 
-## 📋 M8 — Native SFTP
+## 📋 M8 — Native SFTP (design documented; implementation not started)
 
-**Done when:** `russh-sftp` file browser and downloads with custom ports work.
+**Done when:** the connection-backed SFTP browser supports direct and multi-hop access, common file operations, and reliable cancellable transfers.
 
-- SFTP uses the connection's own host, port, and jump chain (optional separate SFTP port).
-- Operations: list directory, download (single file and recursive folder), upload, delete, rename.
-- Multi-select, progress bar, cancel, overwrite confirmation.
-- `russh` enters the project here (before it replaces the phase-1 engine in M10).
+See [docs/M8-implementation-plan.md](docs/M8-implementation-plan.md) for architecture, security gates, API direction, delivery phases and acceptance tests.
 
----
+- **M8a — Protocol/security spike:** compatible `russh` + `russh-sftp`, auth parity, known-host verification, direct SFTP and `direct-tcpip` jump chains.
+- **M8b — Backend lifecycle:** managed SFTP connections, typed commands, remote listing/navigation, close on vault lock and app exit.
+- **M8c — Browser UI:** open from a saved connection; navigate/list, create directory, rename/delete safely, local file dialogs and keyboard support.
+- **M8d — Transfers:** multi-select, recursive folder upload/download, streaming progress, overwrite confirmation, cancellation and partial-file cleanup.
+- **M8e — Hardening:** Windows portable build, local OpenSSH integration tests, large-file/Unicode/permission/network-failure coverage and regression checks for M7.
+- The SFTP port override is optional and inherits the saved connection's SSH port when unset. Jump hosts retain their own saved ports.
+- M8 uses the native Russh client only for SFTP. The OpenSSH/ConPTY terminal engine and M7 OpenSSH tunnel manager remain unchanged until M10.
+
+--- 
 
 ## 🟡 M9 — Polish (partial)
 

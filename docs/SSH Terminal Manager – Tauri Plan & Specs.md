@@ -423,12 +423,15 @@ bold = true
 
 The reusable agent skill is available at `.agents/skills/sshterm-highlight-rules/SKILL.md`. It guides an AI agent to analyze supplied terminal examples, author conservative TOML rule sets compatible with the Rust regex engine, validate prompt/scope behavior, and explain installation. Use it when creating or adapting profiles from real terminal output.
 
-### M8 — Native SFTP (planned)
+### M8 — Native SFTP (planned; architecture defined)
 
-- Add russh and russh-sftp; neither is currently a dependency.
-- Implement remote directory listing, single-file and recursive-folder downloads, uploads, delete/rename, multi-select, progress, cancellation and overwrite confirmation.
-- Support the connection's host, port and jump route, with an optional separate SFTP port.
-- Decide whether SFTP requires the native SSH engine for the first release or whether a separately managed OpenSSH SFTP process is preferable. The earlier “from the start” assumption is not current implementation.
+M8 uses `russh` + `russh-sftp` for a dedicated SFTP connection path while leaving OpenSSH/ConPTY terminal sessions and M7 tunnels unchanged. It reuses the saved connection's host, authentication and ordered jump route, with an optional target SFTP SSH-port override. The override inherits the connection's SSH port when unset; each jump host keeps its own port.
+
+The design uses `direct-tcpip` channel streams to chain jump hosts, the existing portable `known_hosts` file for TOFU and changed-key rejection, and a native SFTP subsystem over the target SSH session. Saved password, key/passphrase and Windows SSH-agent/Pageant methods must be explicitly tested at every hop. No unconditional host-key acceptance is allowed.
+
+M8 includes directory listing/navigation, single and recursive folder uploads/downloads, multi-select transfer queue, progress, cancellation, overwrite confirmation, create directory, rename and safe delete. Transfers are streamed in bounded chunks through temporary destination files; an incomplete transfer must not be reported as successful or silently replace an existing file.
+
+See [docs/M8-implementation-plan.md](M8-implementation-plan.md) for M8a–M8e delivery phases, backend/UI boundaries and acceptance criteria. 
 
 ### M9 — Polish and lifecycle (partial)
 
@@ -540,7 +543,7 @@ There are no current source modules for broadcast, sftp, hostkeys, highlight or 
 | M6 | Tiling, command console and broadcast | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | ✅ Complete; user-validated on Linux and Ericsson MME |
 | M7 | Local/reverse/SOCKS forwards, independent lifecycle/status, manager UI, tray preferences and live indicator | ✅ Implemented; Windows CI passed |
-| M8 | Native SFTP | 📋 Planned |
+| M8 | Native SFTP | 📋 Planned; design documented in `docs/M8-implementation-plan.md` |
 | M9 | Colors, host-key UI, auto-reconnect, idle lock and release polish | 🟡 Partial; global themes implemented, per-connection colors and lifecycle polish planned |
 | M10 | Native russh transport | 📋 Planned |
 
