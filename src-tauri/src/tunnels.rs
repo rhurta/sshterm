@@ -505,7 +505,6 @@ fn monitor_process(
                 }
                 for line in receiver.try_iter() {
                     if let Some(message) = tunnel_failure_message(&line, authenticated) {
-                        last_error = Some(message.clone());
                         set_failed(&info, message, &line);
                     }
                 }
