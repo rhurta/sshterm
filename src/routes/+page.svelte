@@ -14,6 +14,7 @@
   let ready = $state(false); // avoid briefly showing the wrong locale or theme
   let unlocked = $state(false);
   let settingsOpen = $state(false);
+  let tunnelPanelOpen = $state(false);
   let dir = $state("");
   let theme = $state<AppTheme>(DEFAULT_THEME);
 
@@ -55,12 +56,13 @@
     {unlocked}
     onchange={changeTheme}
     onsettings={() => (settingsOpen = true)}
+    ontunnels={() => (tunnelPanelOpen = true)}
     onlock={lock}
   />
   {#if ready}
     <div class="screen">
       {#if unlocked}
-        <Workspace {dir} {theme} bind:settingsOpen />
+        <Workspace {dir} {theme} bind:settingsOpen bind:tunnelPanelOpen />
       {:else}
         <LockScreen onunlocked={() => (unlocked = true)} />
       {/if}

@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { t } from "$lib/i18n/index.svelte";
+  import type { TunnelInfo } from "$lib/types";
   import type { AppTheme } from "./theme";
 
   let {
@@ -10,6 +13,7 @@
     unlocked,
     onchange,
     onsettings,
+    ontunnels,
     onlock,
   }: {
     theme: AppTheme;
@@ -17,15 +21,22 @@
     unlocked: boolean;
     onchange: (theme: AppTheme) => void;
     onsettings: () => void;
+    ontunnels: () => void;
     onlock: () => void;
   } = $props();
 
   const appWindow = getCurrentWindow();
   let maximized = $state(false);
+  let tunnelStatuses = $state<Record<string, TunnelInfo>>({});
+  let runningTunnels = $derived(Object.values(tunnelStatuses).filter((item) =>
+    item.status === "starting" || item.status === "active" || item.status === "stopping",
+  ));
 
   onMount(() => {
     let mounted = true;
     let unlisten: (() => void) | undefined;
+    let unlistenTunnels: (() => void) | undefined;
+    const statusEventVersions: Record<string, number> = {};
 
     void appWindow.isMaximized()
       .then((value) => { if (mounted) maximized = value; })
@@ -40,9 +51,34 @@
       if (!mounted) stop();
     }).catch(() => {});
 
+    void listen<TunnelInfo>("tunnel:status", (event) => {
+      if (!mounted) return;
+      const status = event.payload;
+      statusEventVersions[status.connection_id] = (statusEventVersions[status.connection_id] ?? 0) + 1;
+      tunnelStatuses = { ...tunnelStatuses, [status.connection_id]: status };
+    }).then((stop) => {
+      unlistenTunnels = stop;
+      if (!mounted) {
+        stop();
+        return;
+      }
+      const versionsAtRequest = { ...statusEventVersions };
+      void invoke<TunnelInfo[]>("tunnel_list").then((items) => {
+        if (!mounted) return;
+        const next = { ...tunnelStatuses };
+        for (const item of items) {
+          if ((statusEventVersions[item.connection_id] ?? 0) === (versionsAtRequest[item.connection_id] ?? 0)) {
+            next[item.connection_id] = item;
+          }
+        }
+        tunnelStatuses = next;
+      }).catch(() => {});
+    }).catch((error) => console.error("Could not subscribe to tunnel status", error));
+
     return () => {
       mounted = false;
       unlisten?.();
+      unlistenTunnels?.();
     };
   });
 
@@ -134,6 +170,19 @@
       <option value="light">{t("theme.light")}</option>
       <option value="nord">{t("theme.nord")}</option>
     </select>
+    {#if runningTunnels.length > 0}
+      <button
+        type="button"
+        class="tunnel-status-button"
+        onclick={ontunnels}
+        disabled={!unlocked}
+        aria-label={t("tunnels.running", { count: runningTunnels.length })}
+        title={unlocked ? t("tunnels.openRunning", { count: runningTunnels.length }) : t("tunnels.runningWhileLocked", { count: runningTunnels.length })}
+      >
+        <span class="tunnel-status-dot" aria-hidden="true"></span>
+        <span>{t("tunnels.indicator", { count: runningTunnels.length })}</span>
+      </button>
+    {/if}
     {#if unlocked}
       <button type="button" class="action-button" onclick={onsettings}>{t("settings.title")}</button>
       <button type="button" class="action-button" onclick={onlock}>{t("home.lock")}</button>
@@ -234,6 +283,37 @@
     margin-left: 0.35rem;
   }
   .titlebar-actions,
+  .tunnel-status-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    min-height: 1.55rem;
+    padding: 0.2rem 0.48rem;
+    border: 1px solid var(--success-border);
+    border-radius: 4px;
+    background: var(--success-soft);
+    color: var(--success);
+    font: inherit;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .tunnel-status-button:hover:not(:disabled) {
+    border-color: var(--success);
+    filter: brightness(1.08);
+  }
+  .tunnel-status-button:disabled {
+    cursor: default;
+    opacity: 0.9;
+  }
+  .tunnel-status-dot {
+    width: 0.42rem;
+    height: 0.42rem;
+    flex: 0 0 0.42rem;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 20%, transparent);
+  }
   .window-controls {
     display: flex;
     align-items: center;

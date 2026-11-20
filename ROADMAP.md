@@ -327,6 +327,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Stop requests are idempotent, and the process-tree termination path is shared by normal stop, vault lock, application exit and monitor-start/polling failure cleanup.
 - **Active is a listener-setup state only.** It does not test whether the remote destination service is reachable or healthy. For reverse listeners, remote sshd policy such as GatewayPorts still applies.
 - Session tabs retain their compact configured-forward count; it is not a live-health indicator.
+- The title bar shows a live green-dot/count indicator whenever any independent tunnel is starting, active or stopping. Selecting it opens the Tunnel Manager; it remains visible while the vault is locked if the user chose to keep tunnels running.
 - The dedicated Tunnel Manager opens from the connections sidebar, including when no terminal is open. Its search field receives focus on opening and filters by connection name, host or user.
 - The manager shows the saved route, each configured forward and its live status/error; it offers per-connection Start/Stop, Start All, Stop All and Edit actions.
 - Stop All retains the stopped runtime entries in the manager so their final state remains visible and they can be restarted without overlapping the prior process.

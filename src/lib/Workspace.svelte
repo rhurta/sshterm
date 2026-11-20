@@ -19,10 +19,12 @@
     dir,
     theme,
     settingsOpen = $bindable(false),
+    tunnelPanelOpen = $bindable(false),
   }: {
     dir: string;
     theme: AppTheme;
     settingsOpen?: boolean;
+    tunnelPanelOpen?: boolean;
   } = $props();
 
   let tabs = $state<Tab[]>([]);
@@ -40,7 +42,6 @@
   let consoleDrag = $state<{ startY: number; startHeight: number } | null>(null);
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let highlightPanelOpen = $state(false);
-  let tunnelPanelOpen = $state(false);
   let picker = $state(false);
   let pickerList = $state<ConnectionSummary[]>([]);
   let pickerQuery = $state("");
