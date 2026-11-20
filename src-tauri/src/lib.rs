@@ -161,11 +161,12 @@ pub fn run() {
             tunnels::tunnel_stop,
             tunnels::tunnel_stop_all,
         ])
-        .run(|app_handle: &tauri::AppHandle, event| {
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
             if matches!(event, RunEvent::Exit) {
                 let tunnels = app_handle.state::<tunnels::TunnelState>();
                 tunnels::stop_all_for_app_exit(&tunnels);
             }
-        })
-        .expect("error while running tauri application");
+        });
 }
