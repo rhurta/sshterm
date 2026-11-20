@@ -388,7 +388,13 @@ fn request_stop(runtime: &TunnelRuntime) {
     if !already_requested {
         let child = lock(&runtime.child).take();
         if let Some(mut child) = child {
-            terminate_process_tree(&mut child);
+            // The monitor may have observed process exit immediately before
+            // this stop request. Reap an exited child without taskkilling its
+            // (potentially already recycled) PID.
+            match child.try_wait() {
+                Ok(Some(_)) => {}
+                Ok(None) | Err(_) => terminate_process_tree(&mut child),
+            }
         }
         runtime.stop_completed.store(true, Ordering::Release);
     }
@@ -847,8 +853,7 @@ mod tests {
         // the already requested lifecycle transition.
         request_stop(&runtime);
 
-        let mut child = lock(&runtime.child);
-        assert!(child.as_mut().unwrap().try_wait().unwrap().is_some());
+        assert!(lock(&runtime.child).is_none());
         assert!(runtime.stop_requested.load(Ordering::Acquire));
         assert!(runtime.stop_completed.load(Ordering::Acquire));
     }
