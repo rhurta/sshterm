@@ -14,6 +14,11 @@ export const en = {
 
   "settings.title": "Settings",
   "settings.language": "Language",
+  "settings.applicationBehavior": "Application behavior",
+  "settings.stopTunnelsOnLock": "Stop independent SSH tunnels when locking the vault",
+  "settings.keepTunnelsOnLockWarning": "If disabled, tunnels keep running while the vault is locked. Their SSH processes and authentication helper remain active in memory until the tunnels are stopped or the app exits.",
+  "settings.closeToTray": "Hide to the system tray instead of exiting when closing the window",
+  "settings.closeToTrayHint": "Use the tray icon to reopen SSH Term or choose Exit to stop all processes and quit.",
   "settings.terminal": "Terminal clipboard and mouse",
   "settings.copyOnSelection": "Copy automatically when text is selected",
   "settings.rightClickCopy": "Right-click copies selected text",

@@ -11,8 +11,8 @@
   import TunnelManager from "./TunnelManager.svelte";
   import type { BroadcastSession } from "$lib/broadcastTargets";
   import LanguageSelect from "./LanguageSelect.svelte";
-  import type { AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
-  import { DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
+  import type { AppBehaviorSettings, AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
+  import { DEFAULT_APP_BEHAVIOR_SETTINGS, DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
   import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
@@ -56,6 +56,7 @@
   let refreshToken = $state(0);
   let error = $state("");
   let settings = $state<TerminalSettings>({ ...DEFAULT_TERMINAL_SETTINGS });
+  let appBehavior = $state<AppBehaviorSettings>({ ...DEFAULT_APP_BEHAVIOR_SETTINGS });
   let multilinePaste = $state<{ lineCount: number } | null>(null);
   let multilinePasteCancelButton = $state<HTMLButtonElement | null>(null);
   let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
@@ -107,6 +108,9 @@
     void invoke<TerminalSettings>("config_get_terminal_settings")
       .then((value) => (settings = value))
       .catch(() => {});
+    void invoke<AppBehaviorSettings>("config_get_app_behavior_settings")
+      .then((value) => (appBehavior = value))
+      .catch(() => {});
     void invoke<CommandConsoleSettings>("config_get_command_console_settings")
       .then((value) => {
         if (!consoleSettingsDirty) {
@@ -132,6 +136,21 @@
       await invoke("config_set_terminal_settings", { settings: next });
     } catch (e) {
       settings = previous;
+      error = String(e);
+    }
+  }
+
+  async function setAppBehaviorSetting<K extends keyof AppBehaviorSettings>(
+    key: K,
+    value: AppBehaviorSettings[K],
+  ) {
+    const previous = appBehavior;
+    const next = { ...appBehavior, [key]: value };
+    appBehavior = next;
+    try {
+      await invoke("config_set_app_behavior_settings", { settings: next });
+    } catch (e) {
+      appBehavior = previous;
       error = String(e);
     }
   }
@@ -650,6 +669,11 @@
         <p class="hint">{t("workspace.shortcutConsoleHelp")}</p>
         <p class="hint">{t("workspace.shortcutLayoutHelp")}</p>
         <p class="hint">{t("console.shortcutSendHelp")}</p>
+        <h3>{t("settings.applicationBehavior")}</h3>
+        <label class="setting"><input type="checkbox" checked={appBehavior.stop_tunnels_on_lock} onchange={(e) => setAppBehaviorSetting("stop_tunnels_on_lock", e.currentTarget.checked)} />{t("settings.stopTunnelsOnLock")}</label>
+        <p class="hint">{t("settings.keepTunnelsOnLockWarning")}</p>
+        <label class="setting"><input type="checkbox" checked={appBehavior.close_to_tray} onchange={(e) => setAppBehaviorSetting("close_to_tray", e.currentTarget.checked)} />{t("settings.closeToTray")}</label>
+        <p class="hint">{t("settings.closeToTrayHint")}</p>
         <h3>{t("settings.terminal")}</h3>
         <button class="ghost" onclick={() => (highlightPanelOpen = true)}>{t("settings.highlightRules")}</button>
         <label class="setting"><input type="checkbox" checked={settings.copy_on_selection} onchange={(e) => setTerminalSetting("copy_on_selection", e.currentTarget.checked)} />{t("settings.copyOnSelection")}</label>

@@ -11,6 +11,8 @@ mod tunnels;
 mod vault;
 
 use serde::{Deserialize, Serialize};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, PhysicalPosition, PhysicalSize, Position, RunEvent, Size, WindowEvent};
 
 #[tauri::command]
@@ -61,6 +63,14 @@ fn save_window_state(window: &tauri::WebviewWindow, path: &std::path::Path) {
     }
 }
 
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 fn restore_window_state(window: &tauri::WebviewWindow) {
     let Ok(bytes) = std::fs::read(window_state_path()) else { return };
     let Ok(state) = serde_json::from_slice::<SavedWindowState>(&bytes) else { return };
@@ -107,11 +117,42 @@ pub fn run() {
                 restore_window_state(&window);
                 let save_path = window_state_path();
                 let event_window = window.clone();
-                window.on_window_event(move |event| {
-                    if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::CloseRequested { .. }) {
+                window.on_window_event(move |event| match event {
+                    WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
                         save_window_state(&event_window, &save_path);
                     }
+                    WindowEvent::CloseRequested { api, .. } => {
+                        save_window_state(&event_window, &save_path);
+                        if crate::config::Config::load(&paths::config_path()).app_behavior.close_to_tray {
+                            api.prevent_close();
+                            let _ = event_window.hide();
+                        }
+                    }
+                    _ => {}
                 });
+            }
+
+            // Keep a tray entry available so a hidden window can always be restored or exited.
+            if let Some(icon) = app.default_window_icon().cloned() {
+                let open = MenuItem::with_id(app, "open", "Open SSH Term", true, None::<&str>)?;
+                let exit = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&open, &exit])?;
+                let _tray = TrayIconBuilder::new()
+                    .icon(icon)
+                    .tooltip("SSH Term")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "open" => show_main_window(app),
+                        "exit" => app.exit(0),
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::DoubleClick { .. } = event {
+                            show_main_window(tray.app_handle());
+                        }
+                    })
+                    .build(app)?;
             }
             Ok(())
         })
@@ -137,6 +178,8 @@ pub fn run() {
             commands::config_set_terminal_settings,
             commands::config_get_command_console_settings,
             commands::config_set_command_console_settings,
+            commands::config_get_app_behavior_settings,
+            commands::config_set_app_behavior_settings,
             store::conn_list,
             store::conn_get,
             store::conn_upsert,

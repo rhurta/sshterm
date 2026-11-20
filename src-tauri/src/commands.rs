@@ -76,8 +76,11 @@ pub async fn vault_lock(app: AppHandle) -> Result<(), String> {
         let state_app = app.clone();
         let state = state_app.state::<VaultState>();
         let tunnel_state = state_app.state::<crate::tunnels::TunnelState>();
+        let app_behavior = Config::load(&paths::config_path()).app_behavior;
         let mut vault = state.0.lock().unwrap_or_else(|e| e.into_inner());
-        crate::tunnels::stop_all_for_vault_lock(&tunnel_state);
+        if app_behavior.stop_tunnels_on_lock {
+            crate::tunnels::stop_all_for_vault_lock(&tunnel_state);
+        }
         *vault = None;
     })
     .await
@@ -150,6 +153,20 @@ pub fn config_set_terminal_settings(settings: config::TerminalSettings) -> Resul
     let path = paths::config_path();
     let mut cfg = Config::load(&path);
     cfg.terminal = settings;
+    cfg.save(&path).map_err(|e| e.to_string())
+}
+
+/// Application lifecycle preferences are stored outside the encrypted vault.
+#[tauri::command]
+pub fn config_get_app_behavior_settings() -> config::AppBehaviorSettings {
+    Config::load(&paths::config_path()).app_behavior
+}
+
+#[tauri::command]
+pub fn config_set_app_behavior_settings(settings: config::AppBehaviorSettings) -> Result<(), String> {
+    let path = paths::config_path();
+    let mut cfg = Config::load(&path);
+    cfg.app_behavior = settings;
     cfg.save(&path).map_err(|e| e.to_string())
 }
 

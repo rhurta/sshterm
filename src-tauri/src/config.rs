@@ -89,6 +89,22 @@ impl CommandConsoleSettings {
     }
 }
 
+/// Application lifecycle preferences, available before the vault is unlocked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppBehaviorSettings {
+    /// Stop independent SSH tunnel processes before locking the vault.
+    pub stop_tunnels_on_lock: bool,
+    /// Hide the main window instead of exiting when its close button is used.
+    pub close_to_tray: bool,
+}
+
+impl Default for AppBehaviorSettings {
+    fn default() -> Self {
+        Self { stop_tunnels_on_lock: true, close_to_tray: false }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)] // missing fields take their default value
 pub struct Config {
@@ -103,6 +119,8 @@ pub struct Config {
     pub terminal: TerminalSettings,
     /// Command-console visibility and preferred height (never contains command drafts).
     pub command_console: CommandConsoleSettings,
+    /// Window and vault-lock behavior; stored outside the encrypted vault.
+    pub app_behavior: AppBehaviorSettings,
 }
 
 impl Default for Config {
@@ -114,6 +132,7 @@ impl Default for Config {
             log_mode: LogMode::Screen,
             terminal: TerminalSettings::default(),
             command_console: CommandConsoleSettings::default(),
+            app_behavior: AppBehaviorSettings::default(),
         }
     }
 }
@@ -167,6 +186,7 @@ mod tests {
         let cfg = Config::load(&dir.path().join("config.toml"));
         assert_eq!(cfg.language, "en");
         assert_eq!(cfg.theme, AppTheme::Dark);
+        assert_eq!(cfg.app_behavior, AppBehaviorSettings::default());
     }
 
     #[test]
@@ -179,6 +199,7 @@ mod tests {
         assert_eq!(cfg.theme, AppTheme::Nord);
         assert!(cfg.log_output);
         assert_eq!(cfg.log_mode, LogMode::Screen);
+        assert_eq!(cfg.app_behavior, AppBehaviorSettings::default());
         assert!(!dir.path().join("config.toml.tmp").exists());
     }
 
@@ -260,6 +281,23 @@ mod tests {
         assert!(!loaded.command_console.visible);
         assert_eq!(loaded.command_console.height, 110);
         assert_eq!(CommandConsoleSettings { visible: true, height: 5000 }.normalized().height, 900);
+    }
+
+    #[test]
+    fn app_behavior_settings_roundtrip_and_old_configs_keep_safe_defaults() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "language = \"es\"\n").unwrap();
+        assert_eq!(Config::load(&path).app_behavior, AppBehaviorSettings::default());
+
+        let mut cfg = Config::load(&path);
+        cfg.app_behavior.stop_tunnels_on_lock = false;
+        cfg.app_behavior.close_to_tray = true;
+        cfg.save(&path).unwrap();
+        assert_eq!(Config::load(&path).app_behavior, AppBehaviorSettings {
+            stop_tunnels_on_lock: false,
+            close_to_tray: true,
+        });
     }
 
     #[test]

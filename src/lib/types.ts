@@ -24,6 +24,16 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   keep_disconnected_sessions: false,
 }
 
+export interface AppBehaviorSettings {
+  stop_tunnels_on_lock: boolean;
+  close_to_tray: boolean;
+}
+
+export const DEFAULT_APP_BEHAVIOR_SETTINGS: AppBehaviorSettings = {
+  stop_tunnels_on_lock: true,
+  close_to_tray: false,
+}
+
 export interface CommandConsoleSettings {
   visible: boolean;
   height: number;

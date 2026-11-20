@@ -15,6 +15,11 @@ export const es: Record<MessageKey, string> = {
 
   "settings.title": "Configuración",
   "settings.language": "Idioma",
+  "settings.applicationBehavior": "Comportamiento de la aplicación",
+  "settings.stopTunnelsOnLock": "Detener los túneles SSH independientes al bloquear el vault",
+  "settings.keepTunnelsOnLockWarning": "Si se desactiva, los túneles siguen funcionando con el vault bloqueado. Sus procesos SSH y el ayudante de autenticación permanecen activos en memoria hasta detener los túneles o salir de la aplicación.",
+  "settings.closeToTray": "Ocultar en la bandeja del sistema en vez de salir al cerrar la ventana",
+  "settings.closeToTrayHint": "Usa el icono de la bandeja para abrir SSH Term o elige Salir para detener todos los procesos y cerrar la aplicación.",
   "settings.terminal": "Portapapeles y ratón del terminal",
   "settings.copyOnSelection": "Copiar automáticamente al seleccionar texto",
   "settings.rightClickCopy": "Clic derecho copia el texto seleccionado",
