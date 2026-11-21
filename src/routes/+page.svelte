@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import LockScreen from "$lib/LockScreen.svelte";
+  import SftpAcceptancePanel from "$lib/SftpAcceptancePanel.svelte";
   import Workspace from "$lib/Workspace.svelte";
   import TitleBar from "$lib/TitleBar.svelte";
   import { initLocale } from "$lib/i18n/index.svelte";
@@ -16,6 +17,8 @@
   let unlocked = $state(false);
   let settingsOpen = $state(false);
   let tunnelPanelOpen = $state(false);
+  let sftpAcceptanceOpen = $state(false);
+  let sftpStaleSessionIds = $state<string[]>([]);
   let dir = $state("");
   let theme = $state<AppTheme>(DEFAULT_THEME);
   let appearance = $state<AppearanceSettings>({ ...DEFAULT_APPEARANCE_SETTINGS });
@@ -86,6 +89,12 @@
     await invoke("session_close_all");
     await invoke("vault_lock");
     unlocked = false;
+    sftpAcceptanceOpen = false;
+  }
+
+  async function lockFromSftpAcceptance(sessionIds: string[]) {
+    sftpStaleSessionIds = sessionIds;
+    await lock();
   }
 </script>
 
@@ -124,6 +133,14 @@
           <LockScreen onunlocked={() => (unlocked = true)} />
         {/if}
       </div>
+    {/if}
+    {#if ready && unlocked && sftpAcceptanceOpen}
+      <SftpAcceptancePanel
+        onclose={() => (sftpAcceptanceOpen = false)}
+        onlock={lockFromSftpAcceptance}
+        staleSessionIds={sftpStaleSessionIds}
+        onclearstale={() => (sftpStaleSessionIds = [])}
+      />
     {/if}
   </div>
 </div>
@@ -365,6 +382,16 @@
     display: flex;
     flex-direction: column;
   }
+  .sftp-qa-launcher {
+    position: fixed; right: 14px; bottom: 14px; z-index: 100;
+    display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px;
+    border: 1px solid var(--warning-border); border-radius: 5px;
+    background: var(--warning-bg); color: var(--warning);
+    font: inherit; font-size: var(--ui-font-meta); font-weight: 650;
+    cursor: pointer; opacity: .9;
+  }
+  .sftp-qa-launcher:hover { opacity: 1; }
+  .sftp-qa-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
   .screen {
     flex: 1;
     min-height: 0;
