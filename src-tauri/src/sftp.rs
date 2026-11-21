@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use russh::client::{self, Handle};
 use russh::keys::agent::{client::{AgentClient, AgentStream}, AgentIdentity};
 use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
@@ -522,7 +522,6 @@ pub async fn connect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vault::SftpOptions;
 
     const FIRST_KEY: &str =
         "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";
@@ -623,20 +622,20 @@ mod tests {
 
     #[test]
     fn endpoint_uses_target_sftp_override_but_not_for_jump_hops() {
-        let target = Connection {
-            host: "target.example".into(),
-            user: "admin".into(),
-            port: 22,
-            sftp: Some(SftpOptions { port: Some(2222), start_dir: String::new() }),
-            ..Connection::default()
-        };
-        let hop = Connection {
-            host: "jump.example".into(),
-            user: "bastion".into(),
-            port: 2201,
-            sftp: Some(crate::vault::SftpOptions { port: Some(2202), start_dir: String::new() }),
-            ..Connection::default()
-        };
+        let target: Connection = serde_json::from_value(serde_json::json!({
+            "id": "target",
+            "host": "target.example",
+            "user": "admin",
+            "port": 22,
+            "sftp": { "port": 2222, "start_dir": "" }
+        })).unwrap();
+        let hop: Connection = serde_json::from_value(serde_json::json!({
+            "id": "jump",
+            "host": "jump.example",
+            "user": "bastion",
+            "port": 2201,
+            "sftp": { "port": 2202, "start_dir": "" }
+        })).unwrap();
         assert_eq!(endpoint(&target, true).unwrap(), ("target.example".into(), 2222));
         assert_eq!(endpoint(&hop, false).unwrap(), ("jump.example".into(), 2201));
     }
