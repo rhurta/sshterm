@@ -11,7 +11,7 @@
 - The editor accepts a blank SFTP port and explains inheritance in English and Spanish.
 - The properties pane shows when the SFTP port inherits the connection's SSH port.
 
-This increment does not yet establish a Russh connection or SFTP subsystem. Those are the core protocol-spike gates.
+The native protocol layer now implements direct and multi-hop connections, saved password/key/agent authentication, host-key TOFU and the SFTP subsystem. Live Windows OpenSSH integration remains the acceptance gate.
 
 ## Security baseline
 
@@ -28,13 +28,13 @@ Use the portable `known_hosts` file and preserve OpenSSH's accept-new semantics:
 | Old vault numeric `sftp.port` | Decode as an explicit override | Model test added |
 | Missing SFTP port | Inherit target connection SSH port | Model test added |
 | No SFTP section | Inherit target connection SSH port | Model test added |
-| Direct password and key auth | Authenticate against local OpenSSH | Pending |
-| Windows SSH agent / Pageant | Use supported agent signer | Pending |
-| SFTP subsystem over `Channel::into_stream()` | Initialize `SftpSession` | Pending |
-| Known/unknown/changed host keys | Match / learn / reject | Pending |
-| Hashed host and non-22 port | Correct known-host matching | Pending |
-| Two-hop `direct-tcpip` route | Target SFTP works through each hop | Pending |
-| Distinct hop auth | Each hop uses its own credentials | Pending |
+| Direct password and key auth | Authenticate against local OpenSSH | Implemented; integration pending |
+| Windows SSH agent / Pageant | Use session-bound agent signer | Implemented; integration pending |
+| SFTP subsystem over `Channel::into_stream()` | Initialize `SftpSession` | Implemented; integration pending |
+| Known/unknown/changed host keys | Match / learn / reject | Unit tests added; integration pending |
+| Hashed host and non-22 port | Correct known-host matching | Parser reused; integration pending |
+| Two-hop `direct-tcpip` route | Target SFTP works through each hop | Implemented; integration pending |
+| Distinct hop auth | Each hop uses its own credentials | Implemented; integration pending |
 | Windows x64 CI and portable executable | All checks pass | Pending |
 
 ## Dependency and lockfile gate

@@ -7,6 +7,7 @@ mod highlight;
 mod paths;
 mod session;
 mod store;
+pub mod sftp;
 mod transport;
 mod tunnels;
 mod vault;

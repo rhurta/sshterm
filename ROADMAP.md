@@ -366,7 +366,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 
 See [docs/M8-implementation-plan.md](docs/M8-implementation-plan.md) for architecture, security gates, API direction, delivery phases and acceptance tests.
 
-- **M8a — Protocol/security spike (in progress):** compatible `russh` + `russh-sftp`, auth parity, known-host verification, direct SFTP and `direct-tcpip` jump chains. The first increment defines optional SFTP-port inheritance and vault compatibility; the Rust protocol client and integration checks remain outstanding.
+- **M8a — Protocol/security spike (in progress):** pinned `russh` + `russh-sftp`, direct and multi-hop authentication, portable known-host verification and SFTP subsystem setup are implemented. Windows OpenSSH integration checks remain outstanding; the SFTP UI is intentionally gated on those checks.
 - **M8b — Backend lifecycle:** managed SFTP connections, typed commands, remote listing/navigation, close on vault lock and app exit.
 - **M8c — Browser UI:** open from a saved connection; navigate/list, create directory, rename/delete safely, local file dialogs and keyboard support.
 - **M8d — Transfers:** multi-select, recursive folder upload/download, streaming progress, overwrite confirmation, cancellation and partial-file cleanup.

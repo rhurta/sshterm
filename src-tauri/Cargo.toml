@@ -34,6 +34,9 @@ portable-pty = "0.9"
 tokio = { version = "1", features = ["sync", "net", "io-util", "time", "rt"] }
 base64 = "0.22"
 async-trait = "0.1"
+# M8a: native SSH/SFTP transport; pin the audited protocol implementation.
+russh = { version = "=0.65.2", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "=3.0.1"
 # serde and serde_json come from the template; serde needs features = ["derive"]
 
 [target.'cfg(windows)'.dependencies]

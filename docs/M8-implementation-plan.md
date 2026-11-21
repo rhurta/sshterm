@@ -128,15 +128,19 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 
 ### M8a — Protocol and security spike
 
-**Progress:** The first M8a increment finalizes SFTP port inheritance in the vault model and connection editor. A blank override inherits the target connection's SSH port; old numeric vault values remain explicit overrides. Jump-host ports remain independent. This increment does not yet establish a Russh connection.
+**Progress:** SFTP port inheritance and backward-compatible vault decoding are complete. The native protocol layer now opens authenticated Russh sessions directly or through ordered `direct-tcpip` jump hops, verifies host keys against the portable `known_hosts` file, and starts the SFTP subsystem. UI and Tauri command integration remain deferred until the protocol is validated against real Windows OpenSSH servers.
 
-- [ ] Add and lock compatible `russh` / `russh-sftp` versions and one crypto backend.
+- [x] Pin `russh 0.65.2` + `russh-sftp 3.0.1`, using the Ring crypto backend.
 - [x] Finalize `SftpOptions.port` inheritance and backward compatibility for saved numeric port values.
-- Prove direct password and key authentication against a local OpenSSH server.
-- Prove opening an SFTP subsystem over `Channel::into_stream()`.
-- Prove a two-hop `direct-tcpip` chain and retain parent channels correctly.
-- Verify host-key TOFU, known-key match, changed-key rejection, hashed entries and non-default ports.
-- Verify Pageant/agent support on Windows and a saved key with passphrase.
+- [x] Implement direct and multi-hop SSH authentication and SFTP subsystem setup.
+- [x] Implement portable known-host checking, accept-new learning and changed-key rejection.
+- [x] Implement direct password and private-key authentication (local OpenSSH integration pending).
+- [x] Implement SFTP subsystem setup over `Channel::into_stream()` (integration pending).
+- [x] Implement ordered multi-hop `direct-tcpip` channels and retain upstream handles (integration pending).
+- [x] Implement host-key TOFU, known-key match and changed-key rejection; unit tests added.
+- [x] Implement Windows OpenSSH agent / Pageant signer with session binding (integration pending).
+- [ ] Verify hashed host entries and live non-default-port connections against Windows OpenSSH.
+- [ ] Verify Pageant, passphrase-protected key and distinct credentials on each hop against live servers.
 - [ ] Prove vault compatibility with an encrypted-vault fixture and older connection payloads.
 - [ ] Gate: no SFTP browser UI until direct, jump, authentication and host-key checks are working.
 
