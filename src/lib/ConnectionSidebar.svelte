@@ -215,7 +215,7 @@
     <div class="head-actions"><button class="icon-action" onclick={ontunnels} title={t("tunnels.open")} aria-label={t("tunnels.open")}><svg viewBox="0 0 24 24"><path d="M4 8h11a4 4 0 0 1 0 8H9m0 0 3-3m-3 3 3 3M20 8l-3-3m3 3-3 3"/></svg></button><button class="icon-action" onclick={() => createFolder(selectedFolder())} title={t("tree.newFolder")} aria-label={t("tree.newFolder")}><svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3zM12 11v5m-2.5-2.5h5"/></svg></button><button class="icon-action" onclick={() => onnewconn(selectedFolder())} title={t("tree.newConnection")} aria-label={t("tree.newConnection")}><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.5-3 2.3-4.5 5.5-4.5s5 1.5 5.5 4.5M19 8v8m-4-4h8"/></svg></button><button class="icon-action" onclick={() => (showImport = true)} title={t("tree.import")} aria-label={t("tree.import")}><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg></button></div>
   </div>
 
-  <SearchBox value={query} count={hits.length} onchange={onQuery} />
+  <SearchBox value={query} count={hits.length} onchange={onQuery} autofocus />
 
   {#if error}
     <p class="error" role="alert">{error}</p>
