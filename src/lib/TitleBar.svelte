@@ -229,6 +229,7 @@
 
 <style>
   .titlebar {
+    position: relative;
     height: 2.25rem;
     min-height: 2.25rem;
     flex: 0 0 2.25rem;
@@ -315,12 +316,12 @@
   }
   .window-controls {
     position: relative;
-    z-index: 101;
+    z-index: 1002;
     display: flex;
     align-items: center;
     height: 100%;
   }
-  .titlebar-actions { position:relative; z-index:101; display:inline-flex; align-items:center; gap:.65rem; flex:0 0 auto; }
+  .titlebar-actions { position:relative; z-index:1001; display:inline-flex; align-items:center; gap:.65rem; height:100%; flex:0 0 auto; }
   .theme-select {
     max-width: 7.5rem;
     font: inherit;
@@ -351,7 +352,9 @@
   .window-button {
     appearance: none;
     width: 2.85rem;
+    min-width: 2.85rem;
     height: 100%;
+    flex: 0 0 2.85rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -362,19 +365,20 @@
     color: var(--text-secondary);
     cursor: default;
   }
-  .window-button:hover,
-  .window-button:focus-visible {
+  .window-button:is(:hover, :focus-visible) {
     position: relative;
-    z-index: 102;
-    background: var(--surface-hover);
-    color: var(--text);
+    z-index: 1003;
+    background: var(--surface-raised);
+    color: var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
   .window-button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
   .window-button:active {
-    background: var(--surface-raised);
+    background: var(--surface-hover);
+    box-shadow: inset 0 -3px 0 var(--accent);
   }
   .window-button svg {
     width: 0.72rem;
@@ -394,14 +398,15 @@
     font-size: 1.25rem;
     line-height: 1;
   }
-  .window-button.close-button:hover,
-  .window-button.close-button:focus-visible {
-    background: #c42b1c;
-    color: #ffffff;
+  .window-button.close-button:is(:hover, :focus-visible) {
+    background: var(--danger-bg);
+    color: var(--danger);
+    box-shadow: inset 0 -2px 0 var(--danger);
   }
   .window-button.close-button:active {
-    background: #a51f14;
-    color: #ffffff;
+    background: var(--danger);
+    color: var(--accent-contrast);
+    box-shadow: inset 0 -3px 0 var(--danger);
   }
   .resize-hit {
     position: fixed;
@@ -419,7 +424,8 @@
     height: 5px;
     cursor: ns-resize;
   }
-  .edge-top { top: 0; }
+  /* Keep the top resize grip away from the title-bar action buttons. */
+  .edge-top { top: 0; right: 220px; }
   .edge-bottom { bottom: 0; }
   .edge-left, .edge-right {
     top: 7px;
@@ -428,13 +434,14 @@
     cursor: ew-resize;
   }
   .edge-left { left: 0; }
-  .edge-right { right: 0; }
+  .edge-right { right: 0; top: 44px; }
   .corner-top-left, .corner-top-right, .corner-bottom-left, .corner-bottom-right {
     width: 10px;
     height: 10px;
   }
   .corner-top-left { top: 0; left: 0; cursor: nwse-resize; }
-  .corner-top-right { top: 0; right: 0; cursor: nesw-resize; }
+  /* The top-right grip would sit over the close control. */
+  .corner-top-right { top: 0; right: 0; cursor: nesw-resize; pointer-events:none; }
   .corner-bottom-left { bottom: 0; left: 0; cursor: nesw-resize; }
   .corner-bottom-right { bottom: 0; right: 0; cursor: nwse-resize; }
   @media (max-width: 520px) {
