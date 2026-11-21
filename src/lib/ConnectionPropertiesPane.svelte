@@ -140,8 +140,8 @@
 </script>
 
 <aside class="properties-pane" aria-label={t("properties.title")} style:width={width + "px"}>
-  <div class="properties-head">
-    <strong>{t("properties.title")}</strong>
+  <div class="properties-head workspace-panel-header">
+    <strong class="panel-title">{t("properties.title")}</strong>
     {#if connection && !editing}
       <button class="edit-button" title={t("properties.edit")} aria-label={t("properties.edit")} onclick={beginEdit}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11a2.1 2.1 0 0 0-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>
@@ -189,18 +189,7 @@
     font-family: var(--ui-font-family, "Segoe UI", system-ui, sans-serif);
     font-size: var(--ui-font-body, 13px);
   }
-  .properties-head {
-    min-height: 2.25rem;
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 0.65rem;
-    border-bottom: 1px solid var(--border);
-    color: var(--text);
-    font-size: var(--ui-font-section, 14px);
-    font-weight: 600;
-  }
+  .properties-head { justify-content: space-between; }
   .edit-button {
     width: 28px;
     height: 28px;

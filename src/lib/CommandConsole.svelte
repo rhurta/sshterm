@@ -181,8 +181,8 @@
 </script>
 
 <section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label={t("console.commandConsole")}>
-  <div class="console-heading">
-    <strong>{t("console.commandConsole")}</strong>
+  <div class="console-heading workspace-panel-header">
+    <strong class="panel-title">{t("console.commandConsole")}</strong>
     {#if confirmingMultiline}
       <div class="confirmation-banner" role="alert">
         <span>{t("console.confirmation", {
@@ -296,16 +296,16 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    padding: 0.45rem 0.7rem 0.55rem;
+    gap: 0;
+    padding: 0;
     background: var(--surface);
     border-top: 1px solid var(--border);
     box-sizing: border-box;
     overflow: hidden;
   }
   .command-console.hidden { display: none; }
-  .console-heading { display: flex; align-items: center; gap: 0.75rem; min-height: 1.65rem; flex: 0 0 auto; }
-  .console-heading strong { flex: 0 0 auto; font-size: var(--ui-font-control); font-weight: 600; color: var(--text); }
+  .console-heading { flex: 0 0 auto; }
+  .console-heading .panel-title { flex: 0 0 auto; }
   .confirmation-banner {
     display: flex; flex: 1 1 auto; align-items: center; gap: 0.5rem; min-width: 0;
     padding: 0.28rem 0.45rem; color: var(--warning, #d6a85f);
@@ -316,6 +316,8 @@
   .confirmation-banner span { flex: 1 1 auto; min-width: 0; }
   .confirmation-banner button { padding: 0.22rem 0.5rem; }
   .console-layout {
+    box-sizing: border-box;
+    padding: 8px 12px 10px;
     display: grid;
     grid-template-columns: minmax(10.5rem, 0.34fr) minmax(0, 1fr);
     gap: 0.65rem;
@@ -460,8 +462,9 @@
   button.secondary { color: var(--text-secondary); background: transparent; }
   button:disabled { opacity: 0.45; cursor: default; }
   @media (max-width: 720px) {
-    .console-heading { align-items: flex-start; flex-wrap: wrap; }
-    .confirmation-banner { flex-basis: 100%; flex-wrap: wrap; }
+    .console-heading { gap: 8px; }
+    .confirmation-banner { min-width: 0; padding: 2px 6px; }
+    .confirmation-banner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .console-layout { grid-template-columns: minmax(8.5rem, 0.42fr) minmax(0, 1fr); gap: 0.4rem; }
     .target-panel { padding-right: 0.4rem; }
     .session-row { gap: 0.25rem; padding-inline: 0.25rem; }
