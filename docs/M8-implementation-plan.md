@@ -148,9 +148,16 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 
 ### M8b — SFTP backend and session lifecycle
 
-- Add `sftp.rs`, connection state, typed errors and list/metadata/path navigation commands.
-- Implement close, close-all, vault-lock and app-exit cleanup.
-- Add backend tests for remote path validation and state races.
+**Progress:** The backend session registry and typed directory-listing contract are implemented. Sessions open from saved vault connections, including resolved jump chains, and expose runtime-only IDs and connection metadata (never credentials). Directory navigation canonicalizes remote POSIX paths and returns typed entries with type, size, modification time and permissions. Lifecycle cleanup closes sessions on explicit close, close-all, vault lock and app exit. A lifecycle gate prevents open/list/close races during vault-lock cleanup.
+
+- [x] Add managed SFTP session state and typed session/directory/entry responses.
+- [x] Add `sftp_open`, `sftp_list`, `sftp_close` and `sftp_close_all` commands.
+- [x] Resolve saved connections and ordered jump chains in Rust; keep credentials out of frontend payloads.
+- [x] Close SFTP sessions on vault lock independently of the M7 tunnel-lock preference.
+- [x] Close SFTP sessions on application exit.
+- [x] Add remote path validation and path-navigation unit tests.
+- [ ] Verify lifecycle and directory listing against Windows OpenSSH (manual acceptance).
+- [ ] Add integration coverage for open/list/close and vault-lock races.
 
 ### M8c — Browser UI and file operations
 

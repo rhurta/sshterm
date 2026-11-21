@@ -167,6 +167,7 @@ pub fn run() {
         .manage(commands::VaultState::default())
         .manage(session::SessionState::default())
         .manage(tunnels::TunnelState::default())
+        .manage(sftp::SftpState::default())
         .invoke_handler(tauri::generate_handler![
             app_info,
             highlight::highlight_list,
@@ -216,6 +217,10 @@ pub fn run() {
             tunnels::tunnel_start,
             tunnels::tunnel_stop,
             tunnels::tunnel_stop_all,
+            sftp::sftp_open,
+            sftp::sftp_list,
+            sftp::sftp_close,
+            sftp::sftp_close_all,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -223,6 +228,8 @@ pub fn run() {
             if matches!(event, RunEvent::Exit) {
                 let tunnels = app_handle.state::<tunnels::TunnelState>();
                 tunnels::stop_all_for_app_exit(&tunnels);
+                let sftp = app_handle.state::<sftp::SftpState>();
+                let _ = tauri::async_runtime::block_on(sftp::close_all(&sftp));
             }
         });
 }

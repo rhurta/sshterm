@@ -4,6 +4,7 @@
 //! the SSH/SFTP transport independently before M8b adds the application-facing
 //! lifecycle and browser commands.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,9 +15,13 @@ use hmac::{Hmac, KeyInit, Mac};
 use russh::client::{self, Handle};
 use russh::keys::agent::{client::{AgentClient, AgentStream}, AgentIdentity};
 use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
+use rand::{rngs::OsRng, RngCore};
 use russh_sftp::client::SftpSession;
+use serde::Serialize;
+use tauri::State;
 use sha1::Sha1;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::sync::{Mutex, RwLock};
 
 use crate::store;
 use crate::vault::{Auth, Connection};
@@ -638,5 +643,247 @@ mod tests {
         })).unwrap();
         assert_eq!(endpoint(&target, true).unwrap(), ("target.example".into(), 2222));
         assert_eq!(endpoint(&hop, false).unwrap(), ("jump.example".into(), 2201));
+    }
+}
+
+
+// M8b: managed runtime sessions and typed directory browsing.
+#[derive(Default)]
+pub struct SftpState {
+    gate: RwLock<()>,
+    sessions: Mutex<HashMap<String, Arc<Mutex<SftpClient>>>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpSessionInfo {
+    pub session_id: String,
+    pub connection_id: String,
+    pub connection_name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub jump_names: Vec<String>,
+    pub current_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub size: Option<u64>,
+    /// Unix timestamp in seconds, as reported by the remote server.
+    pub modified: Option<u64>,
+    pub permissions: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpDirectory {
+    pub current_path: String,
+    pub parent_path: Option<String>,
+    pub entries: Vec<SftpEntry>,
+}
+
+fn new_session_id() -> String {
+    let mut bytes = [0u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Remote paths use POSIX separators regardless of the local Windows host.
+fn validate_remote_path(path: &str) -> Result<(), SftpError> {
+    if path.is_empty()
+        || path.len() > 4096
+        || path.chars().any(char::is_control)
+    {
+        return Err(SftpError::new(
+            "sftp_bad_path",
+            "The remote path is empty, too long, or contains control characters.",
+        ));
+    }
+    Ok(())
+}
+
+fn remote_parent(path: &str) -> Option<String> {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() || trimmed == "/" {
+        return None;
+    }
+    match trimmed.rfind('/') {
+        Some(0) => Some("/".to_string()),
+        Some(index) => Some(trimmed[..index].to_string()),
+        None => Some(".".to_string()),
+    }
+}
+
+fn remote_child(parent: &str, name: &str) -> String {
+    if parent == "/" {
+        format!("/{name}")
+    } else {
+        format!("{}/{name}", parent.trim_end_matches('/'))
+    }
+}
+
+impl SftpState {
+    async fn close_all_inner(&self) -> Result<(), String> {
+        // Wait for active operations and prevent a new open/list from slipping
+        // in while the vault is being locked.
+        let _lifecycle = self.gate.write().await;
+        let sessions = std::mem::take(&mut *self.sessions.lock().await);
+        let mut first_error = None;
+        for (_, session) in sessions {
+            if let Err(error) = session.lock().await.close().await {
+                if first_error.is_none() {
+                    first_error = Some(format!("{}: {}", error.code, error.detail));
+                }
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+}
+
+/// Close all native SFTP sessions. Used for vault lock and app shutdown.
+pub async fn close_all(state: &SftpState) -> Result<(), String> {
+    state.close_all_inner().await
+}
+
+#[tauri::command]
+pub async fn sftp_open(
+    state: State<'_, SftpState>,
+    vault_state: State<'_, crate::commands::VaultState>,
+    connection_id: String,
+) -> Result<SftpSessionInfo, String> {
+    let _lifecycle = state.gate.read().await;
+    let (connection, jump_chain, jump_names) = {
+        let guard = vault_state.0.lock().unwrap_or_else(|error| error.into_inner());
+        let vault = guard.as_ref().ok_or_else(|| "locked".to_string())?;
+        let connection = crate::store::find(vault, &connection_id)
+            .ok_or_else(|| "connection_not_found".to_string())?;
+        if connection.port == 0 || !crate::store::valid_address(&connection.user, &connection.host) {
+            return Err("bad_address".to_string());
+        }
+        let jump_chain = crate::store::resolve_jump_chain(&vault.data.connections, &connection_id)
+            .map_err(str::to_string)?;
+        let jump_names = jump_chain.iter().map(|hop| hop.name.clone()).collect::<Vec<_>>();
+        (connection, jump_chain, jump_names)
+    };
+
+    let client = connect(&connection, &jump_chain, crate::paths::known_hosts_path())
+        .await
+        .map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    let current_path = client.current_directory().await
+        .map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    let session_id = new_session_id();
+    state.sessions.lock().await.insert(session_id.clone(), Arc::new(Mutex::new(client)));
+
+    Ok(SftpSessionInfo {
+        session_id,
+        connection_id: connection.id,
+        connection_name: connection.name,
+        host: connection.host,
+        port: connection.effective_sftp_port(),
+        user: connection.user,
+        jump_names,
+        current_path,
+    })
+}
+
+#[tauri::command]
+pub async fn sftp_list(
+    state: State<'_, SftpState>,
+    session_id: String,
+    remote_path: Option<String>,
+) -> Result<SftpDirectory, String> {
+    let _lifecycle = state.gate.read().await;
+    let session = state.sessions.lock().await.get(&session_id).cloned()
+        .ok_or_else(|| "sftp_session_not_found".to_string())?;
+    let client = session.lock().await;
+    let requested = remote_path.unwrap_or_else(|| ".".to_string());
+    validate_remote_path(&requested)
+        .map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    let current_path = client.session().canonicalize(requested).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    let directory = client.session().read_dir(current_path.clone()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+
+    let mut entries = Vec::new();
+    for entry in directory {
+        let name = entry.file_name().to_string();
+        if name == "." || name == ".." {
+            continue;
+        }
+        let metadata = entry.metadata();
+        let kind = if metadata.is_dir() {
+            "directory"
+        } else if metadata.is_symlink() {
+            "symlink"
+        } else if metadata.is_regular() {
+            "file"
+        } else {
+            "other"
+        };
+        entries.push(SftpEntry {
+            path: remote_child(&current_path, &name),
+            name,
+            kind: kind.to_string(),
+            size: metadata.size,
+            modified: metadata.mtime.map(u64::from),
+            permissions: metadata.permissions,
+        });
+    }
+    entries.sort_by(|left, right| {
+        (left.kind != "directory")
+            .cmp(&(right.kind != "directory"))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+
+    Ok(SftpDirectory {
+        parent_path: remote_parent(&current_path),
+        current_path,
+        entries,
+    })
+}
+
+#[tauri::command]
+pub async fn sftp_close(
+    state: State<'_, SftpState>,
+    session_id: String,
+) -> Result<(), String> {
+    let _lifecycle = state.gate.write().await;
+    let session = state.sessions.lock().await.remove(&session_id)
+        .ok_or_else(|| "sftp_session_not_found".to_string())?;
+    session.lock().await.close()
+        .map_err(|error| format!("{}: {}", error.code, error.detail))
+}
+
+#[tauri::command]
+pub async fn sftp_close_all(state: State<'_, SftpState>) -> Result<(), String> {
+    state.close_all_inner().await
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn remote_paths_reject_control_characters_and_excessive_length() {
+        assert!(validate_remote_path("/srv/data").is_ok());
+        assert!(validate_remote_path("folder with spaces").is_ok());
+        assert!(matches!(validate_remote_path("/bad\npath"), Err(SftpError { code: "sftp_bad_path", .. })));
+        assert!(matches!(validate_remote_path(&"x".repeat(4097)), Err(SftpError { code: "sftp_bad_path", .. })));
+    }
+
+    #[test]
+    fn remote_parent_handles_root_and_nested_paths() {
+        assert_eq!(remote_parent("/"), None);
+        assert_eq!(remote_parent("/home"), Some("/".to_string()));
+        assert_eq!(remote_parent("/home/user/"), Some("/home".to_string()));
+        assert_eq!(remote_parent("relative/path"), Some("relative".to_string()));
+    }
+
+    #[test]
+    fn remote_child_uses_posix_separators() {
+        assert_eq!(remote_child("/", "file.txt"), "/file.txt");
+        assert_eq!(remote_child("/srv/data/", "file.txt"), "/srv/data/file.txt");
     }
 }

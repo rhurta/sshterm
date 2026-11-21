@@ -1,7 +1,7 @@
 # M8a — Protocol and security spike
 
 **Branch:** `feature/m8-sftp`  
-**Status:** In progress
+**Status:** Protocol implementation complete; live Windows acceptance pending
 
 ## First increment
 
