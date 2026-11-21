@@ -16,7 +16,7 @@ use russh_sftp::client::SftpSession;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::store;
-use crate::vault::{Auth, Connection, SftpOptions};
+use crate::vault::{Auth, Connection};
 
 #[derive(Debug)]
 pub struct SftpError {
@@ -234,11 +234,12 @@ async fn authenticate_agent(
     )
     .await
     {
-        Ok(Ok(agent)) => agent,
+        Ok(Ok(agent)) => agent.dynamic(),
         _ => tokio::time::timeout(Duration::from_secs(2), AgentClient::connect_pageant())
             .await
             .map_err(|_| SftpError::new("sftp_agent_timeout", "Pageant connection timed out."))?
-            .map_err(|error| SftpError::new("sftp_agent_unavailable", error.to_string()))?,
+            .map_err(|error| SftpError::new("sftp_agent_unavailable", error.to_string()))?
+            .dynamic(),
     };
     authenticate_with_agent(handle, user, agent).await
 }
@@ -419,6 +420,7 @@ pub async fn connect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vault::SftpOptions;
 
     const FIRST_KEY: &str =
         "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";
