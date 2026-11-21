@@ -333,7 +333,7 @@ where
     let identities = agent
         .request_identities()
         .await
-        .map_err(|error| SftpError::new("sftp_agent", error.to_string()))?;
+        .map_err(|error| SftpError::new("sftp_agent_identities", error.to_string()))?;
     let rsa_hash = best_rsa_hash(handle).await?;
 
     for identity in identities {
@@ -348,7 +348,7 @@ where
         let result = handle
             .authenticate_publickey_with(user, public_key, rsa_hash, &mut agent)
             .await
-            .map_err(|error| SftpError::new("sftp_agent", error.to_string()))?;
+            .map_err(|error| SftpError::new("sftp_agent_sign", error.to_string()))?;
         if result.success() {
             return Ok(());
         }
@@ -360,10 +360,27 @@ where
     ))
 }
 
+const DEFAULT_OPENSSH_AGENT_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
+const WINDOWS_PIPE_PREFIX: &str = r"\\.\pipe\";
+
+/// Prefer the endpoint selected by the Windows SSH client environment.
+/// OpenSSH and third-party agents can publish their named-pipe endpoint here.
+fn resolve_windows_agent_pipe(candidate: Option<&str>) -> String {
+    candidate
+        .filter(|path| {
+            path.get(..WINDOWS_PIPE_PREFIX.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(WINDOWS_PIPE_PREFIX))
+                && path.len() > WINDOWS_PIPE_PREFIX.len()
+                && !path.chars().any(char::is_control)
+        })
+        .map(str::to_string)
+        .unwrap_or_else(|| DEFAULT_OPENSSH_AGENT_PIPE.to_string())
+}
+
 #[cfg(windows)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum WindowsAgentSource {
-    OpenSsh,
+    NamedPipe { path: String },
     Pageant,
 }
 
@@ -371,14 +388,22 @@ enum WindowsAgentSource {
 type DynamicAgent = AgentClient<Box<dyn AgentStream + Send + Unpin>>;
 
 #[cfg(windows)]
-async fn connect_windows_agent(source: WindowsAgentSource) -> Result<DynamicAgent, SftpError> {
+fn selected_windows_agent_source() -> WindowsAgentSource {
+    let environment = std::env::var("SSH_AUTH_SOCK").ok();
+    WindowsAgentSource::NamedPipe {
+        path: resolve_windows_agent_pipe(environment.as_deref()),
+    }
+}
+
+#[cfg(windows)]
+async fn connect_windows_agent(source: &WindowsAgentSource) -> Result<DynamicAgent, SftpError> {
     match source {
-        WindowsAgentSource::OpenSsh => tokio::time::timeout(
+        WindowsAgentSource::NamedPipe { path } => tokio::time::timeout(
             Duration::from_secs(2),
-            AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent"),
+            AgentClient::connect_named_pipe(path),
         )
         .await
-        .map_err(|_| SftpError::new("sftp_agent_timeout", "Windows OpenSSH agent connection timed out."))?
+        .map_err(|_| SftpError::new("sftp_agent_timeout", "Windows SSH agent connection timed out."))?
         .map(|agent| agent.dynamic())
         .map_err(|error| SftpError::new("sftp_agent_unavailable", error.to_string())),
         WindowsAgentSource::Pageant => tokio::time::timeout(
@@ -397,12 +422,16 @@ async fn authenticate_agent(
     handle: &mut Handle<SftpHostKeyHandler>,
     user: &str,
 ) -> Result<AgentBindingStatus, SftpError> {
-    // Prefer the Windows OpenSSH agent, with Pageant as a fallback. Some
-    // Win32 OpenSSH agent versions close the named pipe when they receive
-    // session-bind@openssh.com, which Russh reports as UnexpectedEof.
-    let (agent, source) = match connect_windows_agent(WindowsAgentSource::OpenSsh).await {
-        Ok(agent) => (agent, WindowsAgentSource::OpenSsh),
-        Err(_) => (connect_windows_agent(WindowsAgentSource::Pageant).await?, WindowsAgentSource::Pageant),
+    // Honor SSH_AUTH_SOCK first (it may point to 1Password or another agent);
+    // otherwise use the standard Win32 OpenSSH named pipe. Pageant is a fallback
+    // when the selected named pipe cannot be opened.
+    let selected = selected_windows_agent_source();
+    let (agent, source) = match connect_windows_agent(&selected).await {
+        Ok(agent) => (agent, selected),
+        Err(_) => {
+            let pageant = WindowsAgentSource::Pageant;
+            (connect_windows_agent(&pageant).await?, pageant)
+        }
     };
 
     match authenticate_with_agent(handle, user, agent, true).await {
@@ -412,7 +441,7 @@ async fn authenticate_agent(
             // Reconnect before sending any other request. Continue with ordinary
             // agent signing, and surface the reduced destination-constraint
             // protection in SftpSessionInfo so the UI can warn the user.
-            let legacy_agent = connect_windows_agent(source).await.map_err(|reconnect_error| {
+            let legacy_agent = connect_windows_agent(&source).await.map_err(|reconnect_error| {
                 SftpError::new(
                     "sftp_agent_unavailable",
                     format!("Agent closed during session binding ({error}); reconnect failed: {}", reconnect_error.detail),
@@ -945,6 +974,23 @@ pub async fn sftp_close_all(state: State<'_, SftpState>) -> Result<(), String> {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn windows_agent_pipe_honors_ssh_auth_sock_and_rejects_non_pipe_values() {
+        assert_eq!(
+            resolve_windows_agent_pipe(Some(r"\\.\pipe\onepassword-ssh-agent")),
+            r"\\.\pipe\onepassword-ssh-agent"
+        );
+        assert_eq!(
+            resolve_windows_agent_pipe(Some(r"\\.\pipe\OpenSSH-SSH-Agent")),
+            r"\\.\pipe\OpenSSH-SSH-Agent"
+        );
+        assert_eq!(
+            resolve_windows_agent_pipe(Some(r"C:\Users\test\agent.sock")),
+            DEFAULT_OPENSSH_AGENT_PIPE
+        );
+        assert_eq!(resolve_windows_agent_pipe(None), DEFAULT_OPENSSH_AGENT_PIPE);
+    }
 
     #[test]
     fn only_unexpected_eof_enables_legacy_agent_binding_fallback() {
