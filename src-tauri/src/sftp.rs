@@ -774,6 +774,7 @@ pub async fn sftp_open(
     let current_path = client.current_directory().await
         .map_err(|error| format!("{}: {}", error.code, error.detail))?;
     let session_id = new_session_id();
+    let port = connection.effective_sftp_port();
     state.sessions.lock().await.insert(session_id.clone(), Arc::new(Mutex::new(client)));
 
     Ok(SftpSessionInfo {
@@ -781,7 +782,7 @@ pub async fn sftp_open(
         connection_id: connection.id,
         connection_name: connection.name,
         host: connection.host,
-        port: connection.effective_sftp_port(),
+        port,
         user: connection.user,
         jump_names,
         current_path,
@@ -852,7 +853,7 @@ pub async fn sftp_close(
     let _lifecycle = state.gate.write().await;
     let session = state.sessions.lock().await.remove(&session_id)
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    session.lock().await.close()
+    session.lock().await.close().await
         .map_err(|error| format!("{}: {}", error.code, error.detail))
 }
 
