@@ -245,3 +245,106 @@ export function setSplitRatio(node: SplitNode | null, targetId: string, ratio: n
   }
   return node;
 }
+
+/** Stable ID of the pane that currently holds the session, or null. */
+export function paneOfSession(node: SplitNode | null, sessionId: string): string | null {
+  if (!node) return null;
+  if (node.type === "leaf") return node.sessionIds.includes(sessionId) ? node.sessionId : null;
+  return paneOfSession(node.first, sessionId) ?? paneOfSession(node.second, sessionId);
+}
+
+function insertIntoPane(node: SplitNode, paneId: string, sessionId: string, index?: number): SplitNode {
+  if (node.type === "leaf") {
+    if (node.sessionId !== paneId) return node;
+    const at = index === undefined ? node.sessionIds.length : Math.max(0, Math.min(index, node.sessionIds.length));
+    const sessionIds = [...node.sessionIds];
+    sessionIds.splice(at, 0, sessionId);
+    return { ...node, sessionIds };
+  }
+  return { ...node, first: insertIntoPane(node.first, paneId, sessionId, index), second: insertIntoPane(node.second, paneId, sessionId, index) };
+}
+
+/**
+ * Move a session to another pane, or reorder it inside its own pane. `index` is
+ * the position in the target pane's list after the session was taken out of it
+ * (omitted = last). The source pane is kept even when it becomes empty, like
+ * closing a tab does. Returns the same tree object when nothing can be done.
+ */
+export function moveSession(node: SplitNode | null, sessionId: string, targetPaneId: string, index?: number): SplitNode | null {
+  if (!node || paneOfSession(node, sessionId) === null || !findPane(node, targetPaneId)) return node;
+  const without = removeSession(node, sessionId, true);
+  return without ? insertIntoPane(without, targetPaneId, sessionId, index) : node;
+}
+
+/**
+ * Move a session into a brand-new pane created beside `targetPaneId`.
+ * `newPaneId` must be unused. `before` puts the new pane first (left / top).
+ */
+export function moveSessionToNewPane(
+  node: SplitNode | null,
+  sessionId: string,
+  targetPaneId: string,
+  newPaneId: string,
+  axis: SplitAxis,
+  before: boolean,
+): SplitNode | null {
+  if (!node || !newPaneId || paneIds(node).includes(newPaneId)) return node;
+  const source = paneOfSession(node, sessionId);
+  if (source === null || !findPane(node, targetPaneId)) return node;
+  if (source === targetPaneId && sessionsInPane(node, source) === 1) return node; // would only leave an empty twin
+  const without = removeSession(node, sessionId, true);
+  if (!without) return node;
+  const fresh: SplitNode = { type: "leaf", sessionId: newPaneId, sessionIds: [sessionId] };
+  const wrap = (current: SplitNode): SplitNode => {
+    if (current.type === "leaf") {
+      return current.sessionId === targetPaneId
+        ? { type: "split", axis, ratio: 0.5, first: before ? fresh : current, second: before ? current : fresh }
+        : current;
+    }
+    return { ...current, first: wrap(current.first), second: wrap(current.second) };
+  };
+  return wrap(without);
+}
+
+function paneIds(node: SplitNode): string[] {
+  return node.type === "leaf" ? [node.sessionId] : [...paneIds(node.first), ...paneIds(node.second)];
+}
+
+function sessionsInPane(node: SplitNode, paneId: string): number {
+  if (node.type === "leaf") return node.sessionId === paneId ? node.sessionIds.length : 0;
+  return sessionsInPane(node.first, paneId) + sessionsInPane(node.second, paneId);
+}
+
+export type PaneDirection = "left" | "right" | "up" | "down";
+
+/**
+ * The pane next to `paneId` in a direction, using the normalized geometry:
+ * it must lie fully on that side and overlap the pane on the other axis. The
+ * closest one wins, then the one with the largest overlap.
+ */
+export function neighborPane(leaves: LayoutLeaf[], paneId: string, direction: PaneDirection): string | null {
+  const from = leaves.find((leaf) => leaf.sessionId === paneId);
+  if (!from) return null;
+  const eps = 1e-6;
+  const horizontal = direction === "left" || direction === "right";
+  let best: { id: string; gap: number; overlap: number } | null = null;
+  for (const other of leaves) {
+    if (other.sessionId === paneId) continue;
+    const a = from.rect;
+    const b = other.rect;
+    let gap: number;
+    if (direction === "right") gap = b.x - (a.x + a.width);
+    else if (direction === "left") gap = a.x - (b.x + b.width);
+    else if (direction === "down") gap = b.y - (a.y + a.height);
+    else gap = a.y - (b.y + b.height);
+    if (gap < -eps) continue;
+    const overlap = horizontal
+      ? Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+      : Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+    if (overlap <= eps) continue;
+    if (!best || gap < best.gap - eps || (Math.abs(gap - best.gap) <= eps && overlap > best.overlap)) {
+      best = { id: other.sessionId, gap, overlap };
+    }
+  }
+  return best?.id ?? null;
+}

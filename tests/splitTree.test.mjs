@@ -127,3 +127,58 @@ test("removeEmptyPane does not remove a pane that still contains sessions", () =
   assert.deepEqual(sessionsInTree(updated), ["a"]);
   assert.equal(getLayoutGeometry(updated).leaves.length, 2);
 });
+
+import { moveSession, moveSessionToNewPane, neighborPane, paneOfSession } from "../src/lib/splitTree.ts";
+
+function twoPanes() {
+  // pane "a" holds a1,a2 ; pane "b" holds b1
+  let tree = leaf("a");
+  tree = addSessionToPane(tree, "a", "a2");
+  tree = splitSession(tree, "a", "b", "horizontal");
+  tree = { ...tree, second: { type: "leaf", sessionId: "b", sessionIds: ["b1"] } };
+  return tree;
+}
+
+test("moveSession moves a tab to another pane and keeps the empty source pane", () => {
+  const tree = twoPanes();
+  assert.equal(paneOfSession(tree, "a2"), "a");
+  const moved = moveSession(tree, "a2", "b");
+  assert.equal(paneOfSession(moved, "a2"), "b");
+  assert.deepEqual(sessionsInTree(moved).sort(), ["a", "a2", "b1"].sort());
+  const geometry = getLayoutGeometry(moved);
+  assert.deepEqual(geometry.leaves.find((p) => p.sessionId === "b").sessionIds, ["b1", "a2"]);
+  const emptied = moveSession(moved, "a", "b");
+  assert.equal(getLayoutGeometry(emptied).leaves.length, 2);
+  assert.deepEqual(getLayoutGeometry(emptied).leaves.find((p) => p.sessionId === "a").sessionIds, []);
+});
+
+test("moveSession reorders inside a pane and ignores unknown ids", () => {
+  const tree = twoPanes();
+  const reordered = moveSession(tree, "a2", "a", 0);
+  assert.deepEqual(getLayoutGeometry(reordered).leaves.find((p) => p.sessionId === "a").sessionIds, ["a2", "a"]);
+  assert.equal(moveSession(tree, "nope", "b"), tree);
+  assert.equal(moveSession(tree, "a2", "nope"), tree);
+});
+
+test("moveSessionToNewPane splits beside the target with a unique pane id", () => {
+  const tree = twoPanes();
+  const split = moveSessionToNewPane(tree, "a2", "b", "p-new", "vertical", true);
+  assert.deepEqual(sessionsInTree(split).sort(), ["a", "a2", "b1"].sort());
+  const leaves = getLayoutGeometry(split).leaves;
+  assert.equal(leaves.length, 3);
+  assert.deepEqual(leaves.find((p) => p.sessionId === "p-new").sessionIds, ["a2"]);
+  assert.equal(moveSessionToNewPane(tree, "a2", "b", "a", "vertical", true), tree); // id already used
+  assert.equal(moveSessionToNewPane(tree, "b1", "b", "x", "vertical", false), tree); // lone tab onto its own pane
+});
+
+test("neighborPane finds the adjacent pane in each direction", () => {
+  const grid = createLayoutTree(["a", "b", "c", "d"], "grid", "a");
+  const leaves = getLayoutGeometry(grid).leaves;
+  const id = (s) => leaves.find((p) => p.sessionIds.includes(s)).sessionId;
+  const right = neighborPane(leaves, id("a"), "right");
+  assert.ok(right && right !== id("a"));
+  assert.equal(neighborPane(leaves, right, "left"), id("a"));
+  assert.equal(neighborPane(leaves, id("a"), "left"), null);
+  assert.equal(neighborPane(leaves, id("a"), "up"), null);
+  assert.ok(neighborPane(leaves, id("a"), "down"));
+});

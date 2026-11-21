@@ -18,6 +18,7 @@
 
   let {
     sessionId,
+    container = null,
     active,
     focused,
     onactivate,
@@ -28,6 +29,10 @@
     highlightSets = [],
   }: {
     sessionId: string;
+    /** Pane element this terminal is attached to. The terminal is created once
+     * per session and its DOM is moved here, so moving a tab between panes keeps
+     * scrollback and screen state (no remount). Null while no pane exists yet. */
+    container?: HTMLElement | null;
     active: boolean;
     focused: boolean;
     onactivate: (id: string) => void;
@@ -54,6 +59,7 @@
   }
 
   let host: HTMLDivElement;
+  let root = $state<HTMLDivElement | null>(null);
   let term: Terminal | undefined;
   let fit: FitAddon | undefined;
   let lastCols = PROVISIONAL.cols;
@@ -66,6 +72,9 @@
    * changed: every resize makes ConPTY repaint the whole screen. */
   function syncSize() {
     if (!active || !term || !fit) return; // a hidden tab has no valid dimensions
+    // Not attached to a pane (parked, or its pane is being rebuilt): the box has
+    // no meaningful size, and fitting it would shrink the PTY.
+    if (!container || root?.parentElement !== container) return;
     try {
       fit.fit();
     } catch {
@@ -298,6 +307,9 @@
         return false;
       }
       if (event.type !== "keydown") return true;
+      // Ctrl+Alt+Shift+Arrows moves the tab to a neighboring pane (Workspace):
+      // never let xterm turn it into a modified-arrow sequence for the shell.
+      if (event.ctrlKey && event.altKey && event.shiftKey && event.key.startsWith("Arrow")) return false;
       const mod = event.ctrlKey || event.metaKey;
       if (!mod || event.altKey) return true;
       const key = event.key.toLowerCase();
@@ -396,9 +408,25 @@
   $effect(() => {
     if (focused && active && mounted) term?.focus();
   });
+
+  // Attach the terminal to its pane. Re-runs when the session moves to another
+  // pane (or its pane element is recreated): the node is re-parented, not rebuilt.
+  $effect(() => {
+    const target = container;
+    const node = root;
+    if (!target || !node || node.parentElement === target) return;
+    target.appendChild(node);
+    untrack(() => {
+      if (!mounted || !term) return;
+      syncSize();
+      term.refresh(0, term.rows - 1);
+      // Re-parenting drops DOM focus, so give it back to the focused terminal.
+      if (focused && active) term.focus();
+    });
+  });
 </script>
 
-<div class="pane" class:hidden={!active} onfocusin={() => onactivate(sessionId)}>
+<div class="pane" class:hidden={!active} bind:this={root} onfocusin={() => onactivate(sessionId)}>
   <div class="terminal-host" bind:this={host}></div>
 </div>
 

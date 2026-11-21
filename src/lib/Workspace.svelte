@@ -13,7 +13,7 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppBehaviorSettings, AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
   import { DEFAULT_APP_BEHAVIOR_SETTINGS, DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
-  import { addSessionToPane, createLayoutTree, getLayoutGeometry, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
+  import { addSessionToPane, createLayoutTree, getLayoutGeometry, moveSession, moveSessionToNewPane, neighborPane, paneOfSession, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type PaneDirection, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
     dir,
@@ -33,6 +33,16 @@
   let layoutTree = $state<SplitNode | null>(null);
   let layoutGeometry = $derived(getLayoutGeometry(layoutTree));
   let paneActiveIds = $state<Record<string, string>>({});
+  // Pane body elements, by stable pane ID. Terminals are rendered once per
+  // session (see the parking area in the markup) and attached to these.
+  let paneEls = $state<Record<string, HTMLElement>>({});
+  let sessionPane = $derived<Record<string, string>>(Object.fromEntries(
+    layoutGeometry.leaves.flatMap((pane) => pane.sessionIds.map((id) => [id, pane.sessionId])),
+  ));
+  // Tab being dragged between panes, and where it would land.
+  let draggingTab = $state<string | null>(null);
+  type DropZone = "tabs" | "center" | "left" | "right" | "top" | "bottom";
+  let tabDrop = $state<{ paneId: string; zone: DropZone; index?: number } | null>(null);
   let pendingPaneId = $state<string | null>(null);
   let panesElement = $state<HTMLDivElement | null>(null);
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
@@ -318,6 +328,128 @@
     newTabButton?.focus();
   }
 
+  function registerPane(node: HTMLElement, paneId: string) {
+    paneEls[paneId] = node;
+    return {
+      destroy() {
+        if (paneEls[paneId] === node) delete paneEls[paneId];
+      },
+    };
+  }
+
+  /** Move (or reorder) a session's tab; `index` is relative to the target list without it. */
+  function applyTabMove(sessionId: string, targetPaneId: string, index?: number) {
+    const from = paneOfSession(layoutTree, sessionId);
+    const next = moveSession(layoutTree, sessionId, targetPaneId, index);
+    if (!from || next === layoutTree) return;
+    layoutTree = next;
+    finishTabMove(sessionId, from, targetPaneId);
+  }
+
+  function applyTabMoveToNewPane(sessionId: string, targetPaneId: string, axis: SplitAxis, before: boolean) {
+    const from = paneOfSession(layoutTree, sessionId);
+    const newPaneId = crypto.randomUUID();
+    const next = moveSessionToNewPane(layoutTree, sessionId, targetPaneId, newPaneId, axis, before);
+    if (!from || next === layoutTree) return;
+    layoutTree = next;
+    finishTabMove(sessionId, from, newPaneId);
+  }
+
+  function finishTabMove(sessionId: string, fromPaneId: string, toPaneId: string) {
+    const next = { ...paneActiveIds };
+    if (fromPaneId !== toPaneId && next[fromPaneId] === sessionId) {
+      const remaining = getLayoutGeometry(layoutTree).leaves.find((pane) => pane.sessionId === fromPaneId)?.sessionIds ?? [];
+      if (remaining.length) next[fromPaneId] = remaining[0];
+      else delete next[fromPaneId];
+    }
+    next[toPaneId] = sessionId;
+    paneActiveIds = next;
+    activeId = sessionId;
+  }
+
+  /** Keyboard path for moving tabs: send the active tab to the neighboring pane. */
+  function moveActiveTab(direction: PaneDirection) {
+    if (!activeId) return;
+    const from = paneOfSession(layoutTree, activeId);
+    if (!from) return;
+    const target = neighborPane(layoutGeometry.leaves, from, direction);
+    if (target) applyTabMove(activeId, target);
+  }
+
+  function onTabDragStart(event: DragEvent, sessionId: string) {
+    draggingTab = sessionId;
+    if (event.dataTransfer) {
+      event.dataTransfer.setData("application/x-sshterm-tab", sessionId);
+      event.dataTransfer.effectAllowed = "move";
+    }
+  }
+
+  function endTabDrag() {
+    draggingTab = null;
+    tabDrop = null;
+  }
+
+  function dropZoneAt(event: DragEvent, slot: HTMLElement): DropZone {
+    const rect = slot.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / Math.max(rect.width, 1);
+    const y = (event.clientY - rect.top) / Math.max(rect.height, 1);
+    const tabBar = slot.querySelector(".pane-tabs")?.getBoundingClientRect();
+    if (tabBar && event.clientY <= tabBar.bottom) return "tabs";
+    const edge = 0.25;
+    if (x < edge) return "left";
+    if (x > 1 - edge) return "right";
+    if (y < edge) return "top";
+    if (y > 1 - edge) return "bottom";
+    return "center";
+  }
+
+  function onPaneDragOver(event: DragEvent, paneId: string) {
+    if (!draggingTab) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    const slot = event.currentTarget as HTMLElement;
+    const zone = dropZoneAt(event, slot);
+    let index: number | undefined;
+    if (zone === "tabs") {
+      const pane = layoutGeometry.leaves.find((item) => item.sessionId === paneId);
+      const others = (pane?.sessionIds ?? []).filter((id) => id !== draggingTab);
+      const tabEl = (event.target as HTMLElement).closest<HTMLElement>("[data-tab-session]");
+      const overId = tabEl?.dataset.tabSession;
+      if (overId && overId !== draggingTab) {
+        const box = tabEl!.getBoundingClientRect();
+        index = others.indexOf(overId) + (event.clientX > box.left + box.width / 2 ? 1 : 0);
+      } else if (!overId) {
+        index = others.length;
+      } else {
+        index = pane?.sessionIds.indexOf(draggingTab!);
+      }
+    }
+    if (tabDrop?.paneId !== paneId || tabDrop.zone !== zone || tabDrop.index !== index) {
+      tabDrop = { paneId, zone, index };
+    }
+  }
+
+  function onPaneDragLeave(event: DragEvent) {
+    const slot = event.currentTarget as HTMLElement;
+    if (!slot.contains(event.relatedTarget as Node | null)) tabDrop = null;
+  }
+
+  function onPaneDrop(event: DragEvent) {
+    const sessionId = draggingTab;
+    const drop = tabDrop;
+    endTabDrag();
+    if (!sessionId || !drop) return;
+    event.preventDefault();
+    switch (drop.zone) {
+      case "tabs": applyTabMove(sessionId, drop.paneId, drop.index); break;
+      case "center": applyTabMove(sessionId, drop.paneId); break;
+      case "left": applyTabMoveToNewPane(sessionId, drop.paneId, "horizontal", true); break;
+      case "right": applyTabMoveToNewPane(sessionId, drop.paneId, "horizontal", false); break;
+      case "top": applyTabMoveToNewPane(sessionId, drop.paneId, "vertical", true); break;
+      case "bottom": applyTabMoveToNewPane(sessionId, drop.paneId, "vertical", false); break;
+    }
+  }
+
   function onKeydown(e: KeyboardEvent) {
     if (
       !e.repeat
@@ -331,6 +463,12 @@
       && !multilinePaste
     ) {
       const key = e.key.toLowerCase();
+      const arrows: Record<string, PaneDirection> = { arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down" };
+      if (e.shiftKey && arrows[key] && tabs.length > 0) {
+        e.preventDefault();
+        moveActiveTab(arrows[key]);
+        return;
+      }
       if (key === "k" && tabs.length > 0) {
         e.preventDefault();
         toggleCommandConsole();
@@ -570,12 +708,13 @@
           </div>
           <div class="panes" bind:this={panesElement}>
             {#each layoutGeometry.leaves as pane (pane.sessionId)}
-              <div class="pane-slot" class:focused={pane.sessionIds.includes(activeId ?? "")} class:split-layout={layoutGeometry.leaves.length > 1} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
-                <div class="pane-tabs" role="tablist" aria-label={t("workspace.paneTabs")}>
+              <div class="pane-slot" ondragover={(event) => onPaneDragOver(event, pane.sessionId)} ondragleave={onPaneDragLeave} ondrop={onPaneDrop} role="group" class:focused={pane.sessionIds.includes(activeId ?? "")} class:split-layout={layoutGeometry.leaves.length > 1} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
+                <div class="pane-tabs" class:drop-tabs={tabDrop?.paneId === pane.sessionId && tabDrop.zone === "tabs"} role="tablist" aria-label={t("workspace.paneTabs")}>
                   {#each pane.sessionIds as sessionId (sessionId)}
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
                     {#if tab}
-                      <div class="pane-tab" class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
+                      <!-- svelte-ignore a11y_no_static_element_interactions (drag is a mouse shortcut; Ctrl+Alt+Shift+Arrows is the keyboard path) -->
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
                         <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${tab.name}${activeId === sessionId ? ", active pane" : ""}${!tab.connected ? `, ${t("workspace.disconnected")}` : ""}`}
                           title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
@@ -613,16 +752,14 @@
                     <button class="pane-remove" title={t("workspace.removeEmptyPane")} aria-label={t("workspace.removeEmptyPane")} onclick={() => removePane(pane.sessionId)}>×</button>
                   {/if}
                 </div>
-                <div class="pane-terminals">
+                <div class="pane-terminals" use:registerPane={pane.sessionId}>
                   {#if pane.sessionIds.length === 0}
                     <div class="empty-pane"><button onclick={() => openPickerForPane(pane.sessionId)}>{t("workspace.openConnection")}</button></div>
                   {/if}
-                  {#each pane.sessionIds as sessionId (sessionId)}
-                    <TerminalPane sessionId={sessionId} active={paneActiveIds[pane.sessionId] === sessionId}
-                      focused={activeId === sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
-                      onmultilinepaste={requestMultilinePaste} highlightSets={tabs.find((tab) => tab.sessionId === sessionId)?.highlightSets ?? []} {settings} {theme} />
-                  {/each}
                 </div>
+                {#if draggingTab && tabDrop?.paneId === pane.sessionId && tabDrop.zone !== "tabs"}
+                  <div class="drop-zone {tabDrop.zone}" aria-hidden="true"></div>
+                {/if}
               </div>
             {/each}
             {#each layoutGeometry.dividers as divider}
@@ -637,6 +774,16 @@
                 onpointerup={endDividerDrag} onpointercancel={endDividerDrag}
                 onkeydown={(event) => adjustDivider(event, divider)}
               ></div>
+            {/each}
+          </div>
+          <!-- Terminals are created once per session and attached to their pane's
+               element, so moving a tab between panes never rebuilds the terminal. -->
+          <div class="terminal-parking" aria-hidden="true">
+            {#each tabs as tab (tab.sessionId)}
+              <TerminalPane sessionId={tab.sessionId} container={paneEls[sessionPane[tab.sessionId]] ?? null}
+                active={paneActiveIds[sessionPane[tab.sessionId]] === tab.sessionId}
+                focused={activeId === tab.sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
+                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} {settings} {theme} />
             {/each}
           </div>
         </div>
@@ -870,6 +1017,17 @@
   .console-resizer { flex: 0 0 6px; cursor: row-resize; background: var(--border); touch-action: none; outline: none; }
   .console-resizer:hover, .console-resizer:focus-visible { background: var(--accent); }
   .pane-terminals { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+  /* Off-screen but laid out, so xterm can measure characters while parked. */
+  .terminal-parking { position: fixed; left: -10000px; top: 0; width: 800px; height: 400px; overflow: hidden; visibility: hidden; pointer-events: none; }
+  .pane-tab[draggable="true"] { cursor: grab; }
+  .pane-tab.dragging { opacity: 0.45; }
+  .pane-tabs.drop-tabs { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .drop-zone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 2px solid var(--accent); border-radius: 3px; }
+  .drop-zone.center { inset: 1.9rem 0 0 0; }
+  .drop-zone.left { top: 1.9rem; bottom: 0; left: 0; width: 50%; }
+  .drop-zone.right { top: 1.9rem; bottom: 0; right: 0; width: 50%; }
+  .drop-zone.top { top: 1.9rem; left: 0; right: 0; height: calc(50% - 1rem); }
+  .drop-zone.bottom { bottom: 0; left: 0; right: 0; height: calc(50% - 1rem); }
   .pane-terminals :global(.pane) { position: absolute; inset: 0; }
 
   .layout-divider {
