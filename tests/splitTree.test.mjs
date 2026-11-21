@@ -192,4 +192,7 @@ test("splitPaneById splits an empty pane and rejects unknown or duplicate ids", 
   assert.deepEqual(leaves.find((p) => p.sessionId === "c").sessionIds, []);
   assert.equal(splitPaneById(tree, "nope", "c", "vertical"), tree);
   assert.equal(splitPaneById(tree, "a", "b", "vertical"), tree);
+  const first = splitPaneById(tree, "a", "c", "horizontal", true);
+  assert.equal(getLayoutGeometry(first).leaves[0].sessionId, "c");
+  assert.equal(getLayoutGeometry(splitPaneById(tree, "a", "c", "horizontal")).leaves[0].sessionId, "a");
 });

@@ -307,10 +307,13 @@
         return false;
       }
       if (event.type !== "keydown") return true;
-      // Ctrl+Alt+Arrows focus a neighboring pane and, with Shift, move the tab
-      // there (Workspace): never let xterm turn them into modified-arrow
-      // sequences for the shell.
-      if (event.ctrlKey && event.altKey && event.key.startsWith("Arrow")) return false;
+      // App shortcuts (Workspace) are Ctrl+Alt combinations: pane focus (arrows,
+      // comma, period), tab moves (Shift+arrows), console (K) and layouts (1-4).
+      // Never let xterm turn them into escape sequences for the remote shell.
+      if (event.ctrlKey && event.altKey && !event.metaKey && !event.getModifierState("AltGraph") // AltGr types characters (@ | ~)
+        && (event.key.startsWith("Arrow") || ["Comma", "Period", "KeyK", "Digit1", "Digit2", "Digit3", "Digit4"].includes(event.code))) {
+        return false;
+      }
       const mod = event.ctrlKey || event.metaKey;
       if (!mod || event.altKey) return true;
       const key = event.key.toLowerCase();

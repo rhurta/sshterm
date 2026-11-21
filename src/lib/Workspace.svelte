@@ -47,8 +47,8 @@
   // shows the focus outline. Usually follows the active tab, but an empty pane
   // can be focused too. Always read it through currentPaneId().
   let focusedPaneId = $state<string | null>(null);
-  // Pane under a connection being dragged from the tree.
-  let connDropPane = $state<string | null>(null);
+  // Where a connection dragged from the tree would land (same zones as tab drags).
+  let connDrop = $state<{ paneId: string; zone: DropZone } | null>(null);
   let pendingPaneId = $state<string | null>(null);
   let panesElement = $state<HTMLDivElement | null>(null);
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
@@ -449,7 +449,8 @@
     if (isConnDrag(event)) {
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-      if (connDropPane !== paneId) connDropPane = paneId;
+      const zone = dropZoneAt(event, event.currentTarget as HTMLElement);
+      if (connDrop?.paneId !== paneId || connDrop.zone !== zone) connDrop = { paneId, zone };
       return;
     }
     if (!draggingTab) return;
@@ -481,15 +482,35 @@
     const slot = event.currentTarget as HTMLElement;
     if (!slot.contains(event.relatedTarget as Node | null)) {
       tabDrop = null;
-      connDropPane = null;
+      connDrop = null;
     }
   }
 
-  async function dropConnection(connId: string, paneId: string) {
+  /** Open a connection dragged from the tree: into the pane, or into a new pane beside it. */
+  async function dropConnection(connId: string, paneId: string, zone: DropZone) {
     try {
       const list = await invoke<ConnectionSummary[]>("conn_list");
       const summary = list.find((item) => item.id === connId);
-      if (summary) await connect(summary, paneId);
+      if (!summary) return;
+      const sides: Partial<Record<DropZone, { axis: SplitAxis; before: boolean }>> = {
+        left: { axis: "horizontal", before: true },
+        right: { axis: "horizontal", before: false },
+        top: { axis: "vertical", before: true },
+        bottom: { axis: "vertical", before: false },
+      };
+      const side = sides[zone];
+      if (!side) {
+        await connect(summary, paneId);
+        return;
+      }
+      const newPaneId = crypto.randomUUID();
+      const next = splitPaneById(layoutTree, paneId, newPaneId, side.axis, side.before);
+      if (next === layoutTree) return;
+      layoutTree = next;
+      const before = tabs.length;
+      await connect(summary, newPaneId);
+      // The connection failed: do not leave the pane created for it behind.
+      if (tabs.length === before) removePane(newPaneId);
     } catch (e) {
       error = errorText(String(e));
     }
@@ -498,9 +519,10 @@
   function onPaneDrop(event: DragEvent, paneId: string) {
     if (isConnDrag(event)) {
       const connId = event.dataTransfer?.getData(CONN_MIME);
-      connDropPane = null;
+      const zone = dropZoneAt(event, event.currentTarget as HTMLElement);
+      connDrop = null;
       event.preventDefault();
-      if (connId) void dropConnection(connId, paneId);
+      if (connId) void dropConnection(connId, paneId, zone);
       return;
     }
     const sessionId = draggingTab;
@@ -540,6 +562,18 @@
           const from = currentPaneId();
           const target = from ? neighborPane(layoutGeometry.leaves, from, arrows[key]) : null;
           if (target) void focusPane(target);
+        }
+        return;
+      }
+      // Previous / next pane. Ctrl+Alt+Arrows can be taken by the OS or a graphics
+      // driver (screen rotation) before the app sees them, so these always work.
+      if (!e.shiftKey && (e.code === "Comma" || e.code === "Period") && tabs.length > 0) {
+        e.preventDefault();
+        const leaves = layoutGeometry.leaves;
+        if (leaves.length > 1) {
+          const at = leaves.findIndex((pane) => pane.sessionId === currentPaneId());
+          const step = e.code === "Period" ? 1 : -1;
+          void focusPane(leaves[(at + step + leaves.length) % leaves.length].sessionId);
         }
         return;
       }
@@ -750,7 +784,7 @@
   }
 </script>
 
-<svelte:window ondragend={() => (connDropPane = null)} onkeydown={onKeydown} onpointermove={moveConsoleResize} onpointerup={endConsoleResize} onpointercancel={endConsoleResize} />
+<svelte:window ondragend={() => (connDrop = null)} onkeydown={onKeydown} onpointermove={moveConsoleResize} onpointerup={endConsoleResize} onpointercancel={endConsoleResize} />
 
 <div class="app">
 
@@ -837,8 +871,8 @@
                     </div>
                   {/if}
                 </div>
-                {#if connDropPane === pane.sessionId}
-                  <div class="drop-zone center" aria-hidden="true"></div>
+                {#if connDrop?.paneId === pane.sessionId}
+                  <div class="drop-zone {connDrop.zone === 'tabs' ? 'center' : connDrop.zone}" aria-hidden="true"></div>
                 {/if}
                 {#if draggingTab && tabDrop?.paneId === pane.sessionId && tabDrop.zone !== "tabs"}
                   <div class="drop-zone {tabDrop.zone}" aria-hidden="true"></div>
@@ -871,7 +905,8 @@
           </div>
         </div>
       {:else}
-        <div class="empty">
+        <div class="empty" role="group" ondragover={(event) => { if (isConnDrag(event)) event.preventDefault(); }}
+          ondrop={(event) => { const id = event.dataTransfer?.getData(CONN_MIME); if (id) { event.preventDefault(); void dropConnection(id, "", "center"); } }}>
           <p class="hint">{t("workspace.terminals")}</p>
         </div>
       {/if}

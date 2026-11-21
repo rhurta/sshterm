@@ -112,6 +112,7 @@ Resize handles: hit area at least 4 px (a 1 px visible line is fine), `col-resiz
 - Each pane has a tab bar: active tab `--surface-raised` with a 2 px top border `--accent`; inactive tab `--surface` and `--muted`. "+" button for a new tab. Tabs show connection name, status dot, close button (`--danger` on hover). Middle-click closes; drag reorders (keyboard alternative required).
 - The focused pane has a 1 px `--accent` border. Panes resize in both axes through the split tree handles.
 - **Moving tabs between panes** is supported and must keep the terminal alive (scrollback, running full-screen programs). Terminals are created once per session and re-attached to their pane; never put a terminal's lifecycle inside a pane's markup. Drag a tab onto another pane's tab strip (reorders when dropped between tabs), onto a pane's center (move), or onto a pane edge (split and move). Keyboard: Ctrl+Alt+Shift+Arrows. Details in `docs/tab-moves.md`.
+- **Shortcut conflicts:** Windows and GPU drivers claim some Ctrl+Alt combinations (Ctrl+Alt+Arrows can rotate the screen; Ctrl+Alt+Tab, Ctrl+Alt+Del are reserved). Every shortcut that matters needs a second binding on a safe key, and AltGr combinations (Ctrl+Alt on Windows, used to type @ | ~ on Spanish layouts) must never be swallowed.
 - **Pane targets:** a new connection goes to the dropped-on pane, the pane that asked for it, or the focused pane (which can be an empty one). New empty panes open the connection list immediately. Rules in `docs/pane-targets.md`.
 - **Default layout:** restore the last layout on start; on a clean first run show a 2-pane split. Layout presets are on Ctrl+Alt+1-4 (not a fixed three-pane default).
 - Per-session states are rendered inside the pane (see section 6): connecting, authenticating, host-key prompt, connected, disconnected (with Reconnect), failed (with the ssh error text).
@@ -136,7 +137,8 @@ Resize handles: hit area at least 4 px (a 1 px visible line is fine), `col-resiz
 
 | Keys | Action |
 | --- | --- |
-| Ctrl+Alt+Arrows | Move focus to the neighboring pane |
+| Ctrl+Alt+Arrows | Move focus to the neighboring pane (can be taken by Windows/graphics-driver hotkeys) |
+| Ctrl+Alt+, / Ctrl+Alt+. | Focus the previous / next pane (always available) |
 | Ctrl+Alt+PageUp / PageDown | Previous / next tab in the focused pane |
 | Ctrl+Alt+F | Focus the connection search box (also from a terminal) |
 | Ctrl+Alt+K | Toggle the command console |

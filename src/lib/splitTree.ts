@@ -349,13 +349,15 @@ export function neighborPane(leaves: LayoutLeaf[], paneId: string, direction: Pa
   return best?.id ?? null;
 }
 
-/** Split the pane with this stable ID (empty or not) and add an empty sibling pane. */
-export function splitPaneById(node: SplitNode | null, paneId: string, newPaneId: string, axis: SplitAxis): SplitNode | null {
+/** Split the pane with this stable ID (empty or not) and add an empty sibling pane (first = left/top when `before`). */
+export function splitPaneById(node: SplitNode | null, paneId: string, newPaneId: string, axis: SplitAxis, before = false): SplitNode | null {
   if (!node || !newPaneId || paneIds(node).includes(newPaneId) || !findPane(node, paneId)) return node;
   const empty: SplitNode = { type: "leaf", sessionId: newPaneId, sessionIds: [] };
   const wrap = (current: SplitNode): SplitNode => {
     if (current.type === "leaf") {
-      return current.sessionId === paneId ? { type: "split", axis, ratio: 0.5, first: current, second: empty } : current;
+      return current.sessionId === paneId
+        ? { type: "split", axis, ratio: 0.5, first: before ? empty : current, second: before ? current : empty }
+        : current;
     }
     return { ...current, first: wrap(current.first), second: wrap(current.second) };
   };

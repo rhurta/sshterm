@@ -33,9 +33,9 @@ M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.
 - Recursive workspace tiling with single, left/right, top/bottom and 2×2 layouts, draggable and keyboard-adjustable dividers, per-pane session tabs, empty-pane handling, and an active-pane outline/dot.
 - A bottom command console with a searchable left-side connection list, Active / Selected / All targeting, protected-session opt-in, multiline and multi-session confirmation, exact-byte sequential dispatch, and per-session failure reporting.
 - Console visibility and height persist in non-secret `config.toml`; drafts remain in frontend memory only.
-- Keyboard shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Alt+Arrows focus the neighboring pane and Ctrl+Alt+Shift+Arrows move the active tab there; Ctrl+Enter requests a send.
+- Keyboard shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Alt+Arrows focus the neighboring pane (Ctrl+Alt+, / Ctrl+Alt+. cycle panes, for keyboards where Windows takes the arrows) and Ctrl+Alt+Shift+Arrows move the active tab there; Ctrl+Enter requests a send.
 - Tabs move between panes without reconnecting or resetting the terminal: drag a tab onto another pane's tab strip (or between tabs to reorder), onto a pane's center to move it there, or onto a pane edge to split and move it into the new pane. See [`docs/tab-moves.md`](docs/tab-moves.md).
-- Connections can be dragged from the tree onto any pane; a new empty pane opens the connection list straight away; an empty pane can be focused (click or Ctrl+Alt+Arrows) so the next connection opened from the tree lands in it. See [`docs/pane-targets.md`](docs/pane-targets.md).
+- Connections can be dragged from the tree onto a pane or onto its edges (which split it); a new empty pane opens the connection list straight away; an empty pane can be focused (click or Ctrl+Alt+Arrows) so the next connection opened from the tree lands in it. See [`docs/pane-targets.md`](docs/pane-targets.md).
 - Automated coverage includes pure split-tree and broadcast-target resolution tests plus Rust config tests. Component-level UI automation and live multi-host dispatch integration tests remain follow-up work.
 
 ## Portable layout
