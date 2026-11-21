@@ -112,6 +112,7 @@ Resize handles: hit area at least 4 px (a 1 px visible line is fine), `col-resiz
 - Each pane has a tab bar: active tab `--surface-raised` with a 2 px top border `--accent`; inactive tab `--surface` and `--muted`. "+" button for a new tab. Tabs show connection name, status dot, close button (`--danger` on hover). Middle-click closes; drag reorders (keyboard alternative required).
 - The focused pane has a 1 px `--accent` border. Panes resize in both axes through the split tree handles.
 - **Moving tabs between panes** is supported and must keep the terminal alive (scrollback, running full-screen programs). Terminals are created once per session and re-attached to their pane; never put a terminal's lifecycle inside a pane's markup. Drag a tab onto another pane's tab strip (reorders when dropped between tabs), onto a pane's center (move), or onto a pane edge (split and move). Keyboard: Ctrl+Alt+Shift+Arrows. Details in `docs/tab-moves.md`.
+- **Pane targets:** a new connection goes to the dropped-on pane, the pane that asked for it, or the focused pane (which can be an empty one). New empty panes open the connection list immediately. Rules in `docs/pane-targets.md`.
 - **Default layout:** restore the last layout on start; on a clean first run show a 2-pane split. Layout presets are on Ctrl+Alt+1-4 (not a fixed three-pane default).
 - Per-session states are rendered inside the pane (see section 6): connecting, authenticating, host-key prompt, connected, disconnected (with Reconnect), failed (with the ssh error text).
 

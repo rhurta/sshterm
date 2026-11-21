@@ -275,6 +275,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Splitters support pointer dragging and keyboard adjustment. The active pane is identified by a subtle accent outline and a small dot.
 - Closing a tab leaves its pane available as an empty pane; empty panes can be explicitly removed.
 - Tabs can be moved between panes, reordered, or moved into a new pane by dragging, and with Ctrl+Alt+Shift+Arrows from the keyboard. Terminals are created once per session and re-attached to their pane, so a move keeps scrollback and screen state (design and behavior in [`docs/tab-moves.md`](docs/tab-moves.md)).
+- Connections can be dropped from the tree onto a pane; creating an empty pane opens the connection list; empty panes can be focused to receive the next connection (rules in [`docs/pane-targets.md`](docs/pane-targets.md)).
 - Pane layout is workspace state only and is not persisted. Command-console visibility and height are persisted separately.
 
 ### Command console and broadcast
@@ -287,7 +288,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Writes are sequential and preserve the exact UTF-8 bytes; no newline is appended and no automatic retry is performed.
 - The UI reports accepted IPC write requests and per-session failures. It cannot confirm that the remote shell completed a command.
 - Console drafts remain in frontend memory and are never saved in config, the encrypted vault or logs. Visibility and height are saved in non-secret config.
-- Shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 choose layouts; Ctrl+Alt+Shift+Arrows move the active tab to the neighboring pane; Ctrl+Enter requests a send.
+- Shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 choose layouts; Ctrl+Alt+Arrows focus the neighboring pane; Ctrl+Alt+Shift+Arrows move the active tab to it; Ctrl+Enter requests a send.
 
 ### Verification and remaining follow-up
 

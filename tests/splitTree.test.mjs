@@ -128,7 +128,7 @@ test("removeEmptyPane does not remove a pane that still contains sessions", () =
   assert.equal(getLayoutGeometry(updated).leaves.length, 2);
 });
 
-import { moveSession, moveSessionToNewPane, neighborPane, paneOfSession } from "../src/lib/splitTree.ts";
+import { moveSession, moveSessionToNewPane, neighborPane, paneOfSession, splitPaneById } from "../src/lib/splitTree.ts";
 
 function twoPanes() {
   // pane "a" holds a1,a2 ; pane "b" holds b1
@@ -181,4 +181,15 @@ test("neighborPane finds the adjacent pane in each direction", () => {
   assert.equal(neighborPane(leaves, id("a"), "left"), null);
   assert.equal(neighborPane(leaves, id("a"), "up"), null);
   assert.ok(neighborPane(leaves, id("a"), "down"));
+});
+
+test("splitPaneById splits an empty pane and rejects unknown or duplicate ids", () => {
+  const tree = twoPanes();
+  const emptied = moveSession(tree, "b1", "a"); // pane "b" is now empty
+  const split = splitPaneById(emptied, "b", "c", "vertical");
+  const leaves = getLayoutGeometry(split).leaves;
+  assert.equal(leaves.length, 3);
+  assert.deepEqual(leaves.find((p) => p.sessionId === "c").sessionIds, []);
+  assert.equal(splitPaneById(tree, "nope", "c", "vertical"), tree);
+  assert.equal(splitPaneById(tree, "a", "b", "vertical"), tree);
 });

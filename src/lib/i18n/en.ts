@@ -46,6 +46,7 @@ export const en = {
   "workspace.openConnectionInPane": "Open a connection in this pane",
   "workspace.removeEmptyPane": "Remove empty pane",
   "workspace.openConnection": "Open a connection",
+  "workspace.emptyPaneHint": "Pick a connection from the tree, or drop one here.",
   "workspace.keyboardShortcuts": "Keyboard shortcuts",
   "workspace.shortcutConsoleHelp": "Ctrl+Alt+K: show or hide the command console.",
   "workspace.shortcutLayoutHelp": "Ctrl+Alt+1: single pane · 2: left/right · 3: top/bottom · 4: 2×2 grid.",

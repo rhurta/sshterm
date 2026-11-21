@@ -307,9 +307,10 @@
         return false;
       }
       if (event.type !== "keydown") return true;
-      // Ctrl+Alt+Shift+Arrows moves the tab to a neighboring pane (Workspace):
-      // never let xterm turn it into a modified-arrow sequence for the shell.
-      if (event.ctrlKey && event.altKey && event.shiftKey && event.key.startsWith("Arrow")) return false;
+      // Ctrl+Alt+Arrows focus a neighboring pane and, with Shift, move the tab
+      // there (Workspace): never let xterm turn them into modified-arrow
+      // sequences for the shell.
+      if (event.ctrlKey && event.altKey && event.key.startsWith("Arrow")) return false;
       const mod = event.ctrlKey || event.metaKey;
       if (!mod || event.altKey) return true;
       const key = event.key.toLowerCase();

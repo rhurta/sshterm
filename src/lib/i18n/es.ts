@@ -47,6 +47,7 @@ export const es: Record<MessageKey, string> = {
   "workspace.openConnectionInPane": "Abrir una conexión en este panel",
   "workspace.removeEmptyPane": "Quitar el panel vacío",
   "workspace.openConnection": "Abrir una conexión",
+  "workspace.emptyPaneHint": "Elige una conexión del árbol o suéltala aquí.",
   "workspace.keyboardShortcuts": "Atajos de teclado",
   "workspace.shortcutConsoleHelp": "Ctrl+Alt+K: mostrar u ocultar la consola de comandos.",
   "workspace.shortcutLayoutHelp": "Ctrl+Alt+1: un panel · 2: izquierda/derecha · 3: arriba/abajo · 4: cuadrícula 2 × 2.",

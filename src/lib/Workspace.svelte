@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { getLastPaneSize, rememberOpenSize, subscribeSessionErrors } from "$lib/sessionBus";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
@@ -13,7 +13,7 @@
   import LanguageSelect from "./LanguageSelect.svelte";
   import type { AppBehaviorSettings, AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
   import { DEFAULT_APP_BEHAVIOR_SETTINGS, DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
-  import { addSessionToPane, createLayoutTree, getLayoutGeometry, moveSession, moveSessionToNewPane, neighborPane, paneOfSession, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneWithEmptyLeaf, type LayoutPreset, type PaneDirection, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
+  import { addSessionToPane, createLayoutTree, getLayoutGeometry, moveSession, moveSessionToNewPane, neighborPane, paneOfSession, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneById, splitPaneWithEmptyLeaf, type LayoutPreset, type PaneDirection, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
     dir,
@@ -43,6 +43,12 @@
   let draggingTab = $state<string | null>(null);
   type DropZone = "tabs" | "center" | "left" | "right" | "top" | "bottom";
   let tabDrop = $state<{ paneId: string; zone: DropZone; index?: number } | null>(null);
+  // Pane that receives the next connection (opened from the tree or picker) and
+  // shows the focus outline. Usually follows the active tab, but an empty pane
+  // can be focused too. Always read it through currentPaneId().
+  let focusedPaneId = $state<string | null>(null);
+  // Pane under a connection being dragged from the tree.
+  let connDropPane = $state<string | null>(null);
   let pendingPaneId = $state<string | null>(null);
   let panesElement = $state<HTMLDivElement | null>(null);
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
@@ -248,7 +254,7 @@
     }
   }
 
-  async function connect(c: ConnectionSummary) {
+  async function connect(c: ConnectionSummary, paneOverride?: string) {
     error = "";
     try {
       const jumpNames = c.jump?.length
@@ -274,8 +280,7 @@
         connected: true,
         highlightSets,
       }];
-      const focusedPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""));
-      const targetPaneId = pendingPaneId ?? focusedPane?.sessionId ?? layoutGeometry.leaves[0]?.sessionId;
+      const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
       if (!layoutTree || !targetPaneId) {
         layoutTree = createLayoutTree([sessionId], "single", sessionId);
         paneActiveIds = { ...paneActiveIds, [sessionId]: sessionId };
@@ -285,6 +290,7 @@
       }
       pendingPaneId = null;
       activeId = sessionId;
+      focusedPaneId = paneOfSession(layoutTree, sessionId);
       picker = false;
     } catch (e) {
       error = errorText(String(e));
@@ -314,18 +320,50 @@
   }
 
   function splitFocusedPane(axis: SplitAxis) {
-    if (!layoutTree || !activeId) return;
-    const pane = layoutGeometry.leaves.find((item) => item.sessionIds.includes(activeId!));
-    if (!pane) return;
+    const target = currentPaneId();
+    if (!layoutTree || !target) return;
     const paneId = crypto.randomUUID();
-    layoutTree = splitPaneWithEmptyLeaf(layoutTree, activeId, paneId, axis);
-    pendingPaneId = paneId;
+    const next = splitPaneById(layoutTree, target, paneId, axis);
+    if (next === layoutTree) return;
+    layoutTree = next;
+    focusedPaneId = paneId;
+    // A new empty pane asks what to put in it right away.
+    void openPickerForPane(paneId);
   }
 
   function closePicker() {
     picker = false;
     pendingPaneId = null;
     newTabButton?.focus();
+  }
+
+  function currentPaneId(): string | null {
+    const leaves = layoutGeometry.leaves;
+    if (focusedPaneId && leaves.some((pane) => pane.sessionId === focusedPaneId)) return focusedPaneId;
+    return leaves.find((pane) => pane.sessionIds.includes(activeId ?? ""))?.sessionId ?? leaves[0]?.sessionId ?? null;
+  }
+
+  // When the active tab changes (open, close, switch), focus follows it.
+  $effect(() => {
+    const id = activeId;
+    untrack(() => {
+      const pane = id ? paneOfSession(layoutTree, id) : null;
+      if (pane) focusedPaneId = pane;
+    });
+  });
+
+  /** Focus a pane: its active terminal, or the open-connection button of an empty one. */
+  async function focusPane(paneId: string) {
+    const pane = layoutGeometry.leaves.find((item) => item.sessionId === paneId);
+    if (!pane) return;
+    focusedPaneId = paneId;
+    const sessionId = paneActiveIds[paneId] ?? pane.sessionIds[0];
+    if (sessionId) {
+      activateSession(sessionId);
+      return;
+    }
+    await tick();
+    paneEls[paneId]?.querySelector<HTMLElement>(".empty-pane button")?.focus();
   }
 
   function registerPane(node: HTMLElement, paneId: string) {
@@ -365,6 +403,7 @@
     next[toPaneId] = sessionId;
     paneActiveIds = next;
     activeId = sessionId;
+    focusedPaneId = toPaneId;
   }
 
   /** Keyboard path for moving tabs: send the active tab to the neighboring pane. */
@@ -403,7 +442,16 @@
     return "center";
   }
 
+  const CONN_MIME = "application/x-sshterm-conn";
+  const isConnDrag = (event: DragEvent) => !draggingTab && !!event.dataTransfer?.types.includes(CONN_MIME);
+
   function onPaneDragOver(event: DragEvent, paneId: string) {
+    if (isConnDrag(event)) {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      if (connDropPane !== paneId) connDropPane = paneId;
+      return;
+    }
     if (!draggingTab) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
@@ -431,10 +479,30 @@
 
   function onPaneDragLeave(event: DragEvent) {
     const slot = event.currentTarget as HTMLElement;
-    if (!slot.contains(event.relatedTarget as Node | null)) tabDrop = null;
+    if (!slot.contains(event.relatedTarget as Node | null)) {
+      tabDrop = null;
+      connDropPane = null;
+    }
   }
 
-  function onPaneDrop(event: DragEvent) {
+  async function dropConnection(connId: string, paneId: string) {
+    try {
+      const list = await invoke<ConnectionSummary[]>("conn_list");
+      const summary = list.find((item) => item.id === connId);
+      if (summary) await connect(summary, paneId);
+    } catch (e) {
+      error = errorText(String(e));
+    }
+  }
+
+  function onPaneDrop(event: DragEvent, paneId: string) {
+    if (isConnDrag(event)) {
+      const connId = event.dataTransfer?.getData(CONN_MIME);
+      connDropPane = null;
+      event.preventDefault();
+      if (connId) void dropConnection(connId, paneId);
+      return;
+    }
     const sessionId = draggingTab;
     const drop = tabDrop;
     endTabDrag();
@@ -464,9 +532,15 @@
     ) {
       const key = e.key.toLowerCase();
       const arrows: Record<string, PaneDirection> = { arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down" };
-      if (e.shiftKey && arrows[key] && tabs.length > 0) {
+      if (arrows[key] && tabs.length > 0) {
         e.preventDefault();
-        moveActiveTab(arrows[key]);
+        if (e.shiftKey) {
+          moveActiveTab(arrows[key]);
+        } else {
+          const from = currentPaneId();
+          const target = from ? neighborPane(layoutGeometry.leaves, from, arrows[key]) : null;
+          if (target) void focusPane(target);
+        }
         return;
       }
       if (key === "k" && tabs.length > 0) {
@@ -506,7 +580,10 @@
   function activateSession(sessionId: string) {
     activeId = sessionId;
     const pane = layoutGeometry.leaves.find((item) => item.sessionIds.includes(sessionId));
-    if (pane) paneActiveIds = { ...paneActiveIds, [pane.sessionId]: sessionId };
+    if (pane) {
+      paneActiveIds = { ...paneActiveIds, [pane.sessionId]: sessionId };
+      focusedPaneId = pane.sessionId;
+    }
   }
 
   function findConnectionParent(nodes: TreeNode[], connectionId: string, parentId: string | null = null): string | null | undefined {
@@ -673,7 +750,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} onpointermove={moveConsoleResize} onpointerup={endConsoleResize} onpointercancel={endConsoleResize} />
+<svelte:window ondragend={() => (connDropPane = null)} onkeydown={onKeydown} onpointermove={moveConsoleResize} onpointerup={endConsoleResize} onpointercancel={endConsoleResize} />
 
 <div class="app">
 
@@ -701,14 +778,14 @@
             <button class:chosen={layoutPreset === "top-bottom"} title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}>▤</button>
             <button class:chosen={layoutPreset === "grid"} title={t("workspace.layout.grid")} aria-label={t("workspace.layout.grid")} aria-pressed={layoutPreset === "grid"} onclick={() => chooseLayout("grid")}>▦</button>
             <span class="tool-separator"></span>
-            <button title={t("workspace.splitLeftRight")} aria-label={t("workspace.splitLeftRight")} disabled={!activeId} onclick={() => splitFocusedPane("horizontal")}>↔</button>
-            <button title={t("workspace.splitTopBottom")} aria-label={t("workspace.splitTopBottom")} disabled={!activeId} onclick={() => splitFocusedPane("vertical")}>↕</button>
+            <button title={t("workspace.splitLeftRight")} aria-label={t("workspace.splitLeftRight")} disabled={!currentPaneId()} onclick={() => splitFocusedPane("horizontal")}>↔</button>
+            <button title={t("workspace.splitTopBottom")} aria-label={t("workspace.splitTopBottom")} disabled={!currentPaneId()} onclick={() => splitFocusedPane("vertical")}>↕</button>
             <span class="tool-separator"></span>
             <button class:chosen={consoleVisible} title={consoleVisible ? t("workspace.commandConsole.hide") : t("workspace.commandConsole.show")} aria-label={consoleVisible ? t("workspace.commandConsole.hide") : t("workspace.commandConsole.show")} aria-pressed={consoleVisible} onclick={toggleCommandConsole}>⌨</button>
           </div>
           <div class="panes" bind:this={panesElement}>
             {#each layoutGeometry.leaves as pane (pane.sessionId)}
-              <div class="pane-slot" ondragover={(event) => onPaneDragOver(event, pane.sessionId)} ondragleave={onPaneDragLeave} ondrop={onPaneDrop} role="group" class:focused={pane.sessionIds.includes(activeId ?? "")} class:split-layout={layoutGeometry.leaves.length > 1} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
+              <div class="pane-slot" ondragover={(event) => onPaneDragOver(event, pane.sessionId)} ondragleave={onPaneDragLeave} ondrop={(event) => onPaneDrop(event, pane.sessionId)} onfocusin={() => (focusedPaneId = pane.sessionId)} onpointerdown={() => (focusedPaneId = pane.sessionId)} role="group" class:focused={pane.sessionId === currentPaneId()} class:split-layout={layoutGeometry.leaves.length > 1} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
                 <div class="pane-tabs" class:drop-tabs={tabDrop?.paneId === pane.sessionId && tabDrop.zone === "tabs"} role="tablist" aria-label={t("workspace.paneTabs")}>
                   {#each pane.sessionIds as sessionId (sessionId)}
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
@@ -754,9 +831,15 @@
                 </div>
                 <div class="pane-terminals" use:registerPane={pane.sessionId}>
                   {#if pane.sessionIds.length === 0}
-                    <div class="empty-pane"><button onclick={() => openPickerForPane(pane.sessionId)}>{t("workspace.openConnection")}</button></div>
+                    <div class="empty-pane">
+                      <p>{t("workspace.emptyPaneHint")}</p>
+                      <button onclick={() => openPickerForPane(pane.sessionId)}>{t("workspace.openConnection")}</button>
+                    </div>
                   {/if}
                 </div>
+                {#if connDropPane === pane.sessionId}
+                  <div class="drop-zone center" aria-hidden="true"></div>
+                {/if}
                 {#if draggingTab && tabDrop?.paneId === pane.sessionId && tabDrop.zone !== "tabs"}
                   <div class="drop-zone {tabDrop.zone}" aria-hidden="true"></div>
                 {/if}
@@ -1011,7 +1094,8 @@
   .pane-add { color: var(--accent); }
   .pane-remove { color: var(--text-secondary); }
   .pane-remove:hover { color: var(--danger, #e06c75); }
-  .empty-pane { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+  .empty-pane { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; height: 100%; align-items: center; justify-content: center; text-align: center; }
+  .empty-pane p { margin: 0; max-width: 18rem; font-size: 0.74rem; color: var(--muted); }
   .empty-pane button { font: inherit; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }
   .tool-separator { height: 1px; margin: 0.2rem 0; background: var(--border); }
   .console-resizer { flex: 0 0 6px; cursor: row-resize; background: var(--border); touch-action: none; outline: none; }

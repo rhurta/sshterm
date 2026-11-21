@@ -180,6 +180,8 @@
     }
     dragId = node.id;
     event.dataTransfer?.setData("text/plain", node.id);
+    // Lets the workspace panes accept a connection dropped from the tree.
+    if (node.type === "connection") event.dataTransfer?.setData("application/x-sshterm-conn", node.id);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
   }
 
