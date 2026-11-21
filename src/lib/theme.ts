@@ -1,4 +1,7 @@
-export type AppTheme = "dark" | "light" | "nord";
+export type AppTheme = "dark" | "light" | "nord" | "latte" | "frappe" | "macchiato" | "mocha";
+
+/** Every theme, in the order the selector lists them. */
+export const THEMES: AppTheme[] = ["dark", "light", "nord", "mocha", "macchiato", "frappe", "latte"];
 
 export interface TerminalPalette {
   background: string;
@@ -24,7 +27,27 @@ export interface TerminalPalette {
   brightWhite: string;
 }
 
+interface CatppuccinFlavor {
+  base: string; crust: string; surface1: string; surface2: string; text: string;
+  subtext0: string; subtext1: string; rosewater: string;
+  red: string; green: string; yellow: string; blue: string; pink: string; teal: string;
+}
+
+/** Official Catppuccin flavors (https://catppuccin.com/palette) mapped to the 16 ANSI colors. */
+function catppuccin(c: CatppuccinFlavor): TerminalPalette {
+  return {
+    background: c.base, foreground: c.text, cursor: c.rosewater, cursorAccent: c.base,
+    selectionBackground: c.surface2,
+    black: c.surface1, red: c.red, green: c.green, yellow: c.yellow, blue: c.blue, magenta: c.pink, cyan: c.teal, white: c.subtext1,
+    brightBlack: c.surface2, brightRed: c.red, brightGreen: c.green, brightYellow: c.yellow, brightBlue: c.blue, brightMagenta: c.pink, brightCyan: c.teal, brightWhite: c.subtext0,
+  };
+}
+
 const palettes: Record<AppTheme, TerminalPalette> = {
+  mocha: catppuccin({ base: "#1e1e2e", crust: "#11111b", surface1: "#45475a", surface2: "#585b70", text: "#cdd6f4", subtext0: "#a6adc8", subtext1: "#bac2de", rosewater: "#f5e0dc", red: "#f38ba8", green: "#a6e3a1", yellow: "#f9e2af", blue: "#89b4fa", pink: "#f5c2e7", teal: "#94e2d5" }),
+  macchiato: catppuccin({ base: "#24273a", crust: "#181926", surface1: "#494d64", surface2: "#5b6078", text: "#cad3f5", subtext0: "#a5adcb", subtext1: "#b8c0e0", rosewater: "#f4dbd6", red: "#ed8796", green: "#a6da95", yellow: "#eed49f", blue: "#8aadf4", pink: "#f5bde6", teal: "#8bd5ca" }),
+  frappe: catppuccin({ base: "#303446", crust: "#232634", surface1: "#51576d", surface2: "#626880", text: "#c6d0f5", subtext0: "#a5adce", subtext1: "#b5bfe2", rosewater: "#f2d5cf", red: "#e78284", green: "#a6d189", yellow: "#e5c890", blue: "#8caaee", pink: "#f4b8e4", teal: "#81c8be" }),
+  latte: catppuccin({ base: "#eff1f5", crust: "#dce0e8", surface1: "#bcc0cc", surface2: "#acb0be", text: "#4c4f69", subtext0: "#6c6f85", subtext1: "#5c5f77", rosewater: "#dc8a78", red: "#d20f39", green: "#40a02b", yellow: "#df8e1d", blue: "#1e66f5", pink: "#ea76cb", teal: "#179299" }),
   dark: {
     background: "#161a22",
     foreground: "#dfe4ec",
@@ -96,6 +119,20 @@ const palettes: Record<AppTheme, TerminalPalette> = {
   },
 };
 
-export function getTerminalTheme(theme: AppTheme): TerminalPalette {
-  return palettes[theme] ?? palettes.dark;
+/** `#rrggbb` + percent opacity -> `rgba(...)`; 100 keeps the plain hex color. */
+export function withOpacity(hex: string, percent: number): string {
+  if (percent >= 100 || !/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const n = parseInt(hex.slice(1), 16);
+  const alpha = Math.max(0, Math.min(100, percent)) / 100;
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/**
+ * Terminal colors for a theme. `opacity` (percent) makes the terminal background
+ * translucent so a window background image shows through; xterm needs
+ * `allowTransparency` for that.
+ */
+export function getTerminalTheme(theme: AppTheme, opacity = 100): TerminalPalette {
+  const palette = palettes[theme] ?? palettes.dark;
+  return opacity >= 100 ? palette : { ...palette, background: withOpacity(palette.background, opacity) };
 }

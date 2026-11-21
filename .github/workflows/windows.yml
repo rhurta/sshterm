@@ -53,6 +53,9 @@ jobs:
       - name: Test broadcast target resolution
         run: npm run test:broadcast-targets
 
+      - name: Test theme palettes
+        run: npm run test:theme
+
       - name: Build frontend
         run: npm run build
 

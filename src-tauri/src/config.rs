@@ -18,6 +18,11 @@ pub enum AppTheme {
     Dark,
     Light,
     Nord,
+    /// Catppuccin flavors.
+    Latte,
+    Frappe,
+    Macchiato,
+    Mocha,
 }
 
 impl Default for AppTheme {
@@ -105,6 +110,36 @@ impl Default for AppBehaviorSettings {
     }
 }
 
+/// Window appearance beyond the color theme, available before the vault is unlocked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppearanceSettings {
+    /// Path of a background image (absolute, or relative to the exe folder). Empty = none.
+    pub background_image: String,
+    /// Opacity of the interface surfaces over the background image, in percent.
+    pub panel_opacity: u8,
+    /// Opacity of the terminal background over the background image, in percent.
+    pub terminal_opacity: u8,
+}
+
+pub const MIN_OPACITY: u8 = 20;
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self { background_image: String::new(), panel_opacity: 85, terminal_opacity: 85 }
+    }
+}
+
+impl AppearanceSettings {
+    /// Keep persisted values within the supported range and trim the path.
+    pub fn normalized(mut self) -> Self {
+        self.background_image = self.background_image.trim().to_string();
+        self.panel_opacity = self.panel_opacity.clamp(MIN_OPACITY, 100);
+        self.terminal_opacity = self.terminal_opacity.clamp(MIN_OPACITY, 100);
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)] // missing fields take their default value
 pub struct Config {
@@ -121,6 +156,8 @@ pub struct Config {
     pub command_console: CommandConsoleSettings,
     /// Window and vault-lock behavior; stored outside the encrypted vault.
     pub app_behavior: AppBehaviorSettings,
+    /// Background image and transparency; stored outside the encrypted vault.
+    pub appearance: AppearanceSettings,
 }
 
 impl Default for Config {
@@ -133,6 +170,7 @@ impl Default for Config {
             terminal: TerminalSettings::default(),
             command_console: CommandConsoleSettings::default(),
             app_behavior: AppBehaviorSettings::default(),
+            appearance: AppearanceSettings::default(),
         }
     }
 }
@@ -201,6 +239,36 @@ mod tests {
         assert_eq!(cfg.log_mode, LogMode::Screen);
         assert_eq!(cfg.app_behavior, AppBehaviorSettings::default());
         assert!(!dir.path().join("config.toml.tmp").exists());
+    }
+
+    #[test]
+    fn catppuccin_themes_roundtrip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        for theme in [AppTheme::Latte, AppTheme::Frappe, AppTheme::Macchiato, AppTheme::Mocha] {
+            Config { theme, ..Default::default() }.save(&path).unwrap();
+            assert_eq!(Config::load(&path).theme, theme);
+        }
+        fs::write(&path, "theme = \"macchiato\"\n").unwrap();
+        assert_eq!(Config::load(&path).theme, AppTheme::Macchiato);
+    }
+
+    #[test]
+    fn appearance_defaults_and_normalization() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "language = \"en\"\n").unwrap();
+        let cfg = Config::load(&path);
+        assert_eq!(cfg.appearance, AppearanceSettings::default());
+        assert!(cfg.appearance.background_image.is_empty());
+
+        let odd = AppearanceSettings { background_image: "  bg.png ".into(), panel_opacity: 0, terminal_opacity: 250 }.normalized();
+        assert_eq!(odd.background_image, "bg.png");
+        assert_eq!(odd.panel_opacity, MIN_OPACITY);
+        assert_eq!(odd.terminal_opacity, 100);
+
+        Config { appearance: odd.clone(), ..Default::default() }.save(&path).unwrap();
+        assert_eq!(Config::load(&path).appearance, odd);
     }
 
     #[test]

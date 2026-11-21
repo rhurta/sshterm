@@ -29,9 +29,13 @@ Every new dependency needs a reason in the PR: what behavior it gives that we ca
 
 ## 2. Visual style and tokens
 
-**Themes:** `dark` (default, Catppuccin-inspired), `light`, `nord`. Variables are defined on `.window-shell`; overlays rendered in a portal must portal into `.window-shell` or they lose the variables.
+**Themes (7):** `dark` (default), `light`, `nord`, and the four Catppuccin flavors: `mocha`, `macchiato`, `frappe` (dark) and `latte` (light). The theme is stored in `config.toml` (outside the vault, so the lock screen uses it) and selected in the title bar and in Settings > Appearance. Variables are defined on `.window-shell[data-theme=...]` in `src/routes/+page.svelte`; overlays rendered in a portal must portal into `.window-shell` or they lose the variables.
 
-**Never hardcode a color** in components, including the xterm theme. Use these existing variables (define any new one in all three themes at once):
+**Adding or changing a theme touches six places, all in one commit:** the `AppTheme` enum in `src-tauri/src/config.rs` (serde lowercase) and its roundtrip test; the `AppTheme` union, `THEMES` list and terminal palette in `src/lib/theme.ts` (+ `tests/theme.test.mjs`); the CSS block in `+page.svelte`; the `theme.<id>` strings in both languages. Never rename a theme id: it is persisted.
+
+**Catppuccin mapping** (official swatches, https://catppuccin.com/palette): base -> app background, mantle -> `--surface`, surface0 -> `--surface-raised`, surface1 -> `--surface-hover` and `--border`, surface2 -> `--border-strong`, crust -> `--surface-deep`, text / subtext1 / subtext0 -> `--text` / `--text-secondary` / `--muted`, blue -> `--accent`, red / yellow / green -> `--danger` / `--warning` / `--success`. Their `*-bg`, `*-soft` and `*-border` tints are `color-mix` of the accent over the base. Terminal ANSI: black = surface1, white = subtext1, magenta = pink, cyan = teal, cursor = rosewater. **Latte** uses slightly darker muted, warning and success than the official swatches so small text keeps 4.5:1; keep that when editing it.
+
+**Never hardcode a color** in components, including the xterm theme. Use these existing variables (define any new one in every theme at once):
 
 | Role | Variable | Dark value (reference) |
 | --- | --- | --- |
@@ -51,12 +55,22 @@ Every new dependency needs a reason in the PR: what behavior it gives that we ca
 
 The dark values above are the reference palette; the real values live in the theme definitions and win.
 
+**Surface variables are derived, not set per theme.** Each theme defines the five solid surfaces as `--c-app-bg`, `--c-surface`, `--c-surface-raised`, `--c-surface-hover`, `--c-surface-deep`; `.window-shell` derives `--app-bg`, `--surface`, ... from them with `color-mix(..., transparent)` and the `--panel-alpha` / `--raised-alpha` percentages. Components only ever use the derived names. Never put a solid color in a component for a surface, or it will not become translucent.
+
+### Background image and transparency
+- Settings > Appearance: background image path (PNG, JPG, WebP, GIF or BMP, up to 20 MB; a relative path starts at the exe folder), interface opacity and terminal opacity (20-100 %, default 85). Stored in `config.toml` `[appearance]`, outside the vault.
+- The backend reads the image and returns a `data:` URL (`appearance_background_data`); no asset protocol or CDN is involved, so the app stays portable. An invalid image is rejected before anything is saved, and a missing image never blocks startup.
+- Layers inside `.window-shell`: a solid `--c-app-bg` base with the image (`cover`, centered), then `.shell-content` above it. **Opacity applies only while an image is set**; without one the UI is fully opaque, because there is nothing behind it.
+- Interface opacity drives `--panel-alpha`. Raised surfaces (dialogs, menus, active tabs) never go below 85 % (`--raised-alpha`) so overlays stay readable. The terminal uses its own value: xterm gets an rgba background and `allowTransparency: true`.
+- Text colors are never made translucent. If a theme/image combination hurts legibility, lower the transparency rather than dimming text.
+- Real see-through windows (desktop visible behind the app) are not supported; only the in-app image is.
+
 - **Fonts:** UI `Inter` then system sans. Terminal `JetBrains Mono`, then `Cascadia Mono`, then `Consolas`. Bundle what you list first or drop it from the stack.
 - **Terminal colors:** derive the xterm theme (background, foreground, cursor, selection, 16 ANSI colors) per app theme from one function. Light theme needs its own ANSI palette; do not reuse the dark one.
 - **Radius:** 4 px inputs/buttons, 6 px panels/modals.
 - **Spacing:** 4 px grid (4, 8, 12, 16, 24). Default control height 28 px, list row height 28 px, tab height 32 px.
 - **Type scale:** 12 px for dense UI (trees, settings grid, tabs), 13-14 px for dialogs and body. Do not go below 11 px.
-- **Contrast:** text on any surface at least 4.5:1, non-text UI (borders of inputs, icons) at least 3:1, in every theme. Check `--muted` on `--surface` in light and nord especially.
+- **Contrast:** text on any surface at least 4.5:1, non-text UI (borders of inputs, icons) at least 3:1, in every theme. Check `--muted` on `--surface` in light, nord and latte especially.
 - **Color is never the only signal.** Connection status = color + icon/shape + accessible text (`aria-label`/title). Errors carry an icon and a message, not just red.
 - **Motion:** 120 ms ease-out for enter transitions, none for resize. Honor `prefers-reduced-motion`.
 - **Scrollbars:** thin, themed with variables; thumb uses `--border-strong`.
@@ -114,7 +128,7 @@ Resize handles: hit area at least 4 px (a 1 px visible line is fine), `col-resiz
 - **Moving tabs between panes** is supported and must keep the terminal alive (scrollback, running full-screen programs). Terminals are created once per session and re-attached to their pane; never put a terminal's lifecycle inside a pane's markup. Drag a tab onto another pane's tab strip (reorders when dropped between tabs), onto a pane's center (move), or onto a pane edge (split and move). Keyboard: Ctrl+Alt+Shift+Arrows. Details in `docs/tab-moves.md`.
 - **Shortcut conflicts:** Windows and GPU drivers claim some Ctrl+Alt combinations (Ctrl+Alt+Arrows can rotate the screen; Ctrl+Alt+Tab, Ctrl+Alt+Del are reserved). Every shortcut that matters needs a second binding on a safe key, and AltGr combinations (Ctrl+Alt on Windows, used to type @ | ~ on Spanish layouts) must never be swallowed.
 - **Pane targets:** a new connection goes to the dropped-on pane, the pane that asked for it, or the focused pane (which can be an empty one). New empty panes open the connection list immediately. Rules in `docs/pane-targets.md`.
-- **Default layout:** restore the last layout on start; on a clean first run show a 2-pane split. Layout presets are on Ctrl+Alt+1-4 (not a fixed three-pane default).
+- **Start state:** the workspace opens with **one empty pane**, focused, showing a hint and an open-connection button; the first connection opened from the tree or dropped on it lands there. The workspace never goes back to a "no panes" screen: closing the last tab leaves an empty pane. Layout presets (Ctrl+Alt+1-4) arrange open tabs and do nothing while there are none; the split buttons make empty panes.
 - Per-session states are rendered inside the pane (see section 6): connecting, authenticating, host-key prompt, connected, disconnected (with Reconnect), failed (with the ssh error text).
 
 ### E. Command console
@@ -123,6 +137,10 @@ Resize handles: hit area at least 4 px (a 1 px visible line is fine), `col-resiz
 - Ctrl+Enter sends. Sending to more than one session shows a visible "broadcast to N sessions" indicator and asks for confirmation the first time per run.
 
 ### F. Dialogs and overlays
+- **Fixed, proportional size.** Large dialogs (connection properties, settings) have a constant size that does not depend on their content: width `clamp(380px, 46vw, 820px)`, height `clamp(360px, 72-76vh, 820px)`, never larger than 96 % of the window. Only the body scrolls; the title, tabs/search and action buttons stay in place. Switching sections or filtering must never resize the dialog.
+- **Connection properties dialog:** title, section tabs (General, Authentication, ...), scrollable body, Save/Cancel pinned at the bottom.
+- **Settings dialog:** a search field at the very top, **focused when the dialog opens**. It filters rows live; a match on a section title shows the whole section, a match on a label shows only that row; no match shows an empty-state message. Escape clears the search first and closes the dialog on the second press. Sections: language, appearance, keyboard shortcuts, application behavior, terminal. New settings must be registered in the section table in `SettingsDialog.svelte` so search finds them.
+- **Password fields** always use `PasswordInput.svelte`: a small eye button inside the field at its right end toggles visibility (`aria-pressed`, label "Show/Hide password", keyboard reachable, off by default, reset when the dialog closes). It styles through `--field-bg`, `--field-pad` and `--field-font-size`. Never use a bare `type="password"`.
 - Built with Bits UI `Dialog`, portaled into `.window-shell`. Focus moves inside on open (to the first field, or to the search box for pickers) and returns to the opener on close. Focus is trapped. Escape closes, except while a destructive operation is mid-flight.
 - Lock screen (vault) is full-window, shows no connection data, and focuses the password field.
 - Destructive confirmations use a custom dialog. The WebView2 `confirm()`/`alert()` do not work here.
@@ -154,7 +172,7 @@ Add rows here for anything new (for example toggle tree, toggle settings, focus 
 - **Autofocus is explicit, not the HTML attribute.** At app start the tree search box takes focus. When a panel is opened by shortcut or toolbar, focus its search box. Never steal focus from a terminal that has it because a panel re-rendered, and do not autofocus two things at once.
 - Escape inside a terminal goes to the terminal (vim, less). Escape only closes UI that is actually open and focused.
 
-**Focus visibility.** Every interactive element has a visible `:focus-visible` style, `outline: 2px solid var(--accent); outline-offset: 2px`, readable in all three themes. Never `outline: none` without a replacement. No `!important`.
+**Focus visibility.** Every interactive element has a visible `:focus-visible` style, `outline: 2px solid var(--accent); outline-offset: 2px`, readable in every theme. Never `outline: none` without a replacement. No `!important`.
 
 **Semantics.** Buttons are `<button>`, icon-only buttons have `aria-label`, toggles have `aria-pressed`, dialogs have `aria-labelledby`, live status changes (tunnel up/down, session lost) are announced through a polite live region.
 
@@ -178,8 +196,8 @@ Design and implement these, not just the happy path:
 2. No hardcoded colors, sizes off the 4 px grid, or magic z-index numbers: use a small named scale (`--z-panel`, `--z-overlay`, `--z-menu`, `--z-toast`).
 3. Overlay styling lives in global classes under `src/lib/ui/*.css` (scoped CSS cannot reach portaled elements) and uses only the theme variables.
 4. Follow the DOM order of section 3 so the tab order matches the visual order.
-5. Persist layout, panel sizes, collapsed state and the chosen theme in `config.toml`; never write UI state into the vault.
-6. Check all three themes before calling a UI task done.
+5. Persist layout, panel sizes, collapsed state, the chosen theme and the appearance settings in `config.toml`; never write UI state into the vault.
+6. Check every theme family before calling a UI task done: at least `dark`, `light`, `mocha` and `latte`, plus `nord`, `macchiato` and `frappe` when you touch colors.
 
 ## 8. Definition of done for a UI change
 
@@ -187,7 +205,9 @@ Design and implement these, not just the happy path:
 - [ ] New shortcuts are in both handlers and in the keymap table.
 - [ ] Visible focus, correct roles/labels, status not conveyed by color alone.
 - [ ] Empty, loading and error states exist.
-- [ ] Checked in dark, light and nord, with contrast acceptable.
+- [ ] Checked in dark, light, nord and the Catppuccin flavors (at least mocha and latte), with and without a background image, with contrast acceptable.
+- [ ] Any new surface uses the derived variables, so it stays translucent over a background image.
+- [ ] Dialogs keep their fixed size; any new password field uses `PasswordInput`.
 - [ ] Strings go through i18n (English and Spanish).
 - [ ] Works at the minimum window size and with long names/hosts (truncate with a tooltip).
 - [ ] `npm run check` passes and CI is green.

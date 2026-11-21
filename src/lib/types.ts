@@ -1,6 +1,6 @@
 /** Shared TypeScript shapes. The Rust counterparts live in vault/model.rs. */
 
-export type AppTheme = "dark" | "light" | "nord";
+export type { AppTheme } from "./theme";
 
 export interface TerminalSettings {
   copy_on_selection: boolean;
@@ -200,3 +200,19 @@ export interface Tab {
   /** Effective inherited/overridden syntax highlighting rule sets. */
   highlightSets: string[];
 }
+
+/** Background image and transparency (config.toml `appearance`). */
+export interface AppearanceSettings {
+  /** Path of the background image; empty means none. */
+  background_image: string;
+  /** Interface opacity over the image, in percent (20-100). */
+  panel_opacity: number;
+  /** Terminal background opacity over the image, in percent (20-100). */
+  terminal_opacity: number;
+}
+
+export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
+  background_image: "",
+  panel_opacity: 85,
+  terminal_opacity: 85,
+};

@@ -10,19 +10,28 @@
   import HighlightRulesPanel from "./HighlightRulesPanel.svelte";
   import TunnelManager from "./TunnelManager.svelte";
   import type { BroadcastSession } from "$lib/broadcastTargets";
-  import LanguageSelect from "./LanguageSelect.svelte";
-  import type { AppBehaviorSettings, AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
+  import SettingsDialog from "./SettingsDialog.svelte";
+  import type { AppBehaviorSettings, AppearanceSettings, AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
   import { DEFAULT_APP_BEHAVIOR_SETTINGS, DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
   import { addSessionToPane, createLayoutTree, getLayoutGeometry, moveSession, moveSessionToNewPane, neighborPane, paneOfSession, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneById, splitPaneWithEmptyLeaf, type LayoutPreset, type PaneDirection, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
     dir,
     theme,
+    appearance,
+    terminalOpacity = 100,
+    onthemechange,
+    onappearancechange,
     settingsOpen = $bindable(false),
     tunnelPanelOpen = $bindable(false),
   }: {
     dir: string;
     theme: AppTheme;
+    appearance: AppearanceSettings;
+    /** Terminal background opacity in percent (100 unless a background image is set). */
+    terminalOpacity?: number;
+    onthemechange: (theme: AppTheme) => void;
+    onappearancechange: (next: AppearanceSettings) => Promise<string | null>;
     settingsOpen?: boolean;
     tunnelPanelOpen?: boolean;
   } = $props();
@@ -30,7 +39,8 @@
   let tabs = $state<Tab[]>([]);
   let activeId = $state<string | null>(null);
   let layoutPreset = $state<LayoutPreset>("single");
-  let layoutTree = $state<SplitNode | null>(null);
+  // The workspace starts with one empty pane (a fresh connection opens in it).
+  let layoutTree = $state<SplitNode | null>({ type: "leaf", sessionId: crypto.randomUUID(), sessionIds: [] });
   let layoutGeometry = $derived(getLayoutGeometry(layoutTree));
   let paneActiveIds = $state<Record<string, string>>({});
   // Pane body elements, by stable pane ID. Terminals are rendered once per
@@ -554,7 +564,7 @@
     ) {
       const key = e.key.toLowerCase();
       const arrows: Record<string, PaneDirection> = { arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down" };
-      if (arrows[key] && tabs.length > 0) {
+      if (arrows[key] && layoutGeometry.leaves.length > 0) {
         e.preventDefault();
         if (e.shiftKey) {
           moveActiveTab(arrows[key]);
@@ -567,7 +577,7 @@
       }
       // Previous / next pane. Ctrl+Alt+Arrows can be taken by the OS or a graphics
       // driver (screen rotation) before the app sees them, so these always work.
-      if (!e.shiftKey && (e.code === "Comma" || e.code === "Period") && tabs.length > 0) {
+      if (!e.shiftKey && (e.code === "Comma" || e.code === "Period")) {
         e.preventDefault();
         const leaves = layoutGeometry.leaves;
         if (leaves.length > 1) {
@@ -651,6 +661,7 @@
   }
 
   function chooseLayout(preset: LayoutPreset) {
+    if (tabs.length === 0) return; // presets arrange open tabs; split buttons make empty panes
     layoutPreset = preset;
     pendingPaneId = null;
     layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), preset, activeId);
@@ -803,7 +814,6 @@
     />
 
     <main>
-      {#if tabs.length > 0}
         <div class="workspace-layout">
           <div class="layout-tools" role="toolbar" aria-label={t("workspace.layout")}>
             <button bind:this={newTabButton} class="tool-add" title={t("workspace.newTab")} onclick={openPicker}>+</button>
@@ -900,16 +910,10 @@
               <TerminalPane sessionId={tab.sessionId} container={paneEls[sessionPane[tab.sessionId]] ?? null}
                 active={paneActiveIds[sessionPane[tab.sessionId]] === tab.sessionId}
                 focused={activeId === tab.sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
-                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} {settings} {theme} />
+                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} {settings} {theme} {terminalOpacity} />
             {/each}
           </div>
         </div>
-      {:else}
-        <div class="empty" role="group" ondragover={(event) => { if (isConnDrag(event)) event.preventDefault(); }}
-          ondrop={(event) => { const id = event.dataTransfer?.getData(CONN_MIME); if (id) { event.preventDefault(); void dropConnection(id, "", "center"); } }}>
-          <p class="hint">{t("workspace.terminals")}</p>
-        </div>
-      {/if}
       {#if consoleVisible && tabs.length > 0}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
         <div class="console-resizer" role="separator" aria-orientation="horizontal"
@@ -922,37 +926,18 @@
   </div>
 
   {#if settingsOpen}
-    <div class="backdrop">
-      <button class="scrim" tabindex="-1" aria-label={t("workspace.close")} onclick={() => (settingsOpen = false)}></button>
-      <div class="dialog settings-dialog" role="dialog" aria-modal="true" aria-label={t("settings.title")} tabindex="-1">
-        <div class="dialog-head">
-          <h2>{t("settings.title")}</h2>
-          <button class="close" onclick={() => (settingsOpen = false)} title={t("workspace.close")}>&times;</button>
-        </div>
-        <h3>{t("settings.language")}</h3>
-        <LanguageSelect />
-        <h3>{t("workspace.keyboardShortcuts")}</h3>
-        <p class="hint">{t("workspace.shortcutConsoleHelp")}</p>
-        <p class="hint">{t("workspace.shortcutLayoutHelp")}</p>
-        <p class="hint">{t("console.shortcutSendHelp")}</p>
-        <h3>{t("settings.applicationBehavior")}</h3>
-        <label class="setting"><input type="checkbox" checked={appBehavior.stop_tunnels_on_lock} onchange={(e) => setAppBehaviorSetting("stop_tunnels_on_lock", e.currentTarget.checked)} />{t("settings.stopTunnelsOnLock")}</label>
-        <p class="hint">{t("settings.keepTunnelsOnLockWarning")}</p>
-        <label class="setting"><input type="checkbox" checked={appBehavior.close_to_tray} onchange={(e) => setAppBehaviorSetting("close_to_tray", e.currentTarget.checked)} />{t("settings.closeToTray")}</label>
-        <p class="hint">{t("settings.closeToTrayHint")}</p>
-        <h3>{t("settings.terminal")}</h3>
-        <button class="ghost" onclick={() => (highlightPanelOpen = true)}>{t("settings.highlightRules")}</button>
-        <label class="setting"><input type="checkbox" checked={settings.copy_on_selection} onchange={(e) => setTerminalSetting("copy_on_selection", e.currentTarget.checked)} />{t("settings.copyOnSelection")}</label>
-        <label class="setting"><input type="checkbox" checked={settings.right_click_copy} onchange={(e) => setTerminalSetting("right_click_copy", e.currentTarget.checked)} />{t("settings.rightClickCopy")}</label>
-        <label class="setting"><input type="checkbox" checked={settings.middle_click_copy} onchange={(e) => setTerminalSetting("middle_click_copy", e.currentTarget.checked)} />{t("settings.middleClickCopy")}</label>
-        <label class="setting"><input type="checkbox" checked={settings.right_click_paste} onchange={(e) => setTerminalSetting("right_click_paste", e.currentTarget.checked)} />{t("settings.rightClickPaste")}</label>
-        <label class="setting"><input type="checkbox" checked={settings.middle_click_paste} onchange={(e) => setTerminalSetting("middle_click_paste", e.currentTarget.checked)} />{t("settings.middleClickPaste")}</label>
-        <label class="setting"><input type="checkbox" checked={settings.ctrl_c_copy} onchange={(e) => setTerminalSetting("ctrl_c_copy", e.currentTarget.checked)} />{t("settings.ctrlCCopy")}</label>
-        <label class="setting"><input type="checkbox" checked={settings.confirm_multiline_paste} onchange={(e) => setTerminalSetting("confirm_multiline_paste", e.currentTarget.checked)} />{t("settings.confirmMultilinePaste")}</label>
-        <label class="setting"><input type="checkbox" checked={settings.keep_disconnected_sessions} onchange={(e) => setTerminalSetting("keep_disconnected_sessions", e.currentTarget.checked)} />{t("settings.keepDisconnectedSessions")}</label>
-        <button class="ghost" onclick={() => (settingsOpen = false)}>{t("editor.cancel")}</button>
-      </div>
-    </div>
+    <SettingsDialog
+      {settings}
+      {appBehavior}
+      {theme}
+      {appearance}
+      onterminal={setTerminalSetting}
+      onbehavior={setAppBehaviorSetting}
+      onhighlight={() => (highlightPanelOpen = true)}
+      onthemechange={onthemechange}
+      onappearance={onappearancechange}
+      onclose={() => (settingsOpen = false)}
+    />
   {/if}
 
   {#if highlightPanelOpen}
@@ -1213,27 +1198,6 @@
   }
   .dialog:focus {
     outline: none;
-  }
-  .settings-dialog {
-    max-height: 85vh;
-    overflow-y: auto;
-  }
-  .settings-dialog h3 {
-    margin: 0.25rem 0;
-    font-size: 0.85rem;
-    color: var(--accent);
-    font-weight: 600;
-  }
-  .setting {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    padding: 0.35rem 0;
-    color: var(--text);
-    font-size: 0.82rem;
-  }
-  .setting input {
-    accent-color: var(--accent);
   }
   .dialog-head {
     display: flex;

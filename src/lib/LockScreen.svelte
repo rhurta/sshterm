@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t, type MessageKey } from "$lib/i18n/index.svelte";
   import LanguageSelect from "$lib/LanguageSelect.svelte";
+  import PasswordInput from "$lib/PasswordInput.svelte";
 
   type Status = "loading" | "missing" | "locked" | "unlocked";
   type Problem = { key: MessageKey; params?: Record<string, string> };
@@ -14,7 +15,7 @@
   // The message key is stored, not the text, so it updates on locale change.
   let problem = $state<Problem | null>(null);
   let busy = $state(false);
-  let field: HTMLInputElement | undefined = $state();
+  let field: { focus: () => void } | undefined = $state();
 
   async function refresh() {
     status = await invoke<Status>("vault_status");
@@ -73,19 +74,13 @@
 
       <label>
         {t("lock.field.password")}
-        <input
-          type="password"
-          bind:value={password}
-          bind:this={field}
-          autocomplete="off"
-          disabled={busy}
-        />
+        <PasswordInput bind:value={password} bind:this={field} disabled={busy} />
       </label>
 
       {#if status === "missing"}
         <label>
           {t("lock.field.confirm")}
-          <input type="password" bind:value={confirm} autocomplete="off" disabled={busy} />
+          <PasswordInput bind:value={confirm} disabled={busy} />
         </label>
       {/if}
 
@@ -153,15 +148,10 @@
     font-size: 0.9rem;
     color: var(--text-secondary);
   }
-  input {
-    font: inherit;
-    color: var(--text);
-    background: var(--surface-raised);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0.6rem 0.7rem;
+  label {
+    --field-bg: var(--surface-raised);
+    --field-pad: 0.6rem 0.7rem;
   }
-  input:focus-visible,
   button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;

@@ -19,6 +19,7 @@
   let {
     sessionId,
     container = null,
+    terminalOpacity = 100,
     active,
     focused,
     onactivate,
@@ -39,6 +40,8 @@
     onclosed: (id: string) => void;
     settings: TerminalSettings;
     theme: AppTheme;
+    /** Terminal background opacity in percent; below 100 the window background shows through. */
+    terminalOpacity?: number;
     onmultilinepaste: (text: string) => Promise<boolean>;
     highlightSets?: string[];
   } = $props();
@@ -97,7 +100,8 @@
       cursorBlink: true,
       scrollback: 5000,
       allowProposedApi: true,
-      theme: getTerminalTheme(theme),
+      theme: getTerminalTheme(theme, terminalOpacity),
+      allowTransparency: true,
     });
     term = t;
     const f = new FitAddon();
@@ -399,7 +403,7 @@
 
   // Keep already-open terminals in sync when the application theme changes.
   $effect(() => {
-    const palette = getTerminalTheme(theme);
+    const palette = getTerminalTheme(theme, terminalOpacity);
     if (mounted && term) term.options.theme = palette;
   });
 

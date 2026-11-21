@@ -3,9 +3,9 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { t } from "$lib/i18n/index.svelte";
+  import { t, type MessageKey } from "$lib/i18n/index.svelte";
   import type { TunnelInfo } from "$lib/types";
-  import type { AppTheme } from "./theme";
+  import { THEMES, type AppTheme } from "./theme";
 
   let {
     theme,
@@ -166,9 +166,9 @@
       title={t("theme.label")}
       onchange={(event) => onchange(event.currentTarget.value as AppTheme)}
     >
-      <option value="dark">{t("theme.dark")}</option>
-      <option value="light">{t("theme.light")}</option>
-      <option value="nord">{t("theme.nord")}</option>
+      {#each THEMES as id (id)}
+        <option value={id}>{t(`theme.${id}` as MessageKey)}</option>
+      {/each}
     </select>
     {#if runningTunnels.length > 0}
       <button

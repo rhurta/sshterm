@@ -2,6 +2,7 @@
   import { onMount, tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
+  import PasswordInput from "$lib/PasswordInput.svelte";
   import type { Auth, Connection, ConnectionSummary, HighlightRuleSetStatus, Tunnel } from "$lib/types";
 
   let {
@@ -246,6 +247,7 @@
       </button>
     </div>
 
+    <div class="body">
     {#if section === "general"}
       <label>
         {t("editor.name")}
@@ -275,7 +277,7 @@
       {#if authType === "password"}
         <label>
           {t("editor.password")}
-          <input type="password" bind:value={password} autocomplete="new-password" />
+          <PasswordInput bind:value={password} autocomplete="new-password" />
         </label>
         <p class="hint">{t("editor.passwordHint")}</p>
       {:else if authType === "key"}
@@ -285,7 +287,7 @@
         </label>
         <label>
           {t("editor.passphrase")}
-          <input type="password" bind:value={passphrase} autocomplete="new-password" />
+          <PasswordInput bind:value={passphrase} autocomplete="new-password" />
         </label>
       {:else}
         <p class="hint">{t("editor.auth.agent")}</p>
@@ -440,6 +442,7 @@
       <p class="hint">{tunnelHint(newTunnelKind)}</p>
       <button type="button" class="add-tunnel" onclick={addTunnel}>{t("editor.tunnel.add")}</button>
     {/if}
+    </div>
 
     {#if validation}
       <p class="validation" role="alert">{validation}</p>
@@ -462,10 +465,14 @@
     justify-content: center;
     z-index: 20;
   }
+  /* Fixed size, proportional to the window: switching sections never resizes it.
+     Only the section content scrolls; title, section tabs and buttons stay put. */
   form {
-    width: min(27rem, 92vw);
-    max-height: 90vh;
-    overflow-y: auto;
+    width: clamp(380px, 46vw, 820px);
+    height: clamp(360px, 72vh, 780px);
+    max-width: 96vw;
+    max-height: 96vh;
+    overflow: hidden;
     background: var(--surface-raised);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -479,6 +486,16 @@
     margin: 0;
     font-size: 1.1rem;
     font-weight: 500;
+    flex: 0 0 auto;
+  }
+  .body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding-right: 0.2rem;
   }
   .sections {
     display: flex;
@@ -486,6 +503,7 @@
     gap: 0.35rem;
     border-bottom: 1px solid var(--border);
     padding-bottom: 0.5rem;
+    flex: 0 0 auto;
   }
   .sections button {
     font: inherit;
@@ -642,6 +660,7 @@
     display: flex;
     gap: 0.5rem;
     margin-top: 0.4rem;
+    flex: 0 0 auto;
   }
   .buttons button {
     font: inherit;

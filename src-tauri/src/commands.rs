@@ -142,6 +142,56 @@ pub fn config_set_theme(theme: config::AppTheme) -> Result<(), String> {
 }
 
 
+/// Background image and transparency; stored outside the vault so the lock screen can use them.
+#[tauri::command]
+pub fn config_get_appearance_settings() -> config::AppearanceSettings {
+    Config::load(&paths::config_path()).appearance
+}
+
+#[tauri::command]
+pub fn config_set_appearance_settings(settings: config::AppearanceSettings) -> Result<(), String> {
+    let path = paths::config_path();
+    let mut cfg = Config::load(&path);
+    cfg.appearance = settings.normalized();
+    cfg.save(&path).map_err(|e| e.to_string())
+}
+
+/// Largest background image the app will load (it is sent to the webview as a data URL).
+const MAX_BACKGROUND_BYTES: u64 = 20 * 1024 * 1024;
+
+/// Reads the background image and returns it as a `data:` URL. Relative paths are
+/// resolved against the exe folder, so a portable install can keep its image beside it.
+/// Errors are short codes the frontend translates.
+#[tauri::command]
+pub fn appearance_background_data(path: String) -> Result<String, String> {
+    use base64::Engine as _;
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("background_missing".into());
+    }
+    let mut file = std::path::PathBuf::from(trimmed);
+    if file.is_relative() {
+        file = paths::app_dir().join(file);
+    }
+    let mime = match file.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("gif") => "image/gif",
+        Some("bmp") => "image/bmp",
+        _ => return Err("background_format".into()),
+    };
+    let meta = std::fs::metadata(&file).map_err(|_| "background_missing".to_string())?;
+    if !meta.is_file() {
+        return Err("background_missing".into());
+    }
+    if meta.len() > MAX_BACKGROUND_BYTES {
+        return Err("background_too_large".into());
+    }
+    let bytes = std::fs::read(&file).map_err(|_| "background_missing".to_string())?;
+    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
 /// Terminal clipboard and mouse preferences stored in config.toml.
 #[tauri::command]
 pub fn config_get_terminal_settings() -> config::TerminalSettings {
