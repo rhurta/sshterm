@@ -451,7 +451,7 @@ async fn authenticate_agent(
 async fn authenticate(
     handle: &mut Handle<SftpHostKeyHandler>,
     connection: &Connection,
-) -> Result<(), SftpError> {
+) -> Result<AgentBindingStatus, SftpError> {
     match &connection.auth {
         Auth::Password { password } if !password.is_empty() => {
             if handle
