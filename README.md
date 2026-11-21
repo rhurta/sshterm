@@ -22,7 +22,7 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
 | M6 | Tiling, command console, broadcast and refined workspace panels | ✅ Complete; documented in [workspace panel guide](docs/workspace-panels.md) |
 | M7 | Local, reverse and dynamic SOCKS forwarding, independent lifecycle and manager UI | ✅ Implemented; Windows CI passed |
-| M8 | Native SFTP (`russh` + `russh-sftp`) | 📋 Planned; [implementation plan](docs/M8-implementation-plan.md) |
+| M8 | Native SFTP (`russh` + `russh-sftp`) | 🟡 M8a started; [implementation plan](docs/M8-implementation-plan.md) |
 | M9 | Polish (per-connection colors, host-key UI, auto-reconnect) | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine replaces phase 1 | 📋 Planned |
 

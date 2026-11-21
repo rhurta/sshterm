@@ -96,7 +96,8 @@ export interface Colors {
 }
 
 export interface SftpOptions {
-  port: number;
+  /** Optional target SSH port override; null/omitted inherits Connection.port. */
+  port?: number | null;
   start_dir: string;
 }
 

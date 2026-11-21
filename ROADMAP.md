@@ -360,13 +360,13 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 
 ---
 
-## 📋 M8 — Native SFTP (design documented; implementation not started)
+## 🟡 M8 — Native SFTP (M8a in progress)
 
 **Done when:** the connection-backed SFTP browser supports direct and multi-hop access, common file operations, and reliable cancellable transfers.
 
 See [docs/M8-implementation-plan.md](docs/M8-implementation-plan.md) for architecture, security gates, API direction, delivery phases and acceptance tests.
 
-- **M8a — Protocol/security spike:** compatible `russh` + `russh-sftp`, auth parity, known-host verification, direct SFTP and `direct-tcpip` jump chains.
+- **M8a — Protocol/security spike (in progress):** compatible `russh` + `russh-sftp`, auth parity, known-host verification, direct SFTP and `direct-tcpip` jump chains. The first increment defines optional SFTP-port inheritance and vault compatibility; the Rust protocol client and integration checks remain outstanding.
 - **M8b — Backend lifecycle:** managed SFTP connections, typed commands, remote listing/navigation, close on vault lock and app exit.
 - **M8c — Browser UI:** open from a saved connection; navigate/list, create directory, rename/delete safely, local file dialogs and keyboard support.
 - **M8d — Transfers:** multi-select, recursive folder upload/download, streaming progress, overwrite confirmation, cancellation and partial-file cleanup.

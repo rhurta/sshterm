@@ -1,6 +1,6 @@
 # M8 — Native SFTP implementation plan
 
-**Status:** Planned; architecture and delivery gates defined  
+**Status:** M8a in progress; architecture and delivery gates defined  
 **Scope:** A connection-backed SFTP browser with direct and multi-hop access, file operations, and cancellable transfers.  
 **Dependency boundary:** M8 introduces the native `russh` client for SFTP only. Interactive terminals continue using Windows OpenSSH through ConPTY; the broader transport replacement remains M10.
 
@@ -128,14 +128,19 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 
 ### M8a — Protocol and security spike
 
-- Add and lock compatible `russh` / `russh-sftp` versions and one crypto backend.
+**Progress:** The first M8a increment finalizes SFTP port inheritance in the vault model and connection editor. A blank override inherits the target connection's SSH port; old numeric vault values remain explicit overrides. Jump-host ports remain independent. This increment does not yet establish a Russh connection.
+
+- [ ] Add and lock compatible `russh` / `russh-sftp` versions and one crypto backend.
+- [x] Finalize `SftpOptions.port` inheritance and backward compatibility for saved numeric port values.
 - Prove direct password and key authentication against a local OpenSSH server.
 - Prove opening an SFTP subsystem over `Channel::into_stream()`.
 - Prove a two-hop `direct-tcpip` chain and retain parent channels correctly.
 - Verify host-key TOFU, known-key match, changed-key rejection, hashed entries and non-default ports.
 - Verify Pageant/agent support on Windows and a saved key with passphrase.
-- Finalize `SftpOptions.port` inheritance and vault compatibility.
-- Gate: no frontend UI until direct, jump, authentication and host-key checks are working.
+- [ ] Prove vault compatibility with an encrypted-vault fixture and older connection payloads.
+- [ ] Gate: no SFTP browser UI until direct, jump, authentication and host-key checks are working.
+
+**Security constraint:** use Russh 0.65.1 or later. Russh 0.65.2 is the selected baseline; keep the default no-op `kex_done` handler and do not expose or act on KEX shared-secret material. Versions before 0.65.1 are affected by GHSA-9264-jvgf-6w2f / CVE-2026-128087.
 
 ### M8b — SFTP backend and session lifecycle
 
