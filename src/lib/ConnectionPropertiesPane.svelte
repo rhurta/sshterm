@@ -1,7 +1,7 @@
 <script lang="ts">
 import {onMount,tick} from "svelte";import {invoke} from "@tauri-apps/api/core";import {t} from "$lib/i18n/index.svelte";import type {Connection,ConnectionSummary} from "$lib/types";
 let {connectionId,focusToken,width,onedit}:{connectionId:string|null;focusToken:number;width:number;onedit:(c:ConnectionSummary)=>void}=$props();
-let connection=$state<Connection|null>(null),summaries=$state<ConnectionSummary[]>([]),query=$state(""),loading=$state(false),error=$state(""),searchInput=$state<HTMLInputElement|null>(null),version=0;
+let connection=$state<Connection|null>(null),summaries=$state<ConnectionSummary[]>([]),query=$state(""),loading=$state(false),error=$state(""),searchInput=$state<HTMLInputElement|null>(null),version=0,lastFocusToken=0;
 async function load(){const current=++version;if(!connectionId){connection=null;error="";return;}loading=true;error="";try{const [full,all]=await Promise.all([invoke<Connection|null>("conn_get",{id:connectionId}),invoke<ConnectionSummary[]>("conn_list")]);if(current!==version)return;connection=full;summaries=all;if(!full)error=t("properties.missing");}catch(e){if(current===version)error=String(e);}finally{if(current===version)loading=false;}}
 onMount(()=>{void load();});$effect(()=>{connectionId;void load();});$effect(()=>{if(focusToken!==lastFocusToken){lastFocusToken=focusToken;void tick().then(()=>{searchInput?.focus();searchInput?.select();});}});
 const authLabel=$derived(connection?.auth.type==="password"?t("properties.auth.password"):connection?.auth.type==="key"?t("properties.auth.key"):connection?t("properties.auth.agent"):"");
