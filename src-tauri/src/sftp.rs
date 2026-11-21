@@ -300,6 +300,14 @@ impl AgentBindingStatus {
     }
 }
 
+fn is_unsupported_agent_session_binding(error: &keys::Error) -> bool {
+    matches!(
+        error,
+        keys::Error::IO(io_error)
+            if io_error.kind() == std::io::ErrorKind::UnexpectedEof
+    )
+}
+
 async fn authenticate_with_agent<S>(
     handle: &mut Handle<SftpHostKeyHandler>,
     user: &str,
@@ -314,11 +322,7 @@ where
             SftpError::new("sftp_agent_binding", "SSH agent session binding is unavailable.")
         })?;
         agent.bind_session(&binding, false).await.map_err(|error| {
-            let unsupported = matches!(
-                &error,
-                keys::Error::IO(io_error)
-                    if io_error.kind() == std::io::ErrorKind::UnexpectedEof
-            );
+            let unsupported = is_unsupported_agent_session_binding(&error);
             SftpError::new(
                 if unsupported { "sftp_agent_binding_unsupported" } else { "sftp_agent_binding" },
                 error.to_string(),
@@ -849,6 +853,7 @@ pub async fn sftp_open(
         .map_err(|error| format!("{}: {}", error.code, error.detail))?;
     let session_id = new_session_id();
     let port = connection.effective_sftp_port();
+    let agent_binding = client.agent_binding;
     state.sessions.lock().await.insert(session_id.clone(), Arc::new(Mutex::new(client)));
 
     Ok(SftpSessionInfo {
@@ -860,7 +865,7 @@ pub async fn sftp_open(
         user: connection.user,
         jump_names,
         current_path,
-        agent_binding: client.agent_binding,
+        agent_binding,
     })
 }
 
@@ -940,6 +945,17 @@ pub async fn sftp_close_all(state: State<'_, SftpState>) -> Result<(), String> {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn only_unexpected_eof_enables_legacy_agent_binding_fallback() {
+        assert!(is_unsupported_agent_session_binding(&keys::Error::IO(
+            std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
+        )));
+        assert!(!is_unsupported_agent_session_binding(&keys::Error::IO(
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        )));
+        assert!(!is_unsupported_agent_session_binding(&keys::Error::AgentFailure));
+    }
 
     #[test]
     fn remote_paths_reject_control_characters_and_excessive_length() {
