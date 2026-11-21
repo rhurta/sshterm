@@ -1,6 +1,6 @@
 # M8b Windows acceptance panel
 
-The temporary **SFTP QA** launcher is shown in the bottom-right corner whenever the vault is unlocked on `feature/m8-sftp`. It opens a developer-only panel that exercises the M8b Tauri commands directly. It is not the M8c SFTP browser and deliberately has no upload, download, rename, or delete operations.
+The temporary **SFTP QA** button is shown in the application title bar beside Settings and Lock whenever the vault is unlocked on `feature/m8-sftp`. It opens a developer-only panel that exercises the M8b Tauri commands directly. It is not the M8c SFTP browser and deliberately has no upload, download, rename, or delete operations.
 
 ## Panel controls
 

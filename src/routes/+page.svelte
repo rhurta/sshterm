@@ -114,6 +114,7 @@
       onchange={changeTheme}
       onsettings={() => (settingsOpen = true)}
       ontunnels={() => (tunnelPanelOpen = true)}
+      onsftpqa={() => (sftpAcceptanceOpen = true)}
       onlock={lock}
     />
     {#if ready}
@@ -382,16 +383,6 @@
     display: flex;
     flex-direction: column;
   }
-  .sftp-qa-launcher {
-    position: fixed; right: 14px; bottom: 14px; z-index: 100;
-    display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px;
-    border: 1px solid var(--warning-border); border-radius: 5px;
-    background: var(--warning-bg); color: var(--warning);
-    font: inherit; font-size: var(--ui-font-meta); font-weight: 650;
-    cursor: pointer; opacity: .9;
-  }
-  .sftp-qa-launcher:hover { opacity: 1; }
-  .sftp-qa-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
   .screen {
     flex: 1;
     min-height: 0;

@@ -14,6 +14,7 @@
     onchange,
     onsettings,
     ontunnels,
+    onsftpqa,
     onlock,
   }: {
     theme: AppTheme;
@@ -22,6 +23,7 @@
     onchange: (theme: AppTheme) => void;
     onsettings: () => void;
     ontunnels: () => void;
+    onsftpqa: () => void;
     onlock: () => void;
   } = $props();
 
@@ -184,6 +186,16 @@
       </button>
     {/if}
     {#if unlocked}
+      <button
+        type="button"
+        class="action-button sftp-qa-button"
+        onclick={onsftpqa}
+        title="Open temporary SFTP acceptance panel"
+        aria-label="Open SFTP QA acceptance panel"
+      >
+        <span class="sftp-qa-indicator" aria-hidden="true"></span>
+        SFTP QA
+      </button>
       <button type="button" class="action-button" onclick={onsettings}>{t("settings.title")}</button>
       <button type="button" class="action-button" onclick={onlock}>{t("home.lock")}</button>
     {/if}
@@ -349,6 +361,9 @@
     cursor: pointer;
   }
   .action-button:hover { border-color: var(--accent); }
+  .sftp-qa-button { display: inline-flex; align-items: center; gap: 0.35rem; border-color: var(--warning-border); background: var(--warning-bg); color: var(--warning); }
+  .sftp-qa-button:hover { border-color: var(--warning); }
+  .sftp-qa-indicator { width: 0.4rem; height: 0.4rem; flex: 0 0 0.4rem; border-radius: 50%; background: var(--warning); }
   .window-button {
     appearance: none;
     width: 2.85rem;
