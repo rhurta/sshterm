@@ -12,8 +12,8 @@
   import TunnelManager from "./TunnelManager.svelte";
   import type { BroadcastSession } from "$lib/broadcastTargets";
   import SettingsDialog from "./SettingsDialog.svelte";
-  import type { AppBehaviorSettings, AppearanceSettings, AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode } from "$lib/types";
-  import { DEFAULT_APP_BEHAVIOR_SETTINGS, DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS } from "$lib/types";
+  import type { AppBehaviorSettings, AppearanceSettings, AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode, WorkspacePanelSettings } from "$lib/types";
+  import { DEFAULT_APP_BEHAVIOR_SETTINGS, DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS, DEFAULT_WORKSPACE_PANEL_SETTINGS } from "$lib/types";
   import { addSessionToPane, createLayoutTree, getLayoutGeometry, moveSession, moveSessionToNewPane, neighborPane, paneOfSession, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneById, splitPaneWithEmptyLeaf, type LayoutPreset, type PaneDirection, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
   let {
@@ -65,7 +65,11 @@
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
   let consoleVisible = $state(DEFAULT_COMMAND_CONSOLE_SETTINGS.visible);
   let consoleHeight = $state(DEFAULT_COMMAND_CONSOLE_SETTINGS.height);
-  let treeVisible = $state(true), propertiesVisible = $state(true), selectedConnectionId = $state<string | null>(null), propertiesFocusToken = $state(0), propertiesWidth = $state(320);
+  let treeVisible = $state(DEFAULT_WORKSPACE_PANEL_SETTINGS.tree_visible);
+  let propertiesVisible = $state(DEFAULT_WORKSPACE_PANEL_SETTINGS.properties_visible);
+  let selectedConnectionId = $state<string | null>(null), propertiesFocusToken = $state(0), propertiesWidth = $state(320);
+  let workspacePanelSettingsDirty = false;
+  let workspacePanelSaveQueue: Promise<void> = Promise.resolve();
   let propertiesResize: { startX: number; startWidth: number } | null = null;
   let consoleSettingsDirty = false;
   let consoleDrag = $state<{ startY: number; startHeight: number } | null>(null);
@@ -129,7 +133,30 @@
   }
 
   function toggleCommandConsole() { consoleSettingsDirty = true; consoleVisible = !consoleVisible; void persistConsoleSettings(); }
-  function toggleProperties() { propertiesVisible = !propertiesVisible; if (propertiesVisible) propertiesFocusToken += 1; }
+
+  function persistWorkspacePanelSettings() {
+    const settings: WorkspacePanelSettings = {
+      tree_visible: treeVisible,
+      properties_visible: propertiesVisible,
+    };
+    workspacePanelSaveQueue = workspacePanelSaveQueue
+      .then(() => invoke("config_set_workspace_panel_settings", { settings }))
+      .then(() => undefined)
+      .catch((e) => { error = errorText(String(e)); });
+  }
+
+  function toggleTree() {
+    workspacePanelSettingsDirty = true;
+    treeVisible = !treeVisible;
+    persistWorkspacePanelSettings();
+  }
+
+  function toggleProperties() {
+    workspacePanelSettingsDirty = true;
+    propertiesVisible = !propertiesVisible;
+    if (propertiesVisible) propertiesFocusToken += 1;
+    persistWorkspacePanelSettings();
+  }
   function startPropertiesResize(event: PointerEvent) { if (event.button !== 0) return; event.preventDefault(); propertiesResize = { startX: event.clientX, startWidth: propertiesWidth }; }
   function movePropertiesResize(event: PointerEvent) { if (propertiesResize) propertiesWidth = Math.max(250, Math.min(450, propertiesResize.startWidth + propertiesResize.startX - event.clientX)); }
   function endPropertiesResize() { propertiesResize = null; }
@@ -146,6 +173,14 @@
         if (!consoleSettingsDirty) {
           consoleVisible = value.visible;
           consoleHeight = clampConsoleHeight(value.height);
+        }
+      })
+      .catch(() => {});
+    void invoke<WorkspacePanelSettings>("config_get_workspace_panel_settings")
+      .then((value) => {
+        if (!workspacePanelSettingsDirty) {
+          treeVisible = value.tree_visible;
+          propertiesVisible = value.properties_visible;
         }
       })
       .catch(() => {});
@@ -809,11 +844,11 @@
   <div class="body">
     {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
     {#if propertiesVisible}
-      <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onedit={edit} />
+      <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? 8 : -8))); } }}></div>
     {/if}
     <div class="layout-tools" role="toolbar" aria-label={t("workspace.layout")}>
-      <button class:chosen={treeVisible} title={t("workspace.toggleTree")} aria-label={t("workspace.toggleTree")} aria-pressed={treeVisible} onclick={() => (treeVisible = !treeVisible)}><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg></button>
+      <button class:chosen={treeVisible} title={t("workspace.toggleTree")} aria-label={t("workspace.toggleTree")} aria-pressed={treeVisible} onclick={toggleTree}><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg></button>
       <button class:chosen={propertiesVisible} title={t("workspace.toggleProperties")} aria-label={t("workspace.toggleProperties")} aria-pressed={propertiesVisible} onclick={toggleProperties}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16M13 8h5M13 12h5M13 16h3"/></svg></button>
       <span class="tool-separator"></span>
       <button bind:this={newTabButton} title={t("workspace.newTab")} aria-label={t("workspace.newTab")} onclick={openPicker}><svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></button>
@@ -870,7 +905,7 @@
                       </div>
                     {/if}
                   {/each}
-                  <button class="pane-add" title={t("workspace.openConnectionInPane")} aria-label={t("workspace.openConnectionInPane")} onclick={() => openPickerForPane(pane.sessionId)}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M9 4.5v15m4-10 2 2-2 2m4-4h2"/></svg></button>
+                  <button class="pane-add" title={t("workspace.openConnectionInPane")} aria-label={t("workspace.openConnectionInPane")} onclick={() => openPickerForPane(pane.sessionId)}>+</button>
                   {#if pane.sessionIds.length === 0 && layoutGeometry.leaves.length > 1}
                     <button class="pane-remove" title={t("workspace.removeEmptyPane")} aria-label={t("workspace.removeEmptyPane")} onclick={() => removePane(pane.sessionId)}>×</button>
                   {/if}
@@ -1121,8 +1156,7 @@
   .pane-tab .pane-tab-protect:disabled { opacity: 0.35; cursor: default; }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }
   .pane-add, .pane-remove { flex: 0 0 auto; align-self: center; border: 0; background: transparent; font: inherit; cursor: pointer; padding: 0 0.35rem; }
-  .pane-add { color: var(--accent); width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; }
-  .pane-add svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .pane-add { width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; color:var(--accent); font-size:18px; line-height:1; }
   .pane-add:hover { color:var(--text); background:var(--surface-hover); border-radius:4px; }
   .pane-remove { color: var(--text-secondary); }
   .pane-remove:hover { color: var(--danger, #e06c75); }

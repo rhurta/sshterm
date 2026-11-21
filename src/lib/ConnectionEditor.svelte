@@ -10,11 +10,13 @@
     isNew,
     onsave,
     oncancel,
+    inline = false,
   }: {
     conn: Connection;
     isNew: boolean;
     onsave: (c: Connection) => Promise<string | null>;
     oncancel: () => void;
+    inline?: boolean;
   } = $props();
 
   type Section = "general" | "auth" | "advanced" | "jumps" | "tunnels" | "highlight";
@@ -159,6 +161,12 @@
   let passphrase = $state(
     initial.auth.type === "key" ? (initial.auth.passphrase ?? "") : "",
   );
+  let colorsEnabled = $state(initial.colors != null);
+  let colorFg = $state(initial.colors?.fg ?? "");
+  let colorBg = $state(initial.colors?.bg ?? "");
+  let sftpEnabled = $state(initial.sftp != null);
+  let sftpPort = $state(initial.sftp?.port ?? 22);
+  let sftpStartDir = $state(initial.sftp?.start_dir ?? "");
   let validation = $state("");
   let saving = $state(false);
 
@@ -204,15 +212,23 @@
       section = "jumps";
       return;
     }
+    const sftpPortValue = Number(sftpPort);
+    if (sftpEnabled && (!Number.isInteger(sftpPortValue) || sftpPortValue < 1 || sftpPortValue > 65535)) {
+      validation = t("editor.validationSftpPort");
+      section = "advanced";
+      return;
+    }
     const auth: Auth =
       authType === "password"
         ? { type: "password", password }
         : authType === "key"
           ? { type: "key", path: keyPath, passphrase: passphrase || null }
           : { type: "agent" };
+    const colors = colorsEnabled ? { fg: colorFg.trim(), bg: colorBg.trim() } : null;
+    const sftp = sftpEnabled ? { port: sftpPortValue, start_dir: sftpStartDir.trim() } : null;
     validation = "";
     saving = true;
-    const failure = await onsave({ ...form, port, keepalive_secs: keepalive, auth });
+    const failure = await onsave({ ...form, port, keepalive_secs: keepalive, auth, colors, sftp });
     saving = false;
     if (failure) {
       validation = errorText(failure);
@@ -222,7 +238,7 @@
   }
 </script>
 
-<div class="backdrop">
+<div class="backdrop" class:inline>
   <form onsubmit={submit}>
     <h2>{isNew ? t("editor.title.new") : t("editor.title.edit")}</h2>
 
@@ -301,6 +317,34 @@
         <input type="checkbox" bind:checked={form.protected} />
         {t("editor.protected")}
       </label>
+      <label class="check">
+        <input type="checkbox" bind:checked={colorsEnabled} />
+        {t("editor.customColors")}
+      </label>
+      {#if colorsEnabled}
+        <label>
+          {t("editor.colorForeground")}
+          <input bind:value={colorFg} placeholder="#ffffff" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>
+          {t("editor.colorBackground")}
+          <input bind:value={colorBg} placeholder="#000000" autocomplete="off" spellcheck="false" />
+        </label>
+      {/if}
+      <label class="check">
+        <input type="checkbox" bind:checked={sftpEnabled} />
+        {t("editor.sftpOptions")}
+      </label>
+      {#if sftpEnabled}
+        <label>
+          {t("editor.sftpPort")}
+          <input type="number" min="1" max="65535" bind:value={sftpPort} />
+        </label>
+        <label>
+          {t("editor.sftpStartDir")}
+          <input bind:value={sftpStartDir} autocomplete="off" spellcheck="false" />
+        </label>
+      {/if}
     {:else if section === "jumps"}
       <p class="hint">{t("editor.jumpHint")}</p>
       <p class="hint">{t("editor.jumpAuthHint")}</p>
@@ -456,6 +500,47 @@
 </div>
 
 <style>
+
+  .backdrop.inline {
+    position: relative;
+    inset: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background: transparent;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    z-index: auto;
+  }
+  .backdrop.inline form {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    padding: 0.5rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .backdrop.inline h2 { display: none; }
+  .backdrop.inline .sections {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.2rem;
+    padding-bottom: 0.35rem;
+  }
+  .backdrop.inline .sections button {
+    min-width: 0;
+    padding: 0.3rem 0.2rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--ui-font-control, 12px);
+  }
+  .backdrop.inline .buttons { margin-top: 0.2rem; }
+
   .backdrop {
     position: fixed;
     inset: 0;
