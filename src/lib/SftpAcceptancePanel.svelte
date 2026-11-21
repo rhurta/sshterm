@@ -88,7 +88,8 @@
       directory = null;
       pathInput = opened.current_path;
       record("Opened " + opened.connection_name + " (" + opened.user + "@" + opened.host + ":" + opened.port + ")"
-        + (opened.jump_names.length ? " via " + opened.jump_names.join(" → ") : " directly"), "success");
+        + (opened.jump_names.length ? " via " + opened.jump_names.join(" → ") : " directly")
+        + (opened.agent_binding === "legacy_unbound" ? " — WARNING: legacy agent mode without session binding" : ""), "success");
     } catch (error) {
       record("SFTP open failed: " + String(error), "error");
     } finally {
@@ -280,6 +281,14 @@
             <div><label>Route</label><strong>{activeSession.jump_names.length ? activeSession.jump_names.join(" → ") : "Direct"}</strong></div>
             <div><label>Session ID</label><code>{activeSession.session_id}</code></div>
           </div>
+          {#if activeSession.agent_binding === "legacy_unbound"}
+            <div class="qa-warning" role="note">
+              This Windows SSH agent closed the session-binding request. Authentication is continuing in legacy unbound mode.
+              Agent destination constraints are not enforced in this mode; use a non-restricted key or configure direct key-file authentication.
+            </div>
+          {:else if activeSession.agent_binding === "bound"}
+            <div class="qa-binding-ok"><span class="qa-dot"></span> SSH agent is bound to the verified server session.</div>
+          {/if}
           <div class="qa-path-row">
             <button class="qa-button" type="button" onclick={() => directory?.parent_path && navigate(directory.parent_path)} disabled={busy || !directory?.parent_path}>↑ Up</button>
             <form class="qa-path-form" onsubmit={(event) => { event.preventDefault(); void navigate(pathInput); }}>
@@ -417,6 +426,8 @@
   .qa-no-session p { max-width: 400px; color: var(--muted); font-size: var(--ui-font-control); line-height: 1.5; }
   .qa-empty { padding: 13px 8px; color: var(--muted); font-size: var(--ui-font-control); }
   .qa-stale-check { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 9px; border: 1px solid var(--success-border); border-radius: 5px; background: var(--success-soft); color: var(--text-secondary); font-size: var(--ui-font-meta); }
+  .qa-warning { padding: 8px 10px; border: 1px solid var(--warning-border); border-radius: 5px; background: var(--warning-bg); color: var(--warning); font-size: var(--ui-font-control); line-height: 1.45; }
+  .qa-binding-ok { display: flex; align-items: center; gap: 8px; padding: 5px 2px; color: var(--success); font-size: var(--ui-font-meta); }
   .qa-error { padding: 7px 9px; border: 1px solid var(--danger); border-radius: 5px; background: var(--danger-bg); color: var(--danger); font-size: var(--ui-font-control); overflow-wrap: anywhere; }
   .qa-log { flex: 0 0 96px; min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-deep); }
   .qa-log summary { padding: 6px 9px; color: var(--text-secondary); font-size: var(--ui-font-control); font-weight: 600; cursor: pointer; }

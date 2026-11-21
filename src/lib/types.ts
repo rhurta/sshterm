@@ -244,6 +244,7 @@ export interface SftpSessionInfo {
   user: string;
   jump_names: string[];
   current_path: string;
+  agent_binding: "not_used" | "bound" | "legacy_unbound";
 }
 
 export interface SftpEntry {

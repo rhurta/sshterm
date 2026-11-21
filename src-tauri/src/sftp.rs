@@ -281,21 +281,50 @@ async fn best_rsa_hash(handle: &Handle<SftpHostKeyHandler>) -> Result<Option<Has
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentBindingStatus {
+    NotUsed,
+    Bound,
+    LegacyUnbound,
+}
+
+impl AgentBindingStatus {
+    fn merge(self, other: Self) -> Self {
+        use AgentBindingStatus::{Bound, LegacyUnbound, NotUsed};
+        match (self, other) {
+            (LegacyUnbound, _) | (_, LegacyUnbound) => LegacyUnbound,
+            (Bound, _) | (_, Bound) => Bound,
+            _ => NotUsed,
+        }
+    }
+}
+
 async fn authenticate_with_agent<S>(
     handle: &mut Handle<SftpHostKeyHandler>,
     user: &str,
     mut agent: AgentClient<S>,
+    bind_session: bool,
 ) -> Result<(), SftpError>
 where
     S: AgentStream + Send + Unpin + 'static,
 {
-    let binding = handle.agent_session_binding().cloned().ok_or_else(|| {
-        SftpError::new("sftp_agent_binding", "SSH agent session binding is unavailable.")
-    })?;
-    agent
-        .bind_session(&binding, false)
-        .await
-        .map_err(|error| SftpError::new("sftp_agent_binding", error.to_string()))?;
+    if bind_session {
+        let binding = handle.agent_session_binding().cloned().ok_or_else(|| {
+            SftpError::new("sftp_agent_binding", "SSH agent session binding is unavailable.")
+        })?;
+        agent.bind_session(&binding, false).await.map_err(|error| {
+            let unsupported = matches!(
+                &error,
+                keys::Error::IO(io_error)
+                    if io_error.kind() == std::io::ErrorKind::UnexpectedEof
+            );
+            SftpError::new(
+                if unsupported { "sftp_agent_binding_unsupported" } else { "sftp_agent_binding" },
+                error.to_string(),
+            )
+        })?;
+    }
 
     let identities = agent
         .request_identities()
@@ -328,45 +357,87 @@ where
 }
 
 #[cfg(windows)]
+#[derive(Debug, Clone, Copy)]
+enum WindowsAgentSource {
+    OpenSsh,
+    Pageant,
+}
+
+#[cfg(windows)]
+type DynamicAgent = AgentClient<Box<dyn AgentStream + Send + Unpin>>;
+
+#[cfg(windows)]
+async fn connect_windows_agent(source: WindowsAgentSource) -> Result<DynamicAgent, SftpError> {
+    match source {
+        WindowsAgentSource::OpenSsh => tokio::time::timeout(
+            Duration::from_secs(2),
+            AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent"),
+        )
+        .await
+        .map_err(|_| SftpError::new("sftp_agent_timeout", "Windows OpenSSH agent connection timed out."))?
+        .map(|agent| agent.dynamic())
+        .map_err(|error| SftpError::new("sftp_agent_unavailable", error.to_string())),
+        WindowsAgentSource::Pageant => tokio::time::timeout(
+            Duration::from_secs(2),
+            AgentClient::connect_pageant(),
+        )
+        .await
+        .map_err(|_| SftpError::new("sftp_agent_timeout", "Pageant connection timed out."))?
+        .map(|agent| agent.dynamic())
+        .map_err(|error| SftpError::new("sftp_agent_unavailable", error.to_string())),
+    }
+}
+
+#[cfg(windows)]
 async fn authenticate_agent(
     handle: &mut Handle<SftpHostKeyHandler>,
     user: &str,
-) -> Result<(), SftpError> {
-    // Prefer the Windows OpenSSH agent. Pageant is a fallback for users who
-    // keep their keys there. Bound both connection attempts so a missing or
-    // busy agent cannot stall SFTP startup indefinitely.
-    let agent = match tokio::time::timeout(
-        Duration::from_secs(2),
-        AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent"),
-    )
-    .await
-    {
-        Ok(Ok(agent)) => agent.dynamic(),
-        _ => tokio::time::timeout(Duration::from_secs(2), AgentClient::connect_pageant())
-            .await
-            .map_err(|_| SftpError::new("sftp_agent_timeout", "Pageant connection timed out."))?
-            .map_err(|error| SftpError::new("sftp_agent_unavailable", error.to_string()))?
-            .dynamic(),
+) -> Result<AgentBindingStatus, SftpError> {
+    // Prefer the Windows OpenSSH agent, with Pageant as a fallback. Some
+    // Win32 OpenSSH agent versions close the named pipe when they receive
+    // session-bind@openssh.com, which Russh reports as UnexpectedEof.
+    let (agent, source) = match connect_windows_agent(WindowsAgentSource::OpenSsh).await {
+        Ok(agent) => (agent, WindowsAgentSource::OpenSsh),
+        Err(_) => (connect_windows_agent(WindowsAgentSource::Pageant).await?, WindowsAgentSource::Pageant),
     };
-    authenticate_with_agent(handle, user, agent).await
+
+    match authenticate_with_agent(handle, user, agent, true).await {
+        Ok(()) => Ok(AgentBindingStatus::Bound),
+        Err(error) if error.code == "sftp_agent_binding_unsupported" => {
+            // The first agent pipe was closed by its unsupported bind extension.
+            // Reconnect before sending any other request. Continue with ordinary
+            // agent signing, and surface the reduced destination-constraint
+            // protection in SftpSessionInfo so the UI can warn the user.
+            let legacy_agent = connect_windows_agent(source).await.map_err(|reconnect_error| {
+                SftpError::new(
+                    "sftp_agent_unavailable",
+                    format!("Agent closed during session binding ({error}); reconnect failed: {}", reconnect_error.detail),
+                )
+            })?;
+            authenticate_with_agent(handle, user, legacy_agent, false).await?;
+            Ok(AgentBindingStatus::LegacyUnbound)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(unix)]
 async fn authenticate_agent(
     handle: &mut Handle<SftpHostKeyHandler>,
     user: &str,
-) -> Result<(), SftpError> {
+) -> Result<AgentBindingStatus, SftpError> {
     let agent = AgentClient::connect_env()
         .await
         .map_err(|error| SftpError::new("sftp_agent_unavailable", error.to_string()))?;
-    authenticate_with_agent(handle, user, agent).await
+    authenticate_with_agent(handle, user, agent, true).await?;
+    Ok(AgentBindingStatus::Bound)
 }
 
 #[cfg(not(any(windows, unix)))]
 async fn authenticate_agent(
     _handle: &mut Handle<SftpHostKeyHandler>,
     _user: &str,
-) -> Result<(), SftpError> {
+) -> Result<AgentBindingStatus, SftpError> {
     Err(SftpError::new(
         "sftp_agent_unsupported",
         "SSH-agent authentication is not supported on this platform.",
@@ -384,7 +455,7 @@ async fn authenticate(
                 .await?
                 .success()
             {
-                Ok(())
+                Ok(AgentBindingStatus::NotUsed)
             } else {
                 Err(SftpError::new("sftp_auth_failed", "SSH password authentication failed."))
             }
@@ -397,7 +468,7 @@ async fn authenticate(
                 best_rsa_hash(handle).await?,
             );
             if handle.authenticate_publickey(&connection.user, key).await?.success() {
-                Ok(())
+                Ok(AgentBindingStatus::NotUsed)
             } else {
                 Err(SftpError::new("sftp_auth_failed", "SSH private-key authentication failed."))
             }
@@ -416,6 +487,7 @@ pub struct SftpClient {
     sftp: SftpSession,
     sessions: Vec<Handle<SftpHostKeyHandler>>,
     start_dir: String,
+    agent_binding: AgentBindingStatus,
 }
 
 impl SftpClient {
@@ -466,6 +538,7 @@ pub async fn connect(
     let (target_host, target_port) = endpoint(connection, true)?;
     let mut sessions: Vec<Handle<SftpHostKeyHandler>> =
         Vec::with_capacity(jump_chain.len() + 1);
+    let mut agent_binding = AgentBindingStatus::NotUsed;
 
     for hop in jump_chain {
         let (hop_host, hop_port) = endpoint(hop, false)?;
@@ -477,7 +550,7 @@ pub async fn connect(
         } else {
             connect_tcp(&hop_host, hop_port, hop.keepalive_secs, known_hosts).await?
         };
-        authenticate(&mut handle, hop).await?;
+        agent_binding = agent_binding.merge(authenticate(&mut handle, hop).await?);
         sessions.push(handle);
     }
 
@@ -503,7 +576,7 @@ pub async fn connect(
         .await?
     };
 
-    authenticate(&mut target, connection).await?;
+    agent_binding = agent_binding.merge(authenticate(&mut target, connection).await?);
     let channel = target.channel_open_session().await?;
     channel
         .request_subsystem(true, "sftp")
@@ -521,7 +594,7 @@ pub async fn connect(
         .filter(|path| !path.is_empty())
         .unwrap_or_default();
 
-    Ok(SftpClient { sftp, sessions, start_dir })
+    Ok(SftpClient { sftp, sessions, start_dir, agent_binding })
 }
 
 #[cfg(test)]
@@ -664,6 +737,7 @@ pub struct SftpSessionInfo {
     pub user: String,
     pub jump_names: Vec<String>,
     pub current_path: String,
+    pub agent_binding: AgentBindingStatus,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -786,6 +860,7 @@ pub async fn sftp_open(
         user: connection.user,
         jump_names,
         current_path,
+        agent_binding: client.agent_binding,
     })
 }
 

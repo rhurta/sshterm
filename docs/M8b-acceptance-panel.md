@@ -5,7 +5,8 @@ The temporary **SFTP QA** button is shown in the application title bar beside Se
 ## Panel controls
 
 - Search saved connections and open one or more SFTP sessions.
-- Inspect connection endpoint and resolved jump-host names.
+- Inspect connection endpoint, resolved jump-host names, and agent session-binding status.
+- Windows agents that support `session-bind@openssh.com` are bound to the verified server session. If a legacy agent closes the pipe on this extension with `UnexpectedEof`, the backend reconnects and retries ordinary agent signing in `legacy_unbound` mode; the panel displays a warning. Destination-constrained agent keys are not protected by session binding in that compatibility mode.
 - List remote directories, open child directories, go to the parent, enter a POSIX path, and refresh.
 - Close one session or call `sftp_close_all`.
 - Inspect a bounded activity log. No authentication material is returned or displayed.
@@ -14,7 +15,7 @@ The temporary **SFTP QA** button is shown in the application title bar beside Se
 
 ## Suggested manual acceptance
 
-1. Use saved Windows OpenSSH test connections for direct password auth, key/passphrase auth, and agent auth where available.
+1. Use saved Windows OpenSSH test connections for direct password auth, key/passphrase auth, and agent auth where available. Agent connections should report either `bound` or the explicit `legacy_unbound` compatibility warning; other agent errors must still fail closed.
 2. Open the target directly, list the configured start directory, enter nested and empty directories, and check spaced/non-ASCII filenames.
 3. Open a target configured with one jump host, then with a multi-hop chain. Confirm the displayed route and verify the target is not directly reachable from the client.
 4. Open more than one SFTP session. Close one and verify the other remains usable; then use **Close all**.

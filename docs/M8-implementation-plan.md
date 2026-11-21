@@ -57,7 +57,7 @@ Map the saved `Auth` model to Russh explicitly for the target and every jump hop
 
 - Password: use the password stored in the vault. An empty saved password must fail with a clear credentials-required error; there is no terminal prompt in an SFTP browser.
 - Private key: read the configured key file in place and use the saved optional passphrase. Never copy key contents into the vault, config, logs or temporary files.
-- Agent: use the Windows OpenSSH agent named pipe, with Pageant as a bounded fallback. Bind the agent to the verified SSH session before requesting identities. Certificate identities and keyboard-interactive multi-factor challenges remain explicit follow-up cases; do not silently downgrade or answer arbitrary prompts.
+- Agent: use the Windows OpenSSH agent named pipe, with Pageant as a bounded fallback. Bind the agent to the verified SSH session before requesting identities when the agent supports `session-bind@openssh.com`. On Windows, if the selected agent closes the pipe with `UnexpectedEof` on that extension, reconnect and retry ordinary agent signing without binding; expose this as `legacy_unbound` in session metadata and warn that destination-constrained agent keys cannot be enforced in this compatibility mode. Do not use this fallback for other bind errors. Certificate identities and keyboard-interactive multi-factor challenges remain explicit follow-up cases; do not silently downgrade or answer arbitrary prompts.
 
 Do not silently fall back from a selected key/password method to an unrelated credential. Keep per-hop identities separate. A saved custom key for a jump hop—currently unsupported by the OpenSSH ProxyJump tunnel path—must be covered by the native SFTP auth tests.
 
