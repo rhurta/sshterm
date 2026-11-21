@@ -44,7 +44,7 @@
     flex: 1;
     min-width: 0;
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--border);
@@ -57,7 +57,7 @@
   }
   .clear {
     font: inherit;
-    font-size: 0.9rem;
+    font-size: var(--ui-font-section);
     color: var(--muted);
     background: transparent;
     border: 0;
@@ -65,7 +65,7 @@
     padding: 0 0.15rem;
   }
   .count {
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
     color: var(--muted);
     white-space: nowrap;
   }

@@ -298,7 +298,7 @@
   .head .icon-action:hover { color:var(--accent); background:var(--surface-hover); border-color:var(--border); }
   .head .icon-action svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
   .title {
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     font-weight: 600;
     color: var(--muted);
     letter-spacing: 0.05em;
@@ -308,7 +308,7 @@
   }
   button {
     font: inherit;
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     cursor: pointer;
     border: 1px solid var(--border);
     background: var(--surface-hover);
@@ -324,7 +324,7 @@
     padding: 0.3rem 0.65rem;
     background: var(--danger-bg);
     color: var(--danger);
-    font-size: 0.75rem;
+    font-size: var(--ui-font-control);
   }
   .confirm {
     display: flex;
@@ -332,14 +332,14 @@
     gap: 0.4rem;
     padding: 0.4rem 0.65rem;
     background: var(--danger-bg);
-    font-size: 0.75rem;
+    font-size: var(--ui-font-control);
     flex-wrap: wrap;
   }
   .confirm span {
     flex: 1 0 100%;
   }
   .confirm button {
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     background: var(--danger);
     border: 0;
     color: var(--accent-contrast);
@@ -358,7 +358,7 @@
     gap: 0.5rem;
   }
   .hint {
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
     color: var(--muted);
     line-height: 1.3;
   }

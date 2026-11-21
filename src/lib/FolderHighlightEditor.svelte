@@ -84,17 +84,17 @@
   .backdrop { position:fixed; inset:0; z-index:40; display:grid; place-items:center; padding:1rem; background:rgba(8,11,16,.72); }
   .dialog { width:min(28rem,94vw); max-height:82vh; display:flex; flex-direction:column; gap:.65rem; padding:1.1rem; box-sizing:border-box; overflow:hidden; background:var(--surface-raised); border:1px solid var(--border); border-radius:8px; color:var(--text); }
   .head,.actions { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
-  h2 { margin:0; font-size:1rem; font-weight:550; }
-  .hint { margin:0; color:var(--muted); font-size:.76rem; line-height:1.45; }
-  input[type="search"] { width:100%; box-sizing:border-box; padding:.45rem .55rem; color:var(--text); background:var(--app-bg); border:1px solid var(--border); border-radius:4px; font:inherit; font-size:.8rem; }
+  h2 { margin:0; font-size: var(--ui-font-title); font-weight:550; }
+  .hint { margin:0; color:var(--muted); font-size: var(--ui-font-control); line-height:1.45; }
+  input[type="search"] { width:100%; box-sizing:border-box; padding:.45rem .55rem; color:var(--text); background:var(--app-bg); border:1px solid var(--border); border-radius:4px; font:inherit; font-size: var(--ui-font-body); }
   input[type="search"]:focus { outline:none; border-color:var(--accent); }
   .list { min-height:4rem; max-height:42vh; overflow-y:auto; display:flex; flex-direction:column; gap:.4rem; }
-  .choice { display:grid; grid-template-columns:auto 1fr; gap:.35rem .55rem; align-items:center; font-size:.8rem; }
+  .choice { display:grid; grid-template-columns:auto 1fr; gap:.35rem .55rem; align-items:center; font-size: var(--ui-font-body); }
   .choice input { accent-color:var(--accent); }
   .rule-name small { color:var(--muted); }
   .choice .error { grid-column:2; }
-  .error { margin:0; color:var(--danger); font-size:.75rem; }
-  button { font:inherit; font-size:.78rem; padding:.4rem .65rem; border-radius:4px; border:1px solid var(--border); background:var(--surface-hover); color:var(--text); cursor:pointer; }
+  .error { margin:0; color:var(--danger); font-size: var(--ui-font-control); }
+  button { font:inherit; font-size: var(--ui-font-control); padding:.4rem .65rem; border-radius:4px; border:1px solid var(--border); background:var(--surface-hover); color:var(--text); cursor:pointer; }
   button:hover:not(:disabled) { border-color:var(--accent); }
   button:disabled { opacity:.55; cursor:default; }
   button.primary { color:var(--accent-contrast); background:var(--accent); border-color:var(--accent); }

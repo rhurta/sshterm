@@ -569,7 +569,7 @@
   }
   h2 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: var(--ui-font-title);
     font-weight: 500;
     flex: 0 0 auto;
   }
@@ -592,7 +592,7 @@
   }
   .sections button {
     font: inherit;
-    font-size: 0.78rem;
+    font-size: var(--ui-font-control);
     color: var(--text-secondary);
     background: transparent;
     border: 1px solid transparent;
@@ -609,7 +609,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    font-size: 0.82rem;
+    font-size: var(--ui-font-body);
     color: var(--text-secondary);
   }
   label.check {
@@ -620,7 +620,7 @@
   input,
   select {
     font: inherit;
-    font-size: 0.82rem;
+    font-size: var(--ui-font-body);
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--border);
@@ -629,12 +629,12 @@
   }
   .hint {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--ui-font-control);
     color: var(--muted);
   }
   .jump-heading {
     margin: 0.35rem 0 0;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     font-weight: 500;
     color: var(--text-secondary);
   }
@@ -664,7 +664,7 @@
   }
   .jump-name {
     color: var(--text);
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
   }
   .icon-button {
     flex: 0 0 auto;
@@ -686,7 +686,7 @@
   }
   .state-disabled {
     color: var(--warning);
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
   }
   .toggle-button {
     flex: 0 0 auto;
@@ -696,7 +696,7 @@
     border: 1px solid var(--warning-border);
     border-radius: 4px;
     font: inherit;
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
     cursor: pointer;
   }
   .toggle-button.enabled {
@@ -728,7 +728,7 @@
   .add-tunnel {
     align-self: flex-start;
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     color: var(--accent-contrast);
     background: var(--accent);
     border: 0;
@@ -738,7 +738,7 @@
   }
   .validation {
     margin: 0;
-    font-size: 0.78rem;
+    font-size: var(--ui-font-control);
     color: var(--danger);
   }
   .buttons {
@@ -749,7 +749,7 @@
   }
   .buttons button {
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     font-weight: 600;
     color: var(--accent-contrast);
     background: var(--accent);

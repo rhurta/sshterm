@@ -1100,7 +1100,7 @@
     padding: 0.5rem 0.9rem;
     background: var(--danger-bg);
     color: var(--danger);
-    font-size: 0.85rem;
+    font-size: var(--ui-font-section);
   }
   .body {
     flex: 1;
@@ -1131,7 +1131,7 @@
   .pane-tabs { display: flex; flex: 0 0 auto; min-height: 1.7rem; overflow-x: auto; gap: 2px; padding: 2px 3px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .pane-tab { display: flex; align-items: center; min-width: 0; max-width: 11rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-hover); }
   .pane-tab.active { border-color:var(--border); border-top:2px solid var(--accent); border-bottom-color:var(--surface-raised); border-radius:4px 4px 0 0; margin-bottom:-1px; background:var(--surface-raised); }
-  .pane-tab button { min-width: 0; display: flex; align-items: center; gap: 0.35rem; overflow: hidden; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: 0.68rem; cursor: pointer; }
+  .pane-tab button { min-width: 0; display: flex; align-items: center; gap: 0.35rem; overflow: hidden; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: var(--ui-font-meta); cursor: pointer; }
   .pane-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pane-tab-indicator {
     flex: 0 0 auto;
@@ -1141,7 +1141,7 @@
     white-space: nowrap;
     padding: 0.04rem 0.22rem;
     border-radius: 3px;
-    font-size: 0.58rem;
+    font-size: var(--ui-font-meta);
     line-height: 1.35;
   }
   .pane-tab-indicator.jump { color: var(--accent); background: var(--surface-hover); }
@@ -1151,7 +1151,7 @@
   .pane-tab.disconnected button { color: var(--text-secondary); }
   .pane-focus-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); }
   .pane-tab.active button { color: var(--text); }
-  .pane-tab .pane-tab-protect { flex: 0 0 auto; padding: 0.12rem 0.22rem; color: var(--muted); background: transparent; border: 0; font-size: 0.65rem; line-height: 1; cursor: pointer; }
+  .pane-tab .pane-tab-protect { flex: 0 0 auto; padding: 0.12rem 0.22rem; color: var(--muted); background: transparent; border: 0; font-size: var(--ui-font-meta); line-height: 1; cursor: pointer; }
   .pane-tab .pane-tab-protect.protected { color: var(--warning, #d6a85f); }
   .pane-tab .pane-tab-protect:disabled { opacity: 0.35; cursor: default; }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }
@@ -1161,8 +1161,8 @@
   .pane-remove { color: var(--text-secondary); }
   .pane-remove:hover { color: var(--danger, #e06c75); }
   .empty-pane { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; height: 100%; align-items: center; justify-content: center; text-align: center; }
-  .empty-pane p { margin: 0; max-width: 18rem; font-size: 0.74rem; color: var(--muted); }
-  .empty-pane button { font: inherit; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }
+  .empty-pane p { margin: 0; max-width: 18rem; font-size: var(--ui-font-dense); color: var(--muted); }
+  .empty-pane button { font: inherit; font-size: var(--ui-font-control); color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }
   .tool-separator { width:24px; height:1px; margin:3px 0; background:var(--border); }
   .console-resizer { flex: 0 0 6px; cursor: row-resize; background: var(--border); touch-action: none; outline: none; }
   .console-resizer:hover, .console-resizer:focus-visible { background: var(--accent); }
@@ -1203,7 +1203,7 @@
   .hint {
     margin: 0;
     color: var(--muted);
-    font-size: 0.9rem;
+    font-size: var(--ui-font-section);
   }
   .backdrop {
     position: fixed;
@@ -1249,7 +1249,7 @@
   }
   .dialog h2 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--ui-font-title);
     font-weight: 500;
   }
   button.close {
@@ -1284,7 +1284,7 @@
   }
   .dialog button.confirm {
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     color: var(--accent-contrast);
     background: var(--accent);
     border: 1px solid var(--accent);
@@ -1296,7 +1296,7 @@
     width: 100%;
     box-sizing: border-box;
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--border);
@@ -1314,7 +1314,7 @@
   }
   .picker-list button {
     font: inherit;
-    font-size: 0.82rem;
+    font-size: var(--ui-font-body);
     text-align: left;
     color: var(--text);
     background: var(--surface-hover);
@@ -1330,12 +1330,12 @@
     border-color: var(--accent);
   }
   .detail {
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     color: var(--muted);
   }
   .dialog button.ghost {
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     align-self: flex-start;
     color: var(--text-secondary);
     background: transparent;

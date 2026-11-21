@@ -263,13 +263,13 @@
   }
   .brand {
     color: var(--accent);
-    font-size: 0.84rem;
+    font-size: var(--ui-font-section);
     font-weight: 700;
     letter-spacing: 0.015em;
   }
   .caption {
     color: var(--muted);
-    font-size: 0.76rem;
+    font-size: var(--ui-font-control);
     font-weight: 400;
     flex: 0 0 auto;
   }
@@ -279,7 +279,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--muted);
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
     font-weight: 400;
     margin-left: 0.35rem;
   }
@@ -294,7 +294,7 @@
     background: var(--success-soft);
     color: var(--success);
     font: inherit;
-    font-size: 0.7rem;
+    font-size: var(--ui-font-meta);
     white-space: nowrap;
     cursor: pointer;
   }
@@ -325,7 +325,7 @@
   .theme-select {
     max-width: 7.5rem;
     font: inherit;
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     color: var(--text-secondary);
     background: var(--surface-raised);
     border: 1px solid var(--border);
@@ -338,7 +338,7 @@
   }
   .action-button {
     font: inherit;
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     color: var(--text);
     background: var(--surface-hover);
     border: 1px solid var(--border);

@@ -130,6 +130,15 @@
 
 <style>
   .window-shell {
+    /* Shared UI typography scale; see sshterm-ui-design/SKILL.md. */
+    --ui-font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --ui-font-display: 28px;
+    --ui-font-title: 16px;
+    --ui-font-section: 14px;
+    --ui-font-body: 13px;
+    --ui-font-control: 12px;
+    --ui-font-dense: 12px;
+    --ui-font-meta: 11px;
     --c-app-bg: #161a22;
     --c-surface: #1a1f29;
     --c-surface-raised: #1f2530;
@@ -168,7 +177,9 @@
     overflow: hidden;
     background: var(--c-app-bg);
     color: var(--text);
-    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    font-family: var(--ui-font-family);
+    font-size: var(--ui-font-body);
+    line-height: 1.4;
   }
   .window-shell[data-theme="light"] {
     --c-app-bg: #f5f7fb;

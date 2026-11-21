@@ -372,7 +372,7 @@ mod tests {
     fn workspace_panel_visibility_defaults_and_roundtrips() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        fs::write(&path, "language = \"es\"\\n").unwrap();
+        fs::write(&path, "language = \"es\"\n").unwrap();
         assert_eq!(Config::load(&path).workspace_panels, WorkspacePanelSettings::default());
 
         let mut cfg = Config::load(&path);
