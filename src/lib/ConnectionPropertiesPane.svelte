@@ -69,37 +69,38 @@
   });
 
   const rows = $derived.by((): Array<[string, string]> => {
-    if (!connection) return [];
+    const current = connection;
+    if (!current) return [];
     const values: Array<[string, string]> = [];
     const byId = new Map(summaries.map((item) => [item.id, item]));
 
-    values.push([t("properties.id"), connection.id]);
-    values.push([t("properties.name"), connection.name]);
-    values.push([t("properties.host"), connection.host]);
-    values.push([t("properties.port"), String(connection.port)]);
-    values.push([t("properties.username"), connection.user]);
+    values.push([t("properties.id"), current.id]);
+    values.push([t("properties.name"), current.name]);
+    values.push([t("properties.host"), current.host]);
+    values.push([t("properties.port"), String(current.port)]);
+    values.push([t("properties.username"), current.user]);
 
-    if (connection.auth.type === "password") {
+    if (current.auth.type === "password") {
       values.push([t("properties.authMethod"), t("properties.auth.password")]);
-      values.push([t("properties.passwordState"), connection.auth.password ? t("properties.saved") : t("properties.notSaved")]);
-    } else if (connection.auth.type === "key") {
+      values.push([t("properties.passwordState"), current.auth.password ? t("properties.saved") : t("properties.notSaved")]);
+    } else if (current.auth.type === "key") {
       values.push([t("properties.authMethod"), t("properties.auth.key")]);
-      values.push([t("properties.sshKey"), connection.auth.path || t("properties.none")]);
-      values.push([t("properties.keyPassphrase"), connection.auth.passphrase ? t("properties.saved") : t("properties.notSaved")]);
+      values.push([t("properties.sshKey"), current.auth.path || t("properties.none")]);
+      values.push([t("properties.keyPassphrase"), current.auth.passphrase ? t("properties.saved") : t("properties.notSaved")]);
     } else {
       values.push([t("properties.authMethod"), t("properties.auth.agent")]);
     }
 
-    const jumpHosts = connection.jump.map((id) => {
+    const jumpHosts = current.jump.map((id) => {
       const hop = byId.get(id);
       const name = hop?.name ?? id;
-      return connection.jump_disabled.includes(id) ? name + " (" + t("editor.disabled") + ")" : name;
+      return current.jump_disabled.includes(id) ? name + " (" + t("editor.disabled") + ")" : name;
     });
     values.push([t("properties.jumpHosts"), jumpHosts.join(" → ") || t("properties.none")]);
-    values.push([t("properties.keepalive"), String(connection.keepalive_secs) + " s"]);
-    values.push([t("properties.protected"), connection.protected ? t("common.yes") : t("common.no")]);
+    values.push([t("properties.keepalive"), String(current.keepalive_secs) + " s"]);
+    values.push([t("properties.protected"), current.protected ? t("common.yes") : t("common.no")]);
 
-    const forwards: Array<[string, string]> = connection.tunnels.map((tunnel: Tunnel, index) => {
+    const forwards: Array<[string, string]> = current.tunnels.map((tunnel: Tunnel, index) => {
       const inactive = tunnel.enabled ? "" : " · " + t("editor.disabled");
       if (tunnel.kind === "dynamic") {
         return [t("properties.forward", { index: index + 1 }), "SOCKS " + tunnel.bind + inactive];
@@ -109,15 +110,15 @@
     });
     values.push(...forwards);
 
-    values.push([t("properties.colorForeground"), connection.colors?.fg || t("properties.default")]);
-    values.push([t("properties.colorBackground"), connection.colors?.bg || t("properties.default")]);
+    values.push([t("properties.colorForeground"), current.colors?.fg || t("properties.default")]);
+    values.push([t("properties.colorBackground"), current.colors?.bg || t("properties.default")]);
     values.push([
       t("properties.sftp"),
-      connection.sftp
-        ? t("properties.sftpPort") + ": " + connection.sftp.port + "; " + t("properties.sftpStartDir") + ": " + (connection.sftp.start_dir || t("properties.default"))
+      current.sftp
+        ? t("properties.sftpPort") + ": " + current.sftp.port + "; " + t("properties.sftpStartDir") + ": " + (current.sftp.start_dir || t("properties.default"))
         : t("properties.default"),
     ]);
-    values.push([t("properties.highlight"), connection.highlight.join(", ") || t("properties.inherited")]);
+    values.push([t("properties.highlight"), current.highlight.join(", ") || t("properties.inherited")]);
 
     const needle = query.trim().toLocaleLowerCase();
     return values.filter(([label, value]) =>
