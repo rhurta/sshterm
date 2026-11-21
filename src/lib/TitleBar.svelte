@@ -314,11 +314,13 @@
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 20%, transparent);
   }
   .window-controls {
+    position: relative;
+    z-index: 101;
     display: flex;
     align-items: center;
     height: 100%;
   }
-  .titlebar-actions { display:inline-flex; align-items:center; gap:.65rem; flex:0 0 auto; }
+  .titlebar-actions { position:relative; z-index:101; display:inline-flex; align-items:center; gap:.65rem; flex:0 0 auto; }
   .theme-select {
     max-width: 7.5rem;
     font: inherit;
@@ -360,9 +362,19 @@
     color: var(--text-secondary);
     cursor: default;
   }
-  .window-button:hover {
+  .window-button:hover,
+  .window-button:focus-visible {
+    position: relative;
+    z-index: 102;
     background: var(--surface-hover);
     color: var(--text);
+  }
+  .window-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .window-button:active {
+    background: var(--surface-raised);
   }
   .window-button svg {
     width: 0.72rem;
@@ -382,8 +394,13 @@
     font-size: 1.25rem;
     line-height: 1;
   }
-  .close-button:hover {
+  .window-button.close-button:hover,
+  .window-button.close-button:focus-visible {
     background: #c42b1c;
+    color: #ffffff;
+  }
+  .window-button.close-button:active {
+    background: #a51f14;
     color: #ffffff;
   }
   .resize-hit {

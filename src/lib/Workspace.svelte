@@ -816,7 +816,7 @@
       <button class:chosen={treeVisible} title={t("workspace.toggleTree")} aria-label={t("workspace.toggleTree")} aria-pressed={treeVisible} onclick={() => (treeVisible = !treeVisible)}><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg></button>
       <button class:chosen={propertiesVisible} title={t("workspace.toggleProperties")} aria-label={t("workspace.toggleProperties")} aria-pressed={propertiesVisible} onclick={toggleProperties}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16M13 8h5M13 12h5M13 16h3"/></svg></button>
       <span class="tool-separator"></span>
-      <button bind:this={newTabButton} title={t("workspace.newTab")} aria-label={t("workspace.newTab")} onclick={openPicker}><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button bind:this={newTabButton} title={t("workspace.newTab")} aria-label={t("workspace.newTab")} onclick={openPicker}><svg viewBox="0 0 24 24"><path d="M5 3.5h10l4 4V20H5z"/><path d="M14.5 3.5V8H19M12 11v6m-3-3h6"/></svg></button>
       <button title={t("workspace.layout.single")} aria-label={t("workspace.layout.single")} aria-pressed={layoutPreset === "single"} class:chosen={layoutPreset === "single"} onclick={() => chooseLayout("single")}><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/></svg></button>
       <button title={t("workspace.layout.leftRight")} aria-label={t("workspace.layout.leftRight")} aria-pressed={layoutPreset === "left-right"} class:chosen={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16"/><rect x="13" y="4" width="8" height="16"/></svg></button>
       <button title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} class:chosen={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="8"/><rect x="4" y="13" width="16" height="8"/></svg></button>
@@ -870,7 +870,7 @@
                       </div>
                     {/if}
                   {/each}
-                  <button class="pane-add" title={t("workspace.openConnectionInPane")} aria-label={t("workspace.openConnectionInPane")} onclick={() => openPickerForPane(pane.sessionId)}>+</button>
+                  <button class="pane-add" title={t("workspace.openConnectionInPane")} aria-label={t("workspace.openConnectionInPane")} onclick={() => openPickerForPane(pane.sessionId)}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M12 8.5v7m-3.5-3.5h7"/></svg></button>
                   {#if pane.sessionIds.length === 0 && layoutGeometry.leaves.length > 1}
                     <button class="pane-remove" title={t("workspace.removeEmptyPane")} aria-label={t("workspace.removeEmptyPane")} onclick={() => removePane(pane.sessionId)}>×</button>
                   {/if}
