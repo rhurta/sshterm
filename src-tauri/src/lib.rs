@@ -14,7 +14,40 @@ mod vault;
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, PhysicalPosition, PhysicalSize, Position, RunEvent, Size, WindowEvent};
+use tauri::window::{Effect, EffectsBuilder};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, Position, RunEvent, Size, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+
+/// Window backdrop the main window was created with (changing the setting needs a restart).
+struct ActiveBackdrop(config::WindowBackdrop);
+
+#[tauri::command]
+fn window_backdrop_active(state: tauri::State<'_, ActiveBackdrop>) -> config::WindowBackdrop {
+    state.0
+}
+
+/// Creates the main window from `tauri.conf.json` (it is declared with `create: false`)
+/// so transparency, which can only be chosen at creation time, follows the saved setting.
+fn build_main_window(app: &tauri::App, backdrop: config::WindowBackdrop) -> tauri::Result<WebviewWindow> {
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .ok_or_else(|| tauri::Error::WindowNotFound)?;
+    let mut builder = WebviewWindowBuilder::from_config(app.handle(), &window_config)?;
+    if backdrop != config::WindowBackdrop::Off {
+        // An undecorated window with a shadow gets a 1px light border on Windows;
+        // it would show around a see-through window.
+        builder = builder.transparent(true).shadow(false);
+    }
+    let window = builder.build()?;
+    if backdrop == config::WindowBackdrop::Mica {
+        // Needs Windows 11. Anywhere else it fails and the window stays see-through.
+        let _ = window.set_effects(EffectsBuilder::new().effect(Effect::Mica).build());
+    }
+    Ok(window)
+}
 
 #[tauri::command]
 fn app_info() -> String {
@@ -118,6 +151,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .setup(|app| {
+            let backdrop = crate::config::Config::load(&paths::config_path()).appearance.window_backdrop;
+            app.manage(ActiveBackdrop(backdrop));
+            build_main_window(app, backdrop)?;
             if let Some(window) = app.get_webview_window("main") {
                 restore_window_state(&window);
                 let save_path = window_state_path();
@@ -182,6 +218,7 @@ pub fn run() {
             commands::config_get_theme,
             commands::config_set_theme,
             commands::config_get_appearance_settings,
+            window_backdrop_active,
             commands::config_set_appearance_settings,
             commands::appearance_background_data,
             commands::config_get_terminal_settings,

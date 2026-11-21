@@ -3,13 +3,14 @@
   import { hasMessage, t, type MessageKey } from "$lib/i18n/index.svelte";
   import LanguageSelect from "./LanguageSelect.svelte";
   import { THEMES, type AppTheme } from "$lib/theme";
-  import type { AppBehaviorSettings, AppearanceSettings, TerminalSettings } from "$lib/types";
+  import type { AppBehaviorSettings, AppearanceSettings, TerminalSettings, WindowBackdrop } from "$lib/types";
 
   let {
     settings,
     appBehavior,
     theme,
     appearance,
+    windowBackdropActive,
     onterminal,
     onbehavior,
     onhighlight,
@@ -21,6 +22,8 @@
     appBehavior: AppBehaviorSettings;
     theme: AppTheme;
     appearance: AppearanceSettings;
+    /** Backdrop the window was created with; a different saved value needs a restart. */
+    windowBackdropActive: WindowBackdrop;
     onterminal: <K extends keyof TerminalSettings>(key: K, value: TerminalSettings[K]) => void;
     onbehavior: <K extends keyof AppBehaviorSettings>(key: K, value: AppBehaviorSettings[K]) => void;
     onhighlight: () => void;
@@ -36,7 +39,10 @@
     language: { title: "settings.language", items: ["settings.language"] },
     appearance: {
       title: "settings.appearance",
-      items: ["theme.label", "settings.backgroundImage", "settings.backgroundImageHint", "settings.panelOpacity", "settings.terminalOpacity", "settings.opacityHint"],
+      items: [
+        "theme.label", "settings.backgroundImage", "settings.backgroundImageHint", "settings.windowBackdrop", "settings.backdropHint",
+        "settings.panelOpacity", "settings.terminalOpacity", "settings.opacityHint",
+      ],
     },
     shortcuts: {
       title: "workspace.keyboardShortcuts",
@@ -171,6 +177,24 @@
             {#if imageError}<p class="error" role="alert">{imageError}</p>{/if}
             <p class="hint">{t("settings.backgroundImageHint")}</p>
           </div>
+        {/if}
+        {#if show("appearance", "settings.windowBackdrop") || show("appearance", "settings.backdropHint")}
+          <label class="field">
+            {t("settings.windowBackdrop")}
+            <select
+              value={appearance.window_backdrop}
+              disabled={busy}
+              onchange={(event) => saveAppearance({ ...appearance, window_backdrop: event.currentTarget.value as WindowBackdrop }, false)}
+            >
+              <option value="off">{t("settings.backdropOff")}</option>
+              <option value="transparent">{t("settings.backdropTransparent")}</option>
+              <option value="mica">{t("settings.backdropMica")}</option>
+            </select>
+          </label>
+          {#if appearance.window_backdrop !== windowBackdropActive}
+            <p class="notice" role="status">{t("settings.backdropRestart")}</p>
+          {/if}
+          <p class="hint">{t("settings.backdropHint")}</p>
         {/if}
         {#if show("appearance", "settings.panelOpacity")}
           <label class="field slider">
@@ -391,6 +415,11 @@
     margin: 0;
     font-size: var(--ui-font-control);
     color: var(--muted);
+  }
+  .notice {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--warning);
   }
   .error {
     margin: 0;

@@ -12,7 +12,7 @@
   import TunnelManager from "./TunnelManager.svelte";
   import type { BroadcastSession } from "$lib/broadcastTargets";
   import SettingsDialog from "./SettingsDialog.svelte";
-  import type { AppBehaviorSettings, AppearanceSettings, AppTheme, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode, WorkspacePanelSettings } from "$lib/types";
+  import type { AppBehaviorSettings, AppearanceSettings, AppTheme, WindowBackdrop, CommandConsoleSettings, Connection, ConnectionSummary, Tab, TerminalSettings, TreeNode, WorkspacePanelSettings } from "$lib/types";
   import { DEFAULT_APP_BEHAVIOR_SETTINGS, DEFAULT_COMMAND_CONSOLE_SETTINGS, DEFAULT_TERMINAL_SETTINGS, DEFAULT_WORKSPACE_PANEL_SETTINGS } from "$lib/types";
   import { addSessionToPane, createLayoutTree, getLayoutGeometry, moveSession, moveSessionToNewPane, neighborPane, paneOfSession, removeEmptyPane, removeSession, setSplitRatioAtPath, splitPaneById, splitPaneWithEmptyLeaf, type LayoutPreset, type PaneDirection, type LayoutRect, type SplitAxis, type SplitNode, type SplitPath } from "$lib/splitTree";
 
@@ -21,6 +21,7 @@
     theme,
     appearance,
     terminalOpacity = 100,
+    windowBackdropActive = "off",
     onthemechange,
     onappearancechange,
     settingsOpen = $bindable(false),
@@ -31,6 +32,8 @@
     appearance: AppearanceSettings;
     /** Terminal background opacity in percent (100 unless a background image is set). */
     terminalOpacity?: number;
+    /** Backdrop the window was created with (the saved setting may differ until a restart). */
+    windowBackdropActive?: WindowBackdrop;
     onthemechange: (theme: AppTheme) => void;
     onappearancechange: (next: AppearanceSettings) => Promise<string | null>;
     settingsOpen?: boolean;
@@ -967,6 +970,7 @@
       {appBehavior}
       {theme}
       {appearance}
+      {windowBackdropActive}
       onterminal={setTerminalSetting}
       onbehavior={setAppBehaviorSetting}
       onhighlight={() => (highlightPanelOpen = true)}

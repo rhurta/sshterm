@@ -31,7 +31,7 @@ Settings > Appearance:
   the previous setting stays.
 - **Interface opacity** and **terminal opacity** (20-100 %, default 85): how much of
   the image shows through the panels and the terminal background. They apply only
-  while an image is set. Dialogs and menus never go below 85 % so they stay readable.
+  while an image is set or the window is see-through. Dialogs and menus never go below 85 % so they stay readable.
   Sliders save when released.
 
 Stored in `config.toml`:
@@ -43,7 +43,38 @@ panel_opacity = 85
 terminal_opacity = 85
 ```
 
-Not included: a see-through window that shows the desktop behind it.
+## See-through window
+
+Settings > Appearance > **Window transparency** lets the desktop show through the
+window:
+
+| Value | Result |
+| --- | --- |
+| Off (default) | Opaque window. |
+| See-through | Transparent window: the desktop shows through the translucent surfaces. |
+| Mica (Windows 11) | Transparent window with the Windows 11 Mica material behind it. Older Windows versions ignore the effect and behave like See-through. |
+
+```toml
+[appearance]
+window_backdrop = "mica"   # "off" | "transparent" | "mica"
+```
+
+Rules and limits:
+
+- Transparency is chosen when the window is created, so **a change applies after
+  restarting sshterm**. Settings shows a notice while the saved value differs from the
+  one in use.
+- The desktop is visible only while no background image is set (an image covers it).
+  The interface and terminal opacity sliders (20-100 %) control how much shows
+  through, exactly as they do over an image. Dialogs and menus stay at least 85 % opaque.
+- The window shadow is turned off for transparent windows: an undecorated window with
+  a shadow gets a 1px light border on Windows, which would outline the transparent
+  window. Rounded corners therefore are not applied.
+- Acrylic and Blur are deliberately not offered: Tauri documents poor performance when
+  resizing or dragging with them on several Windows builds.
+- If the WebView2 runtime paints transparent web views opaque (reported for some
+  builds), the window simply stays opaque; nothing else breaks. Report it with the
+  WebView2 version.
 
 ## Implementation
 
@@ -55,6 +86,11 @@ Not included: a see-through window that shows the desktop behind it.
   derives `--app-bg`, `--surface`, ... with `color-mix(..., transparent)` using
   `--panel-alpha` and `--raised-alpha`, so every component becomes translucent without
   changes. Components must use the derived names only.
+- The main window is declared with `create: false` in `tauri.conf.json` and built in
+  `setup` (`build_main_window` in `lib.rs`) from that same config, so transparency
+  (`transparent(true)`, `shadow(false)`, and Mica through `set_effects`) can follow the
+  saved setting. The backdrop in use is exposed by `window_backdrop_active`, which the
+  UI reads to know whether the window is really transparent (`data-see-through`).
 - The terminal gets an rgba background through `getTerminalTheme(theme, opacity)` and
   xterm's `allowTransparency`.
 

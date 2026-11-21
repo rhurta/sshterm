@@ -6,7 +6,7 @@
   import { initLocale } from "$lib/i18n/index.svelte";
   import { startSessionBus } from "$lib/sessionBus";
   import type { AppTheme } from "$lib/theme";
-  import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings } from "$lib/types";
+  import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings, type WindowBackdrop } from "$lib/types";
 
   // Register before any session can be opened, so no early PTY output is lost.
   startSessionBus();
@@ -21,6 +21,9 @@
   let appearance = $state<AppearanceSettings>({ ...DEFAULT_APPEARANCE_SETTINGS });
   // Background image as a data URL ("" = none). Opacity only applies while one is set.
   let backgroundData = $state("");
+  // Backdrop the window was actually created with (a saved change applies after a restart).
+  let backdropActive = $state<WindowBackdrop>("off");
+  const seeThrough = $derived(backdropActive !== "off");
 
   async function loadBackground(path: string): Promise<string> {
     if (!path) return "";
@@ -31,10 +34,12 @@
     initLocale(),
     invoke<AppTheme>("config_get_theme").catch(() => DEFAULT_THEME),
     invoke<AppearanceSettings>("config_get_appearance_settings").catch(() => ({ ...DEFAULT_APPEARANCE_SETTINGS })),
+    invoke<WindowBackdrop>("window_backdrop_active").catch((): WindowBackdrop => "off"),
   ])
-    .then(async ([, savedTheme, savedAppearance]) => {
+    .then(async ([, savedTheme, savedAppearance, activeBackdrop]) => {
       theme = savedTheme;
       appearance = savedAppearance;
+      backdropActive = activeBackdrop;
       // A missing image must never block startup.
       backgroundData = await loadBackground(savedAppearance.background_image).catch(() => "");
     })
@@ -77,8 +82,10 @@
     return null;
   }
 
-  const panelAlpha = $derived(backgroundData ? appearance.panel_opacity : 100);
-  const terminalOpacity = $derived(backgroundData ? appearance.terminal_opacity : 100);
+  // Opacity needs something behind the UI: a background image or a see-through window.
+  const hasBackdrop = $derived(!!backgroundData || seeThrough);
+  const panelAlpha = $derived(hasBackdrop ? appearance.panel_opacity : 100);
+  const terminalOpacity = $derived(hasBackdrop ? appearance.terminal_opacity : 100);
 
   async function lock() {
     // Without this, ssh.exe processes would be left open after unmounting
@@ -92,6 +99,7 @@
 <div
   class="window-shell"
   data-theme={theme}
+  data-see-through={seeThrough}
   style:--panel-alpha="{panelAlpha}%"
   style:--raised-alpha="{Math.max(panelAlpha, 85)}%"
 >
@@ -115,6 +123,7 @@
             {theme}
             {appearance}
             {terminalOpacity}
+            windowBackdropActive={backdropActive}
             onthemechange={changeTheme}
             onappearancechange={changeAppearance}
             bind:settingsOpen
@@ -314,6 +323,14 @@
     --warning-highlight-text: var(--text);
     --success-soft: color-mix(in srgb, var(--success) 14%, var(--c-app-bg));
     --success-border: color-mix(in srgb, var(--success) 42%, var(--c-app-bg));
+  }
+  /* Transparent window: no solid base, so the desktop (or Mica) shows through the
+     translucent surfaces. A background image still covers it. */
+  .window-shell[data-see-through="true"] {
+    background: transparent;
+  }
+  .window-shell[data-see-through="true"] .bg-layer {
+    background-color: transparent;
   }
   .bg-layer {
     position: absolute;

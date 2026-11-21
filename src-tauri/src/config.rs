@@ -124,6 +124,20 @@ impl Default for AppBehaviorSettings {
     }
 }
 
+/// How the window itself is drawn. Applied when the window is created, so a change
+/// takes effect after restarting the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowBackdrop {
+    /// Opaque window (default).
+    #[default]
+    Off,
+    /// Transparent window: the desktop shows through translucent surfaces.
+    Transparent,
+    /// Transparent window with the Windows 11 Mica material behind it.
+    Mica,
+}
+
 /// Window appearance beyond the color theme, available before the vault is unlocked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -134,13 +148,15 @@ pub struct AppearanceSettings {
     pub panel_opacity: u8,
     /// Opacity of the terminal background over the background image, in percent.
     pub terminal_opacity: u8,
+    /// See-through window (needs a restart to change).
+    pub window_backdrop: WindowBackdrop,
 }
 
 pub const MIN_OPACITY: u8 = 20;
 
 impl Default for AppearanceSettings {
     fn default() -> Self {
-        Self { background_image: String::new(), panel_opacity: 85, terminal_opacity: 85 }
+        Self { background_image: String::new(), panel_opacity: 85, terminal_opacity: 85, window_backdrop: WindowBackdrop::Off }
     }
 }
 
@@ -279,13 +295,25 @@ mod tests {
         assert_eq!(cfg.appearance, AppearanceSettings::default());
         assert!(cfg.appearance.background_image.is_empty());
 
-        let odd = AppearanceSettings { background_image: "  bg.png ".into(), panel_opacity: 0, terminal_opacity: 250 }.normalized();
+        let odd = AppearanceSettings { background_image: "  bg.png ".into(), panel_opacity: 0, terminal_opacity: 250, window_backdrop: WindowBackdrop::Mica }.normalized();
         assert_eq!(odd.background_image, "bg.png");
         assert_eq!(odd.panel_opacity, MIN_OPACITY);
         assert_eq!(odd.terminal_opacity, 100);
+        assert_eq!(odd.window_backdrop, WindowBackdrop::Mica);
 
         Config { appearance: odd.clone(), ..Default::default() }.save(&path).unwrap();
         assert_eq!(Config::load(&path).appearance, odd);
+    }
+
+    #[test]
+    fn window_backdrop_defaults_to_off_and_parses_names() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        assert_eq!(Config::load(&path).appearance.window_backdrop, WindowBackdrop::Off);
+        for (name, expected) in [("off", WindowBackdrop::Off), ("transparent", WindowBackdrop::Transparent), ("mica", WindowBackdrop::Mica)] {
+            fs::write(&path, format!("[appearance]\nwindow_backdrop = \"{name}\"\n")).unwrap();
+            assert_eq!(Config::load(&path).appearance.window_backdrop, expected);
+        }
     }
 
     #[test]

@@ -358,12 +358,18 @@ export const en = {
   "settings.backgroundClear": "Remove",
   "settings.panelOpacity": "Interface opacity",
   "settings.terminalOpacity": "Terminal opacity",
-  "settings.opacityHint": "Opacity only takes effect while a background image is set.",
+  "settings.opacityHint": "Opacity takes effect while a background image is set or the window is transparent.",
   "settings.backgroundError": "Could not load the image: {detail}",
   "error.background_missing": "the file was not found.",
   "error.background_format": "unsupported format (use PNG, JPG, WebP, GIF or BMP).",
   "error.background_too_large": "the file is larger than 20 MB.",
   "workspace.shortcutPaneHelp": "Ctrl+Alt+Arrows (or Ctrl+Alt+, and Ctrl+Alt+.) focus another pane; Ctrl+Alt+Shift+Arrows move the active tab to it.",
+  "settings.windowBackdrop": "Window transparency",
+  "settings.backdropOff": "Off",
+  "settings.backdropTransparent": "See-through",
+  "settings.backdropMica": "Mica (Windows 11)",
+  "settings.backdropHint": "Lets the desktop show through the window. The window is created at startup, so restart sshterm to apply a change. The desktop is visible only while no background image is set. Mica needs Windows 11; elsewhere it behaves like See-through.",
+  "settings.backdropRestart": "Restart sshterm to apply this change.",
 } as const;
 
 export type MessageKey = keyof typeof en;

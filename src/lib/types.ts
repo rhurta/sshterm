@@ -216,6 +216,9 @@ export interface Tab {
   highlightSets: string[];
 }
 
+/** How the window is drawn; changing it needs a restart. */
+export type WindowBackdrop = "off" | "transparent" | "mica";
+
 /** Background image and transparency (config.toml `appearance`). */
 export interface AppearanceSettings {
   /** Path of the background image; empty means none. */
@@ -224,10 +227,13 @@ export interface AppearanceSettings {
   panel_opacity: number;
   /** Terminal background opacity over the image, in percent (20-100). */
   terminal_opacity: number;
+  /** See-through window: the desktop shows through translucent surfaces. */
+  window_backdrop: WindowBackdrop;
 }
 
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   background_image: "",
   panel_opacity: 85,
   terminal_opacity: 85,
+  window_backdrop: "off",
 };

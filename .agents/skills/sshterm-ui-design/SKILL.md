@@ -60,10 +60,10 @@ The dark values above are the reference palette; the real values live in the the
 ### Background image and transparency
 - Settings > Appearance: background image path (PNG, JPG, WebP, GIF or BMP, up to 20 MB; a relative path starts at the exe folder), interface opacity and terminal opacity (20-100 %, default 85). Stored in `config.toml` `[appearance]`, outside the vault.
 - The backend reads the image and returns a `data:` URL (`appearance_background_data`); no asset protocol or CDN is involved, so the app stays portable. An invalid image is rejected before anything is saved, and a missing image never blocks startup.
-- Layers inside `.window-shell`: a solid `--c-app-bg` base with the image (`cover`, centered), then `.shell-content` above it. **Opacity applies only while an image is set**; without one the UI is fully opaque, because there is nothing behind it.
+- Layers inside `.window-shell`: a solid `--c-app-bg` base with the image (`cover`, centered), then `.shell-content` above it. **Opacity applies only while something is behind the UI**: an image or a see-through window; otherwise the UI is fully opaque.
 - Interface opacity drives `--panel-alpha`. Raised surfaces (dialogs, menus, active tabs) never go below 85 % (`--raised-alpha`) so overlays stay readable. The terminal uses its own value: xterm gets an rgba background and `allowTransparency: true`.
 - Text colors are never made translucent. If a theme/image combination hurts legibility, lower the transparency rather than dimming text.
-- Real see-through windows (desktop visible behind the app) are not supported; only the in-app image is.
+- **See-through window:** Settings > Appearance > Window transparency (Off / See-through / Mica on Windows 11), stored as `window_backdrop`. The window is created in `setup` from `tauri.conf.json` (`create: false`) so transparency follows the setting, which therefore applies **after a restart**; the UI reads the value actually in use (`window_backdrop_active`) and sets `data-see-through` on `.window-shell`. In that mode the shell and `.bg-layer` have no solid base; opacity applies over the desktop exactly as over an image, and the desktop shows only while no image is set. Do not add solid backgrounds to the shell, html or body. Acrylic/Blur are not offered (poor resize/drag performance). The window shadow is off in this mode (it draws a light border).
 
 - **Fonts:** UI uses the Windows-native stack `Segoe UI Variable Text`, `Segoe UI`, then system sans. Do not reference web fonts because the app is portable/offline and currently bundles no UI font files. Terminal uses `JetBrains Mono`, then `Cascadia Mono`, then `Consolas`.
 - **Terminal colors:** derive the xterm theme (background, foreground, cursor, selection, 16 ANSI colors) per app theme from one function. Light theme needs its own ANSI palette; do not reuse the dark one.
@@ -215,7 +215,7 @@ Design and implement these, not just the happy path:
 - [ ] Visible focus, correct roles/labels, status not conveyed by color alone.
 - [ ] Empty, loading and error states exist.
 - [ ] Checked in dark, light, nord and the Catppuccin flavors (at least mocha and latte), with and without a background image, with contrast acceptable.
-- [ ] Any new surface uses the derived variables, so it stays translucent over a background image.
+- [ ] Any new surface uses the derived variables, so it stays translucent over a background image or a see-through window.
 - [ ] Dialogs keep their fixed size; any new password field uses `PasswordInput`.
 - [ ] Strings go through i18n (English and Spanish).
 - [ ] Works at the minimum window size and with long names/hosts (truncate with a tooltip).

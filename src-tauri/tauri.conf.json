@@ -13,6 +13,8 @@
     "windows": [
       {
         "title": "sshterm",
+        "label": "main",
+        "create": false,
         "width": 800,
         "height": 600,
         "dragDropEnabled": false,

@@ -275,7 +275,7 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Splitters support pointer dragging and keyboard adjustment. The active pane is identified by a subtle accent outline and a small dot.
 - Closing a tab leaves its pane available as an empty pane; empty panes can be explicitly removed.
 - Tabs can be moved between panes, reordered, or moved into a new pane by dragging, and with Ctrl+Alt+Shift+Arrows from the keyboard. Terminals are created once per session and re-attached to their pane, so a move keeps scrollback and screen state (design and behavior in [`docs/tab-moves.md`](docs/tab-moves.md)).
-- Appearance: Catppuccin themes, background image and transparency, fixed-size dialogs, searchable settings, password reveal, and a workspace that starts with one empty pane (see [`docs/appearance.md`](docs/appearance.md)).
+- Appearance: Catppuccin themes, background image, transparency and an optional see-through window (restart to apply), fixed-size dialogs, searchable settings, password reveal, and a workspace that starts with one empty pane (see [`docs/appearance.md`](docs/appearance.md)).
 - Connections can be dropped from the tree onto a pane or its edges (splitting it); creating an empty pane opens the connection list; empty panes can be focused to receive the next connection (rules in [`docs/pane-targets.md`](docs/pane-targets.md)).
 - Pane layout is workspace state only and is not persisted. Command-console visibility and height are persisted separately.
 - Connection-tree and connection-properties-pane visibility are independently persisted in non-secret `config.toml` (`[workspace_panels]`), defaulting to visible for existing and new installs.
