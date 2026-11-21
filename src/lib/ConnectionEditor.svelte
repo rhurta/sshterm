@@ -165,7 +165,7 @@
   let colorFg = $state(initial.colors?.fg ?? "");
   let colorBg = $state(initial.colors?.bg ?? "");
   let sftpEnabled = $state(initial.sftp != null);
-  let sftpPort = $state<number | "">(initial.sftp?.port ?? "");
+  let sftpPort = $state<number | undefined>(initial.sftp?.port ?? undefined);
   let sftpStartDir = $state(initial.sftp?.start_dir ?? "");
   let validation = $state("");
   let saving = $state(false);
@@ -212,7 +212,7 @@
       section = "jumps";
       return;
     }
-    const sftpPortValue = sftpPort === "" ? null : Number(sftpPort);
+    const sftpPortValue = sftpPort === undefined ? null : Number(sftpPort);
     if (sftpEnabled && sftpPortValue !== null && (!Number.isInteger(sftpPortValue) || sftpPortValue < 1 || sftpPortValue > 65535)) {
       validation = t("editor.validationSftpPort");
       section = "advanced";
