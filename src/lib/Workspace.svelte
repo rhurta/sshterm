@@ -1127,7 +1127,7 @@
   .empty-pane { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; height: 100%; align-items: center; justify-content: center; text-align: center; }
   .empty-pane p { margin: 0; max-width: 18rem; font-size: 0.74rem; color: var(--muted); }
   .empty-pane button { font: inherit; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }
-  .tool-separator { height: 1px; margin: 0.2rem 0; background: var(--border); }
+  .tool-separator { width:24px; height:1px; margin:3px 0; background:var(--border); }
   .console-resizer { flex: 0 0 6px; cursor: row-resize; background: var(--border); touch-action: none; outline: none; }
   .console-resizer:hover, .console-resizer:focus-visible { background: var(--accent); }
   .pane-terminals { position: relative; flex: 1; min-height: 0; overflow: hidden; }
@@ -1157,11 +1157,7 @@
   .layout-divider:focus-visible {
     background: var(--accent);
   }
-  .layout-tools { display: flex; flex-direction: column; flex: 0 0 2.4rem; gap: 0.3rem; padding: 0.35rem 0.25rem; background: var(--surface); border-right: 1px solid var(--border); }
-  .layout-tools button { min-width: 1.85rem; min-height: 1.85rem; padding: 0.2rem 0.35rem; color: var(--text-secondary); background: transparent; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
-  .layout-tools button.tool-add { color: var(--accent); font-weight: 700; }
-  .layout-tools button:disabled { opacity: 0.4; cursor: default; }
-  .layout-tools button.chosen { color: var(--accent); border-color: var(--accent); background: var(--surface-hover); }
+
   .empty {
     flex: 1;
     display: flex;
