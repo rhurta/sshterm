@@ -9,10 +9,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::Engine;
+use hmac::{Hmac, Mac};
 use russh::client::{self, Handle};
 use russh::keys::agent::{client::{AgentClient, AgentStream}, AgentIdentity};
 use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
 use russh_sftp::client::SftpSession;
+use sha1::Sha1;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::store;
@@ -50,12 +53,111 @@ impl From<russh::SendError> for SftpError {
     }
 }
 
+fn host_pattern_matches(host: &str, pattern: &str) -> bool {
+    if let Some(hash) = pattern.strip_prefix("|1|") {
+        let mut parts = hash.split('|');
+        let Some(salt) = parts.next().and_then(|value| base64::engine::general_purpose::STANDARD.decode(value).ok()) else {
+            return false;
+        };
+        let Some(expected) = parts.next().and_then(|value| base64::engine::general_purpose::STANDARD.decode(value).ok()) else {
+            return false;
+        };
+        let Ok(mut mac) = Hmac::<Sha1>::new_from_slice(&salt) else {
+            return false;
+        };
+        mac.update(host.as_bytes());
+        return mac.verify_slice(&expected).is_ok();
+    }
+
+    let pattern = pattern.as_bytes();
+    let host = host.as_bytes();
+    let (mut pattern_index, mut host_index, mut star, mut retry) = (0, 0, None, 0);
+    while host_index < host.len() {
+        if pattern_index < pattern.len()
+            && (pattern[pattern_index] == b'?'
+                || pattern[pattern_index].eq_ignore_ascii_case(&host[host_index]))
+        {
+            pattern_index += 1;
+            host_index += 1;
+        } else if pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
+            star = Some(pattern_index);
+            pattern_index += 1;
+            retry = host_index;
+        } else if let Some(star_index) = star {
+            pattern_index = star_index + 1;
+            retry += 1;
+            host_index = retry;
+        } else {
+            return false;
+        }
+    }
+    while pattern_index < pattern.len() && pattern[pattern_index] == b'*' {
+        pattern_index += 1;
+    }
+    pattern_index == pattern.len()
+}
+
+fn host_patterns_match(host: &str, patterns: &str) -> bool {
+    let mut positive_match = false;
+    for pattern in patterns.split(',') {
+        if let Some(negative) = pattern.strip_prefix('!') {
+            if host_pattern_matches(host, negative) {
+                return false;
+            }
+        } else if host_pattern_matches(host, pattern) {
+            positive_match = true;
+        }
+    }
+    positive_match
+}
+
+fn is_revoked_host_key(
+    host: &str,
+    port: u16,
+    public_key: &PublicKey,
+    known_hosts: &Path,
+) -> Result<bool, SftpError> {
+    let contents = match std::fs::read_to_string(known_hosts) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(SftpError::new("sftp_known_hosts_read", error.to_string())),
+    };
+    let host_port = if port == 22 { host.to_string() } else { format!("[{host}]:{port}") };
+
+    for line in contents.lines() {
+        let mut fields = line.split_whitespace();
+        if fields.next() != Some("@revoked") {
+            continue;
+        }
+        let (Some(patterns), Some(_key_type), Some(encoded_key)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        if !host_patterns_match(&host_port, patterns) {
+            continue;
+        }
+        let revoked_key = keys::parse_public_key_base64(encoded_key)
+            .map_err(|error| SftpError::new("sftp_known_hosts_read", error.to_string()))?;
+        if revoked_key == *public_key {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn verify_or_learn_host_key(
     host: &str,
     port: u16,
     public_key: &PublicKey,
     known_hosts: &Path,
 ) -> Result<bool, SftpError> {
+    if is_revoked_host_key(host, port, public_key, known_hosts)? {
+        return Err(SftpError::new(
+            "sftp_host_key_revoked",
+            "The server host key is explicitly revoked in the portable known_hosts file.",
+        ));
+    }
     match keys::check_known_hosts_path(host, port, public_key, known_hosts) {
         Ok(true) => Ok(true),
         Ok(false) => {
@@ -460,7 +562,48 @@ mod tests {
         verify_or_learn_host_key("sftp.example", 2207, &key, &known_hosts).unwrap();
 
         let saved = std::fs::read_to_string(known_hosts).unwrap();
-        assert!(saved.starts_with("[sftp.example]:2207 ssh-ed25519 "));
+        let first_entry = saved.lines().find(|line| !line.is_empty()).unwrap();
+        assert!(first_entry.starts_with("[sftp.example]:2207 ssh-ed25519 "));
+    }
+
+    #[test]
+    fn explicitly_revoked_host_key_is_rejected_before_tofu_learning() {
+        let directory = tempfile::tempdir().unwrap();
+        let known_hosts = directory.path().join("known_hosts");
+        std::fs::write(
+            &known_hosts,
+            format!("@revoked sftp.example ssh-ed25519 {FIRST_KEY}\n"),
+        ).unwrap();
+        let key = keys::parse_public_key_base64(FIRST_KEY).unwrap();
+
+        let result = verify_or_learn_host_key("sftp.example", 22, &key, &known_hosts);
+        assert!(matches!(result, Err(SftpError { code: "sftp_host_key_revoked", .. })));
+        assert_eq!(std::fs::read_to_string(known_hosts).unwrap().lines().count(), 1);
+    }
+
+    #[test]
+    fn hashed_revoked_host_key_is_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let known_hosts = directory.path().join("known_hosts");
+        std::fs::write(
+            &known_hosts,
+            format!(
+                "@revoked |1|O33ESRMWPVkMYIwJ1Uw+n877jTo=|nuuC5vEqXlEZ/8BXQR7m619W6Ak= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF\n"
+            ),
+        ).unwrap();
+        let key = keys::parse_public_key_base64(
+            "AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF",
+        ).unwrap();
+
+        let result = verify_or_learn_host_key("example.com", 22, &key, &known_hosts);
+        assert!(matches!(result, Err(SftpError { code: "sftp_host_key_revoked", .. })));
+    }
+
+    #[test]
+    fn revoked_host_patterns_honor_wildcards_and_negations() {
+        assert!(host_patterns_match("db.example.com", "*.example.com,!legacy.example.com"));
+        assert!(!host_patterns_match("legacy.example.com", "*.example.com,!legacy.example.com"));
+        assert!(!host_patterns_match("other.test", "*.example.com,!legacy.example.com"));
     }
 
     #[test]

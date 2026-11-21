@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   update-lockfile:
@@ -36,3 +37,8 @@ jobs:
           git add src-tauri/Cargo.lock
           git commit -m "chore(m8a): update Cargo.lock for native SFTP"
           git push
+
+      - name: Trigger Windows validation with the generated lockfile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run windows.yml --ref feature/m8-sftp

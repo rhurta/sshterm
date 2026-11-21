@@ -37,6 +37,9 @@ async-trait = "0.1"
 # M8a: native SSH/SFTP transport; pin the audited protocol implementation.
 russh = { version = "=0.65.2", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "=3.0.1"
+# Parse OpenSSH @revoked known_hosts entries before applying Russh TOFU checks.
+hmac = "0.13"
+sha1 = "0.11"
 # serde and serde_json come from the template; serde needs features = ["derive"]
 
 [target.'cfg(windows)'.dependencies]
