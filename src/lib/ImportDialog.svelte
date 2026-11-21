@@ -219,7 +219,7 @@
   }
   h2 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: var(--ui-font-title);
     font-weight: 500;
   }
   button.close {
@@ -247,7 +247,7 @@
   }
   h3 {
     margin: 0.5rem 0 0.3rem;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     font-weight: 500;
     color: var(--accent);
   }
@@ -255,7 +255,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     color: var(--text-secondary);
   }
   label.check {
@@ -266,7 +266,7 @@
   input,
   select {
     font: inherit;
-    font-size: 0.82rem;
+    font-size: var(--ui-font-body);
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--border);
@@ -284,7 +284,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    font-size: 0.78rem;
+    font-size: var(--ui-font-control);
   }
   li {
     display: flex;
@@ -307,12 +307,12 @@
   }
   .error {
     margin: 0;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     color: var(--danger);
   }
   .result {
     margin: 0;
-    font-size: 0.82rem;
+    font-size: var(--ui-font-body);
     color: var(--success);
   }
   .buttons {
@@ -322,7 +322,7 @@
   }
   button {
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     font-weight: 500;
     color: var(--accent-contrast);
     background: var(--accent);

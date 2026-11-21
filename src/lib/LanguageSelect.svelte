@@ -16,7 +16,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.85rem;
+    font-size: var(--ui-font-section);
     color: var(--muted);
     white-space: nowrap;
   }

@@ -188,6 +188,8 @@ pub fn run() {
             commands::config_set_terminal_settings,
             commands::config_get_command_console_settings,
             commands::config_set_command_console_settings,
+            commands::config_get_workspace_panel_settings,
+            commands::config_set_workspace_panel_settings,
             commands::config_get_app_behavior_settings,
             commands::config_set_app_behavior_settings,
             store::conn_list,

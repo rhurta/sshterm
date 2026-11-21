@@ -20,19 +20,20 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M3 | Per-session log files | ✅ Complete |
 | M4 | Session tree (folders, CRUD, search, import, drag-and-drop) | ✅ Complete |
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
-| M6 | Tiling, command console and broadcast | ✅ Feature complete; UI-test follow-up remains |
+| M6 | Tiling, command console, broadcast and refined workspace panels | ✅ Complete; documented in [workspace panel guide](docs/workspace-panels.md) |
 | M7 | Local, reverse and dynamic SOCKS forwarding, independent lifecycle and manager UI | ✅ Implemented; Windows CI passed |
 | M8 | Native SFTP (`russh` + `russh-sftp`) | 📋 Planned; [implementation plan](docs/M8-implementation-plan.md) |
 | M9 | Polish (per-connection colors, host-key UI, auto-reconnect) | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine replaces phase 1 | 📋 Planned |
 
-M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.md](docs/M6-implementation-plan.md). Syntax highlighting remains tracked separately as M6b.
+M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.md](docs/M6-implementation-plan.md). Syntax highlighting remains tracked separately as M6b. Workspace panel visibility, connection properties and shared typography/header rules are documented in [docs/workspace-panels.md](docs/workspace-panels.md).
 
 ### M6 delivered
 
 - Recursive workspace tiling with single, left/right, top/bottom and 2×2 layouts, draggable and keyboard-adjustable dividers, per-pane session tabs, empty-pane handling, and an active-pane outline/dot.
 - A bottom command console with a searchable left-side connection list, Active / Selected / All targeting, protected-session opt-in, multiline and multi-session confirmation, exact-byte sequential dispatch, and per-session failure reporting.
 - Console visibility and height persist in non-secret `config.toml`; drafts remain in frontend memory only.
+- The connection tree and selected-connection properties pane have independently persisted visibility. The properties pane presents the selected connection in a compact property grid and supports inline editing of the complete connection configuration; secret values are never displayed in plaintext. See [`docs/workspace-panels.md`](docs/workspace-panels.md).
 - Appearance: seven themes (dark, light, Nord and the four Catppuccin flavors), an optional background image with adjustable interface and terminal opacity, fixed-size proportional dialogs, a searchable settings dialog, and a show/hide eye on password fields. See [`docs/appearance.md`](docs/appearance.md). The window opens with one empty pane.
 - Keyboard shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Alt+Arrows focus the neighboring pane (Ctrl+Alt+, / Ctrl+Alt+. cycle panes, for keyboards where Windows takes the arrows) and Ctrl+Alt+Shift+Arrows move the active tab there; Ctrl+Enter requests a send.
 - Tabs move between panes without reconnecting or resetting the terminal: drag a tab onto another pane's tab strip (or between tabs to reorder), onto a pane's center to move it there, or onto a pane edge to split and move it into the new pane. See [`docs/tab-moves.md`](docs/tab-moves.md).

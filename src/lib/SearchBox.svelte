@@ -1,19 +1,25 @@
 <script lang="ts">
+  import { onMount, tick } from "svelte";
   import { t } from "$lib/i18n/index.svelte";
 
   let {
     value,
     count,
     onchange,
+    autofocus = false,
   }: {
     value: string;
     count: number | null;
     onchange: (value: string) => void;
+    autofocus?: boolean;
   } = $props();
+  let input = $state<HTMLInputElement | null>(null);
+  onMount(() => { if (autofocus) void tick().then(() => { input?.focus(); input?.select(); }); });
 </script>
 
 <div class="box">
   <input
+    bind:this={input}
     type="search"
     placeholder={t("tree.search")}
     {value}
@@ -38,7 +44,7 @@
     flex: 1;
     min-width: 0;
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--border);
@@ -51,7 +57,7 @@
   }
   .clear {
     font: inherit;
-    font-size: 0.9rem;
+    font-size: var(--ui-font-section);
     color: var(--muted);
     background: transparent;
     border: 0;
@@ -59,7 +65,7 @@
     padding: 0 0.15rem;
   }
   .count {
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
     color: var(--muted);
     white-space: nowrap;
   }

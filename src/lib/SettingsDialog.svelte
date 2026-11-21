@@ -310,19 +310,19 @@
   }
   h2 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--ui-font-title);
     font-weight: 500;
   }
   h3 {
     margin: 0.5rem 0 0.1rem;
-    font-size: 0.85rem;
+    font-size: var(--ui-font-section);
     color: var(--accent);
     font-weight: 600;
   }
   .search {
     flex: 0 0 auto;
     font: inherit;
-    font-size: 0.85rem;
+    font-size: var(--ui-font-section);
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--border);
@@ -345,13 +345,13 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    font-size: 0.82rem;
+    font-size: var(--ui-font-body);
     color: var(--text-secondary);
   }
   .field select,
   .field input[type="text"] {
     font: inherit;
-    font-size: 0.82rem;
+    font-size: var(--ui-font-body);
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--border);
@@ -382,26 +382,26 @@
     gap: 0.65rem;
     padding: 0.35rem 0;
     color: var(--text);
-    font-size: 0.82rem;
+    font-size: var(--ui-font-body);
   }
   .setting input {
     accent-color: var(--accent);
   }
   .hint {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--ui-font-control);
     color: var(--muted);
   }
   .error {
     margin: 0;
-    font-size: 0.78rem;
+    font-size: var(--ui-font-control);
     color: var(--danger);
   }
   .empty {
     margin: 1rem 0;
     text-align: center;
     color: var(--muted);
-    font-size: 0.85rem;
+    font-size: var(--ui-font-section);
   }
   button.close {
     font: inherit;
@@ -421,7 +421,7 @@
   }
   button.ghost {
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     align-self: flex-start;
     color: var(--text-secondary);
     background: transparent;

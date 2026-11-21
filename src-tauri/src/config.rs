@@ -94,6 +94,20 @@ impl CommandConsoleSettings {
     }
 }
 
+/// Visibility of the side panels, stored outside the vault with other UI preferences.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorkspacePanelSettings {
+    pub tree_visible: bool,
+    pub properties_visible: bool,
+}
+
+impl Default for WorkspacePanelSettings {
+    fn default() -> Self {
+        Self { tree_visible: true, properties_visible: true }
+    }
+}
+
 /// Application lifecycle preferences, available before the vault is unlocked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -154,6 +168,8 @@ pub struct Config {
     pub terminal: TerminalSettings,
     /// Command-console visibility and preferred height (never contains command drafts).
     pub command_console: CommandConsoleSettings,
+    /// Connection tree and selected-connection properties visibility.
+    pub workspace_panels: WorkspacePanelSettings,
     /// Window and vault-lock behavior; stored outside the encrypted vault.
     pub app_behavior: AppBehaviorSettings,
     /// Background image and transparency; stored outside the encrypted vault.
@@ -169,6 +185,7 @@ impl Default for Config {
             log_mode: LogMode::Screen,
             terminal: TerminalSettings::default(),
             command_console: CommandConsoleSettings::default(),
+            workspace_panels: WorkspacePanelSettings::default(),
             app_behavior: AppBehaviorSettings::default(),
             appearance: AppearanceSettings::default(),
         }
@@ -349,6 +366,23 @@ mod tests {
         assert!(!loaded.command_console.visible);
         assert_eq!(loaded.command_console.height, 110);
         assert_eq!(CommandConsoleSettings { visible: true, height: 5000 }.normalized().height, 900);
+    }
+
+    #[test]
+    fn workspace_panel_visibility_defaults_and_roundtrips() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "language = \"es\"\n").unwrap();
+        assert_eq!(Config::load(&path).workspace_panels, WorkspacePanelSettings::default());
+
+        let mut cfg = Config::load(&path);
+        cfg.workspace_panels.tree_visible = false;
+        cfg.workspace_panels.properties_visible = false;
+        cfg.save(&path).unwrap();
+        assert_eq!(Config::load(&path).workspace_panels, WorkspacePanelSettings {
+            tree_visible: false,
+            properties_visible: false,
+        });
     }
 
     #[test]

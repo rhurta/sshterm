@@ -130,6 +130,16 @@
 
 <style>
   .window-shell {
+    /* Shared UI typography scale; see sshterm-ui-design/SKILL.md. */
+    --ui-font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --ui-font-display: 28px;
+    --ui-font-title: 16px;
+    --ui-font-section: 14px;
+    --ui-font-body: 13px;
+    --ui-font-control: 12px;
+    --ui-font-dense: 12px;
+    --ui-font-meta: 11px;
+    --workspace-panel-header-height: 40px;
     --c-app-bg: #161a22;
     --c-surface: #1a1f29;
     --c-surface-raised: #1f2530;
@@ -168,7 +178,9 @@
     overflow: hidden;
     background: var(--c-app-bg);
     color: var(--text);
-    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    font-family: var(--ui-font-family);
+    font-size: var(--ui-font-body);
+    line-height: 1.4;
   }
   .window-shell[data-theme="light"] {
     --c-app-bg: #f5f7fb;
@@ -312,6 +324,38 @@
     background-size: cover;
     background-repeat: no-repeat;
     pointer-events: none;
+  }
+  .window-shell :global(.workspace-panel-header) {
+    height: var(--workspace-panel-header-height);
+    min-height: var(--workspace-panel-header-height);
+    flex: 0 0 var(--workspace-panel-header-height);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: var(--ui-font-section);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+  .window-shell :global(.workspace-panel-header .panel-title) {
+    min-width: 0;
+    margin: 0;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    text-transform: none;
+  }
+  .window-shell :global(.workspace-panel-header .icon-action),
+  .window-shell :global(.workspace-panel-header .edit-button) {
+    flex: 0 0 28px;
   }
   .shell-content {
     position: relative;

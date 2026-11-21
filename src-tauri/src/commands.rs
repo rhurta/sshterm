@@ -235,3 +235,19 @@ pub fn config_set_command_console_settings(
     cfg.command_console = settings.normalized();
     cfg.save(&path).map_err(|e| e.to_string())
 }
+
+/// Connection-tree and properties-panel visibility are non-secret UI preferences.
+#[tauri::command]
+pub fn config_get_workspace_panel_settings() -> config::WorkspacePanelSettings {
+    Config::load(&paths::config_path()).workspace_panels
+}
+
+#[tauri::command]
+pub fn config_set_workspace_panel_settings(
+    settings: config::WorkspacePanelSettings,
+) -> Result<(), String> {
+    let path = paths::config_path();
+    let mut cfg = Config::load(&path);
+    cfg.workspace_panels = settings;
+    cfg.save(&path).map_err(|e| e.to_string())
+}

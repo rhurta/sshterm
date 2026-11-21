@@ -391,7 +391,7 @@
     gap: 0.4rem;
     min-height: 1.7rem;
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     text-align: left;
     color: var(--text);
     background: transparent;
@@ -448,7 +448,7 @@
     flex: 1;
   }
   .badge {
-    font-size: 0.7rem;
+    font-size: var(--ui-font-meta);
     color: var(--muted);
   }
   .conn {
@@ -458,7 +458,7 @@
     line-height: 1.25;
   }
   .detail {
-    font-size: 0.7rem;
+    font-size: var(--ui-font-meta);
     color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -476,7 +476,7 @@
   .rename {
     width: 100%;
     font: inherit;
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     color: var(--text);
     background: var(--app-bg);
     border: 1px solid var(--accent);
@@ -491,7 +491,7 @@
   }
   .empty {
     color: var(--muted);
-    font-size: 0.8rem;
+    font-size: var(--ui-font-body);
     padding: 0.5rem 0.75rem;
     margin: 0;
   }
@@ -516,7 +516,7 @@
   }
   .menu button {
     font: inherit;
-    font-size: 0.78rem;
+    font-size: var(--ui-font-control);
     text-align: left;
     color: var(--text);
     background: transparent;

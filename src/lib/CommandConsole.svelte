@@ -181,8 +181,8 @@
 </script>
 
 <section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label={t("console.commandConsole")}>
-  <div class="console-heading">
-    <strong>{t("console.commandConsole")}</strong>
+  <div class="console-heading workspace-panel-header">
+    <strong class="panel-title">{t("console.commandConsole")}</strong>
     {#if confirmingMultiline}
       <div class="confirmation-banner" role="alert">
         <span>{t("console.confirmation", {
@@ -296,26 +296,28 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    padding: 0.45rem 0.7rem 0.55rem;
+    gap: 0;
+    padding: 0;
     background: var(--surface);
     border-top: 1px solid var(--border);
     box-sizing: border-box;
     overflow: hidden;
   }
   .command-console.hidden { display: none; }
-  .console-heading { display: flex; align-items: center; gap: 0.75rem; min-height: 1.65rem; flex: 0 0 auto; }
-  .console-heading strong { flex: 0 0 auto; font-size: 0.78rem; font-weight: 600; color: var(--text); }
+  .console-heading { flex: 0 0 auto; }
+  .console-heading .panel-title { flex: 0 0 auto; }
   .confirmation-banner {
     display: flex; flex: 1 1 auto; align-items: center; gap: 0.5rem; min-width: 0;
     padding: 0.28rem 0.45rem; color: var(--warning, #d6a85f);
     background: color-mix(in srgb, var(--warning, #d6a85f) 12%, var(--surface));
     border: 1px solid color-mix(in srgb, var(--warning, #d6a85f) 55%, var(--border));
-    border-radius: 4px; font-size: 0.72rem; line-height: 1.3;
+    border-radius: 4px; font-size: var(--ui-font-dense); line-height: 1.3;
   }
   .confirmation-banner span { flex: 1 1 auto; min-width: 0; }
   .confirmation-banner button { padding: 0.22rem 0.5rem; }
   .console-layout {
+    box-sizing: border-box;
+    padding: 8px 12px 10px;
     display: grid;
     grid-template-columns: minmax(10.5rem, 0.34fr) minmax(0, 1fr);
     gap: 0.65rem;
@@ -336,7 +338,7 @@
     justify-content: space-between;
     gap: 0.3rem;
     color: var(--text-secondary);
-    font-size: 0.65rem;
+    font-size: var(--ui-font-meta);
   }
   .target-mode {
     display: flex;
@@ -344,7 +346,7 @@
     align-items: stretch;
     gap: 0.12rem;
     color: var(--text-secondary);
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
   }
   .target-mode select {
     width: 100%;
@@ -368,7 +370,7 @@
     border: 1px solid var(--border);
     border-radius: 3px;
     font: inherit;
-    font-size: 0.66rem;
+    font-size: var(--ui-font-meta);
   }
   .session-search:focus { outline: none; border-color: var(--accent); }
   .session-choices {
@@ -380,7 +382,7 @@
     border: 1px solid var(--border);
     border-radius: 3px;
     color: var(--text-secondary);
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
   }
   .session-row {
     display: flex;
@@ -397,13 +399,13 @@
   .session-row.disconnected { opacity: 0.6; }
   .session-row input, .protected-opt-in input { flex: 0 0 auto; accent-color: var(--accent); }
   .session-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .session-row small { flex: 0 0 auto; color: var(--warning, #d6a85f); font-size: 0.58rem; }
+  .session-row small { flex: 0 0 auto; color: var(--warning, #d6a85f); font-size: var(--ui-font-meta); }
   .session-row small.offline { color: var(--danger); }
   .session-row small.protected-tag { color: var(--warning, #d6a85f); }
-  .session-target-state { flex: 0 0 0.85rem; width: 0.85rem; color: var(--muted); text-align: center; font-size: 0.72rem; }
+  .session-target-state { flex: 0 0 0.85rem; width: 0.85rem; color: var(--muted); text-align: center; font-size: var(--ui-font-dense); }
   .session-target-state.targeted { color: var(--accent); }
   .session-empty { padding: 0.35rem; color: var(--muted); }
-  .protected-opt-in { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; color: var(--warning, #d6a85f); font-size: 0.64rem; }
+  .protected-opt-in { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; color: var(--warning, #d6a85f); font-size: var(--ui-font-meta); }
   .editor-panel {
     display: flex;
     flex-direction: column;
@@ -417,7 +419,7 @@
     gap: 0.3rem 0.65rem;
     flex: 0 0 auto;
     color: var(--text-secondary);
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
     line-height: 1.25;
   }
   .excluded { color: var(--warning, #d6a85f); }
@@ -445,7 +447,7 @@
     min-height: 1.45rem;
     flex: 0 0 auto;
   }
-  .status, .confirmation { flex: 1; min-width: 0; color: var(--text-secondary); font-size: 0.68rem; }
+  .status, .confirmation { flex: 1; min-width: 0; color: var(--text-secondary); font-size: var(--ui-font-meta); }
   .status.error { color: var(--danger); }
   button {
     flex: 0 0 auto;
@@ -453,15 +455,16 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     font: inherit;
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     cursor: pointer;
   }
   button.send { color: var(--accent-contrast); background: var(--accent); border-color: var(--accent); }
   button.secondary { color: var(--text-secondary); background: transparent; }
   button:disabled { opacity: 0.45; cursor: default; }
   @media (max-width: 720px) {
-    .console-heading { align-items: flex-start; flex-wrap: wrap; }
-    .confirmation-banner { flex-basis: 100%; flex-wrap: wrap; }
+    .console-heading { gap: 8px; }
+    .confirmation-banner { min-width: 0; padding: 2px 6px; }
+    .confirmation-banner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .console-layout { grid-template-columns: minmax(8.5rem, 0.42fr) minmax(0, 1fr); gap: 0.4rem; }
     .target-panel { padding-right: 0.4rem; }
     .session-row { gap: 0.25rem; padding-inline: 0.25rem; }

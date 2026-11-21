@@ -21,6 +21,7 @@
     onedit,
     onnewconn,
     ontunnels,
+    onselectconnection,
   }: {
     openIds: string[];
     refreshToken: number;
@@ -28,6 +29,7 @@
     onedit: (c: ConnectionSummary) => void;
     onnewconn: (parentId: string | null) => void;
     ontunnels: () => void;
+    onselectconnection: (id: string | null) => void;
   } = $props();
 
   let tree = $state<TreeNode[]>([]);
@@ -208,14 +210,12 @@
 </script>
 
 <aside>
-  <div class="head">
-    <span class="title">{t("workspace.connections")}</span>
-    <button onclick={ontunnels}>⇄ {t("tunnels.open")}</button>
-    <button onclick={() => createFolder(selectedFolder())}>+ {t("tree.newFolder")}</button>
-    <button onclick={() => onnewconn(selectedFolder())}>+ {t("tree.newConnection")}</button>
+  <div class="head workspace-panel-header">
+    <span class="title panel-title">{t("workspace.connections")}</span>
+    <div class="head-actions"><button class="icon-action" onclick={ontunnels} title={t("tunnels.open")} aria-label={t("tunnels.open")}><svg viewBox="0 0 24 24"><path d="M4 8h11a4 4 0 0 1 0 8H9m0 0 3-3m-3 3 3 3M20 8l-3-3m3 3-3 3"/></svg></button><button class="icon-action" onclick={() => createFolder(selectedFolder())} title={t("tree.newFolder")} aria-label={t("tree.newFolder")}><svg viewBox="0 0 24 24"><path d="M3 6.5h7l2 2H21v10H3z"/></svg></button><button class="icon-action" onclick={() => onnewconn(selectedFolder())} title={t("tree.newConnection")} aria-label={t("tree.newConnection")}><svg viewBox="0 0 24 24"><circle cx="6.5" cy="7" r="2.5"/><circle cx="17.5" cy="6" r="2.5"/><circle cx="17.5" cy="18" r="2.5"/><path d="M9 7h6m-6 2 6 7"/></svg></button><button class="icon-action" onclick={() => (showImport = true)} title={t("tree.import")} aria-label={t("tree.import")}><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg></button></div>
   </div>
 
-  <SearchBox value={query} count={hits.length} onchange={onQuery} />
+  <SearchBox value={query} count={hits.length} onchange={onQuery} autofocus />
 
   {#if error}
     <p class="error" role="alert">{error}</p>
@@ -247,14 +247,11 @@
     onnewconn={(parentId) => onnewconn(parentId)}
     onmove={(id, parentId, index) => moveNode(id, parentId, index)}
     onfolderhighlight={(folder) => (folderHighlightTarget = folder)}
-    onselect={(node) => (selectedId = node.id)}
+    onselect={(node) => { selectedId = node.id; onselectconnection(node.type === "connection" ? node.id : null); }}
     ontoggle={(id) => (expanded = { ...expanded, [id]: !expanded[id] })}
   />
 
-  <div class="foot">
-    <button onclick={() => (showImport = true)}>{t("tree.import")}</button>
-    <span class="hint">{t("tree.hint")}</span>
-  </div>
+  <div class="foot"><span class="hint">{t("tree.hint")}</span></div>
 </aside>
 
 {#if folderHighlightTarget}
@@ -287,32 +284,35 @@
     flex: 0 0 16.5rem;
     border-right: 1px solid var(--border);
     background: var(--surface);
-    padding: 0.85rem 0 0;
+    padding: 0;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
   }
-  .head {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0 0.65rem 0.55rem;
-    flex-wrap: wrap;
-  }
+  .head { display:flex; align-items:center; gap:.35rem; padding:0 12px; flex-wrap:nowrap; }
+  .head-actions { display:flex; align-items:center; gap:3px; }
+  .head .title { flex:1 1 auto; min-width:0; margin:0; }
+  .head .icon-action { width:28px; height:28px; flex:0 0 28px; display:inline-flex; align-items:center; justify-content:center; padding:0; color:var(--muted); background:transparent; border:1px solid transparent; }
+  .head .icon-action:hover { color:var(--accent); background:var(--surface-hover); border-color:var(--border); }
+  .head .icon-action svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
   .title {
-    font-size: 0.72rem;
+    font-size: var(--ui-font-section);
     font-weight: 600;
-    color: var(--muted);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    flex: 1 0 100%;
-    margin-bottom: 0.25rem;
+    color: var(--text);
+    letter-spacing: normal;
+    text-transform: none;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   button {
     font: inherit;
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     cursor: pointer;
     border: 1px solid var(--border);
     background: var(--surface-hover);
@@ -328,7 +328,7 @@
     padding: 0.3rem 0.65rem;
     background: var(--danger-bg);
     color: var(--danger);
-    font-size: 0.75rem;
+    font-size: var(--ui-font-control);
   }
   .confirm {
     display: flex;
@@ -336,14 +336,14 @@
     gap: 0.4rem;
     padding: 0.4rem 0.65rem;
     background: var(--danger-bg);
-    font-size: 0.75rem;
+    font-size: var(--ui-font-control);
     flex-wrap: wrap;
   }
   .confirm span {
     flex: 1 0 100%;
   }
   .confirm button {
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     background: var(--danger);
     border: 0;
     color: var(--accent-contrast);
@@ -362,7 +362,7 @@
     gap: 0.5rem;
   }
   .hint {
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
     color: var(--muted);
     line-height: 1.3;
   }

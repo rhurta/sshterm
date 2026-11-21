@@ -229,6 +229,7 @@
 
 <style>
   .titlebar {
+    position: relative;
     height: 2.25rem;
     min-height: 2.25rem;
     flex: 0 0 2.25rem;
@@ -262,13 +263,13 @@
   }
   .brand {
     color: var(--accent);
-    font-size: 0.84rem;
+    font-size: var(--ui-font-section);
     font-weight: 700;
     letter-spacing: 0.015em;
   }
   .caption {
     color: var(--muted);
-    font-size: 0.76rem;
+    font-size: var(--ui-font-control);
     font-weight: 400;
     flex: 0 0 auto;
   }
@@ -278,11 +279,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--muted);
-    font-size: 0.68rem;
+    font-size: var(--ui-font-meta);
     font-weight: 400;
     margin-left: 0.35rem;
   }
-  .titlebar-actions,
   .tunnel-status-button {
     display: inline-flex;
     align-items: center;
@@ -294,7 +294,7 @@
     background: var(--success-soft);
     color: var(--success);
     font: inherit;
-    font-size: 0.7rem;
+    font-size: var(--ui-font-meta);
     white-space: nowrap;
     cursor: pointer;
   }
@@ -315,18 +315,17 @@
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 20%, transparent);
   }
   .window-controls {
+    position: relative;
+    z-index: 1002;
     display: flex;
     align-items: center;
     height: 100%;
   }
-  .titlebar-actions {
-    gap: 0.65rem;
-    flex: 0 0 auto;
-  }
+  .titlebar-actions { position:relative; z-index:1001; display:inline-flex; align-items:center; gap:.65rem; height:100%; flex:0 0 auto; }
   .theme-select {
     max-width: 7.5rem;
     font: inherit;
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     color: var(--text-secondary);
     background: var(--surface-raised);
     border: 1px solid var(--border);
@@ -339,7 +338,7 @@
   }
   .action-button {
     font: inherit;
-    font-size: 0.72rem;
+    font-size: var(--ui-font-dense);
     color: var(--text);
     background: var(--surface-hover);
     border: 1px solid var(--border);
@@ -353,7 +352,9 @@
   .window-button {
     appearance: none;
     width: 2.85rem;
+    min-width: 2.85rem;
     height: 100%;
+    flex: 0 0 2.85rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -364,9 +365,20 @@
     color: var(--text-secondary);
     cursor: default;
   }
-  .window-button:hover {
+  .window-button:is(:hover, :focus-visible) {
+    position: relative;
+    z-index: 1003;
+    background: var(--surface-raised);
+    color: var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .window-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .window-button:active {
     background: var(--surface-hover);
-    color: var(--text);
+    box-shadow: inset 0 -3px 0 var(--accent);
   }
   .window-button svg {
     width: 0.72rem;
@@ -386,9 +398,15 @@
     font-size: 1.25rem;
     line-height: 1;
   }
-  .close-button:hover {
-    background: #c42b1c;
-    color: #ffffff;
+  .window-button.close-button:is(:hover, :focus-visible) {
+    background: var(--danger-bg);
+    color: var(--danger);
+    box-shadow: inset 0 -2px 0 var(--danger);
+  }
+  .window-button.close-button:active {
+    background: var(--danger);
+    color: var(--accent-contrast);
+    box-shadow: inset 0 -3px 0 var(--danger);
   }
   .resize-hit {
     position: fixed;
@@ -406,7 +424,8 @@
     height: 5px;
     cursor: ns-resize;
   }
-  .edge-top { top: 0; }
+  /* Keep the top resize grip away from the title-bar action buttons. */
+  .edge-top { top: 0; right: 220px; }
   .edge-bottom { bottom: 0; }
   .edge-left, .edge-right {
     top: 7px;
@@ -415,13 +434,14 @@
     cursor: ew-resize;
   }
   .edge-left { left: 0; }
-  .edge-right { right: 0; }
+  .edge-right { right: 0; top: 44px; }
   .corner-top-left, .corner-top-right, .corner-bottom-left, .corner-bottom-right {
     width: 10px;
     height: 10px;
   }
   .corner-top-left { top: 0; left: 0; cursor: nwse-resize; }
-  .corner-top-right { top: 0; right: 0; cursor: nesw-resize; }
+  /* The top-right grip would sit over the close control. */
+  .corner-top-right { top: 0; right: 0; cursor: nesw-resize; pointer-events:none; }
   .corner-bottom-left { bottom: 0; left: 0; cursor: nesw-resize; }
   .corner-bottom-right { bottom: 0; right: 0; cursor: nwse-resize; }
   @media (max-width: 520px) {

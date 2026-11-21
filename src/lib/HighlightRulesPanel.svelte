@@ -87,12 +87,12 @@
   .backdrop { position:fixed; inset:0; z-index:35; display:grid; place-items:center; padding:1rem; background:rgba(8,11,16,.72); }
   .dialog { width:min(34rem,94vw); max-height:88vh; overflow-y:auto; display:flex; flex-direction:column; gap:.6rem; padding:1.1rem; box-sizing:border-box; background:var(--surface-raised); border:1px solid var(--border); border-radius:8px; color:var(--text); }
   .head,.actions { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
-  h2 { margin:0; font-size:1rem; font-weight:550; }
-  .hint { margin:0; color:var(--muted); font-size:.76rem; line-height:1.45; }
-  input[type="search"],textarea { width:100%; box-sizing:border-box; padding:.45rem .55rem; color:var(--text); background:var(--app-bg); border:1px solid var(--border); border-radius:4px; font:inherit; font-size:.8rem; }
+  h2 { margin:0; font-size: var(--ui-font-title); font-weight:550; }
+  .hint { margin:0; color:var(--muted); font-size: var(--ui-font-control); line-height:1.45; }
+  input[type="search"],textarea { width:100%; box-sizing:border-box; padding:.45rem .55rem; color:var(--text); background:var(--app-bg); border:1px solid var(--border); border-radius:4px; font:inherit; font-size: var(--ui-font-body); }
   input:focus,textarea:focus { outline:none; border-color:var(--accent); }
   .sets { display:flex; flex-wrap:wrap; gap:.35rem; max-height:7rem; overflow-y:auto; }
-  button { font:inherit; font-size:.78rem; padding:.4rem .65rem; border-radius:4px; border:1px solid var(--border); background:var(--surface-hover); color:var(--text); cursor:pointer; }
+  button { font:inherit; font-size: var(--ui-font-control); padding:.4rem .65rem; border-radius:4px; border:1px solid var(--border); background:var(--surface-hover); color:var(--text); cursor:pointer; }
   button:hover:not(:disabled) { border-color:var(--accent); }
   button:disabled { opacity:.55; cursor:default; }
   button.selected { border-color:var(--accent); background:var(--surface-deep); }
@@ -100,12 +100,12 @@
   button.ghost,button.close { background:transparent; }
   button.close { border:0; font-size:1.15rem; padding:.1rem .35rem; }
   .sets button { display:flex; flex-direction:column; text-align:left; }
-  .sets small { color:var(--danger); font-size:.68rem; }
-  .sample-label { color:var(--text-secondary); font-size:.78rem; }
+  .sets small { color:var(--danger); font-size: var(--ui-font-meta); }
+  .sample-label { color:var(--text-secondary); font-size: var(--ui-font-control); }
   textarea { resize:vertical; font-family:Consolas,monospace; line-height:1.45; }
-  .error { margin:0; color:var(--danger); font-size:.75rem; }
+  .error { margin:0; color:var(--danger); font-size: var(--ui-font-control); }
   .results { display:flex; flex-direction:column; gap:.4rem; padding-top:.45rem; border-top:1px solid var(--border); }
-  .match { display:grid; grid-template-columns:2rem 1fr auto; gap:.5rem; align-items:center; font-size:.75rem; }
+  .match { display:grid; grid-template-columns:2rem 1fr auto; gap:.5rem; align-items:center; font-size: var(--ui-font-control); }
   .swatch { display:grid; place-items:center; width:1.8rem; height:1.35rem; border:1px solid var(--border); border-radius:3px; font-weight:700; }
   code { max-width:12rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:.15rem .3rem; background:var(--surface-deep); border-radius:3px; }
 </style>

@@ -65,11 +65,20 @@ The dark values above are the reference palette; the real values live in the the
 - Text colors are never made translucent. If a theme/image combination hurts legibility, lower the transparency rather than dimming text.
 - Real see-through windows (desktop visible behind the app) are not supported; only the in-app image is.
 
-- **Fonts:** UI `Inter` then system sans. Terminal `JetBrains Mono`, then `Cascadia Mono`, then `Consolas`. Bundle what you list first or drop it from the stack.
+- **Fonts:** UI uses the Windows-native stack `Segoe UI Variable Text`, `Segoe UI`, then system sans. Do not reference web fonts because the app is portable/offline and currently bundles no UI font files. Terminal uses `JetBrains Mono`, then `Cascadia Mono`, then `Consolas`.
 - **Terminal colors:** derive the xterm theme (background, foreground, cursor, selection, 16 ANSI colors) per app theme from one function. Light theme needs its own ANSI palette; do not reuse the dark one.
 - **Radius:** 4 px inputs/buttons, 6 px panels/modals.
 - **Spacing:** 4 px grid (4, 8, 12, 16, 24). Default control height 28 px, list row height 28 px, tab height 32 px.
-- **Type scale:** 12 px for dense UI (trees, settings grid, tabs), 13-14 px for dialogs and body. Do not go below 11 px.
+- **Typography scale (single source of truth):** use the tokens on `.window-shell`; do not assign ad-hoc font sizes in components.
+  - `--ui-font-display: 28px` — lock-screen / welcome hero only.
+  - `--ui-font-title: 16px` — dialog titles and primary panel titles; weight 600.
+  - `--ui-font-section: 14px` — section headings, title-bar brand and prominent labels; weight 600.
+  - `--ui-font-body: 13px` — normal body copy and descriptive text; weight 400.
+  - `--ui-font-control: 12px` — inputs, buttons, select controls and form labels.
+  - `--ui-font-dense: 12px` — connection tree, tabs, properties grid and compact data.
+  - `--ui-font-meta: 11px` — hints, captions, secondary metadata and status details. Never go below 11 px.
+  - Terminal content remains 12 px monospace and follows its own terminal font settings. Icon glyph sizing is independent of text sizing.
+  - Body and control weights: regular 400; interactive labels 500; headings 600. Do not use uppercase styling as a substitute for hierarchy.
 - **Contrast:** text on any surface at least 4.5:1, non-text UI (borders of inputs, icons) at least 3:1, in every theme. Check `--muted` on `--surface` in light, nord and latte especially.
 - **Color is never the only signal.** Connection status = color + icon/shape + accessible text (`aria-label`/title). Errors carry an icon and a message, not just red.
 - **Motion:** 120 ms ease-out for enter transitions, none for resize. Honor `prefers-reduced-motion`.
@@ -211,3 +220,15 @@ Design and implement these, not just the happy path:
 - [ ] Strings go through i18n (English and Spanish).
 - [ ] Works at the minimum window size and with long names/hosts (truncate with a tooltip).
 - [ ] `npm run check` passes and CI is green.
+
+
+## 9. Refined workspace shell
+
+- The connection tree, connection properties pane and command console use the same shared `.workspace-panel-header` / `.panel-title` treatment: 40 px height, 12 px horizontal inset, 14 px semibold title, vertically centered, sentence case, and a 1 px bottom border. Their leading edges and title baselines align; do not add panel-specific top padding or override header typography. Vertical separators use the same `--border` token.
+- The connection tree is followed by a selected-connection properties pane. The pane is resizable from 250 to 450 px and uses a sticky search field plus a 100 px label / flexible value grid. It shows every saved connection parameter (including authentication state without revealing secrets, jump hosts, all forwards, custom colors, SFTP options and highlighting). Edit opens the complete existing connection editor inline in the pane, reusing its validation and save path. Secret values are never displayed as plaintext.
+- The 48 px vertical toolbar follows the left panels and spans the full workspace height, including beside the command console. Toolbar hit targets are square 32 x 32 px with centered 20 px inline SVG icons and localized hover titles/ARIA labels. Tree, properties and command console visibility are toggles. Persist all three visibility choices and command-console height in portable `config.toml` outside the encrypted vault, and restore them at startup.
+- The command console is available with zero terminal sessions; its editor stays visible and sending is disabled until a valid target exists.
+- Connection-tree top actions use square icon-only buttons with localized hover descriptions.
+- The tunnel status control is rendered only while at least one independent tunnel is starting, active or stopping. The titlebar action group remains neutral and must not inherit the tunnel success background.
+- Preserve the split-tree and terminal parking architecture. Never remount terminal components when moving tabs. Do not attach drag handlers to the new side panels or toolbar; terminal tab drag/drop zones and their MIME payloads remain unchanged.
+- Active tabs use a top accent edge aligned to the tab bar, and focused panes use a 1 px inset outline. Do not add transforms or drag-wrapper spacing that changes tab hit boxes.

@@ -124,14 +124,14 @@
   }
   .mark {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--ui-font-section);
     font-weight: 600;
     letter-spacing: 0.02em;
     color: var(--accent);
   }
   h1 {
     margin: 0;
-    font-size: 1.7rem;
+    font-size: var(--ui-font-display);
     font-weight: 600;
     line-height: 1.2;
   }
@@ -139,13 +139,13 @@
     margin: 0;
     color: var(--muted);
     line-height: 1.5;
-    font-size: 0.92rem;
+    font-size: var(--ui-font-section);
   }
   label {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
-    font-size: 0.9rem;
+    font-size: var(--ui-font-section);
     color: var(--text-secondary);
   }
   label {
@@ -173,6 +173,6 @@
   .error {
     margin: 0;
     color: var(--danger);
-    font-size: 0.9rem;
+    font-size: var(--ui-font-section);
   }
 </style>

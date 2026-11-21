@@ -44,6 +44,16 @@ export const DEFAULT_COMMAND_CONSOLE_SETTINGS: CommandConsoleSettings = {
   height: 180,
 }
 
+export interface WorkspacePanelSettings {
+  tree_visible: boolean;
+  properties_visible: boolean;
+}
+
+export const DEFAULT_WORKSPACE_PANEL_SETTINGS: WorkspacePanelSettings = {
+  tree_visible: true,
+  properties_visible: true,
+}
+
 export type Auth =
   | { type: "password"; password: string }
   | { type: "key"; path: string; passphrase?: string | null }
@@ -85,6 +95,11 @@ export interface Colors {
   bg: string;
 }
 
+export interface SftpOptions {
+  port: number;
+  start_dir: string;
+}
+
 export interface Connection {
   id: string;
   name: string;
@@ -99,7 +114,7 @@ export interface Connection {
   jump: string[];
   jump_disabled: string[];
   tunnels: Tunnel[];
-  sftp?: unknown | null;
+  sftp?: SftpOptions | null;
   highlight: string[];
 }
 

@@ -278,6 +278,9 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 - Appearance: Catppuccin themes, background image and transparency, fixed-size dialogs, searchable settings, password reveal, and a workspace that starts with one empty pane (see [`docs/appearance.md`](docs/appearance.md)).
 - Connections can be dropped from the tree onto a pane or its edges (splitting it); creating an empty pane opens the connection list; empty panes can be focused to receive the next connection (rules in [`docs/pane-targets.md`](docs/pane-targets.md)).
 - Pane layout is workspace state only and is not persisted. Command-console visibility and height are persisted separately.
+- Connection-tree and connection-properties-pane visibility are independently persisted in non-secret `config.toml` (`[workspace_panels]`), defaulting to visible for existing and new installs.
+- The properties pane shows the selected connection in a property/value grid and switches to the full inline connection editor for updates. It covers the saved connection configuration, including authentication, jump hosts, advanced options and forwarding settings; password and passphrase contents remain masked and are represented only by saved/not-saved state. See [`docs/workspace-panels.md`](docs/workspace-panels.md).
+- Tree, properties and command-console headers share one 40 px header geometry, 12 px horizontal inset, themed bottom border and 14 px semibold sentence-case title. The shared UI typography scale is defined in `.agents/skills/sshterm-ui-design/SKILL.md` and documented in [`docs/workspace-panels.md`](docs/workspace-panels.md).
 
 ### Command console and broadcast
 
