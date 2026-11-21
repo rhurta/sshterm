@@ -4,6 +4,7 @@
   import { getLastPaneSize, rememberOpenSize, subscribeSessionErrors } from "$lib/sessionBus";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionSidebar from "./ConnectionSidebar.svelte";
+  import ConnectionPropertiesPane from "./ConnectionPropertiesPane.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import CommandConsole from "./CommandConsole.svelte";
@@ -64,6 +65,8 @@
   let dragState = $state<{ path: SplitPath; axis: SplitAxis; region: LayoutRect } | null>(null);
   let consoleVisible = $state(DEFAULT_COMMAND_CONSOLE_SETTINGS.visible);
   let consoleHeight = $state(DEFAULT_COMMAND_CONSOLE_SETTINGS.height);
+  let treeVisible = $state(true), propertiesVisible = $state(true), selectedConnectionId = $state<string | null>(null), propertiesFocusToken = $state(0), propertiesWidth = $state(320);
+  let propertiesResize: { startX: number; startWidth: number } | null = null;
   let consoleSettingsDirty = false;
   let consoleDrag = $state<{ startY: number; startHeight: number } | null>(null);
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
@@ -125,11 +128,11 @@
     }
   }
 
-  function toggleCommandConsole() {
-    consoleSettingsDirty = true;
-    consoleVisible = !consoleVisible;
-    void persistConsoleSettings();
-  }
+  function toggleCommandConsole() { consoleSettingsDirty = true; consoleVisible = !consoleVisible; void persistConsoleSettings(); }
+  function toggleProperties() { propertiesVisible = !propertiesVisible; if (propertiesVisible) propertiesFocusToken += 1; }
+  function startPropertiesResize(event: PointerEvent) { if (event.button !== 0) return; event.preventDefault(); propertiesResize = { startX: event.clientX, startWidth: propertiesWidth }; }
+  function movePropertiesResize(event: PointerEvent) { if (propertiesResize) propertiesWidth = Math.max(250, Math.min(450, propertiesResize.startWidth + propertiesResize.startX - event.clientX)); }
+  function endPropertiesResize() { propertiesResize = null; }
 
   onMount(() => {
     void invoke<TerminalSettings>("config_get_terminal_settings")
@@ -795,7 +798,7 @@
   }
 </script>
 
-<svelte:window ondragend={() => (connDrop = null)} onkeydown={onKeydown} onpointermove={moveConsoleResize} onpointerup={endConsoleResize} onpointercancel={endConsoleResize} />
+<svelte:window ondragend={() => (connDrop = null)} onkeydown={onKeydown} onpointermove={(event) => { moveConsoleResize(event); movePropertiesResize(event); }} onpointerup={() => { endConsoleResize(); endPropertiesResize(); }} onpointercancel={() => { endConsoleResize(); endPropertiesResize(); }} />
 
 <div class="app">
 
@@ -804,29 +807,28 @@
   {/if}
 
   <div class="body">
-    <ConnectionSidebar
-      {openIds}
-      {refreshToken}
-      onopen={connect}
-      onedit={edit}
-      onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })}
-      ontunnels={() => (tunnelPanelOpen = true)}
-    />
-
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
+    {#if propertiesVisible}
+      <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onedit={edit} />
+      <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? 8 : -8))); } }}></div>
+    {/if}
+    <div class="layout-tools" role="toolbar" aria-label={t("workspace.layout")}>
+      <button class:chosen={treeVisible} title={t("workspace.toggleTree")} aria-label={t("workspace.toggleTree")} aria-pressed={treeVisible} onclick={() => (treeVisible = !treeVisible)}><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg></button>
+      <button class:chosen={propertiesVisible} title={t("workspace.toggleProperties")} aria-label={t("workspace.toggleProperties")} aria-pressed={propertiesVisible} onclick={toggleProperties}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16M13 8h5M13 12h5M13 16h3"/></svg></button>
+      <span class="tool-separator"></span>
+      <button bind:this={newTabButton} title={t("workspace.newTab")} aria-label={t("workspace.newTab")} onclick={openPicker}><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button title={t("workspace.layout.single")} aria-label={t("workspace.layout.single")} aria-pressed={layoutPreset === "single"} class:chosen={layoutPreset === "single"} onclick={() => chooseLayout("single")}><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/></svg></button>
+      <button title={t("workspace.layout.leftRight")} aria-label={t("workspace.layout.leftRight")} aria-pressed={layoutPreset === "left-right"} class:chosen={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16"/><rect x="13" y="4" width="8" height="16"/></svg></button>
+      <button title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} class:chosen={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="8"/><rect x="4" y="13" width="16" height="8"/></svg></button>
+      <button title={t("workspace.layout.grid")} aria-label={t("workspace.layout.grid")} aria-pressed={layoutPreset === "grid"} class:chosen={layoutPreset === "grid"} onclick={() => chooseLayout("grid")}><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg></button>
+      <span class="tool-separator"></span>
+      <button title={t("workspace.splitLeftRight")} aria-label={t("workspace.splitLeftRight")} disabled={!currentPaneId()} onclick={() => splitFocusedPane("horizontal")}><svg viewBox="0 0 24 24"><path d="M12 3v18M4 12h16"/></svg></button>
+      <button title={t("workspace.splitTopBottom")} aria-label={t("workspace.splitTopBottom")} disabled={!currentPaneId()} onclick={() => splitFocusedPane("vertical")}><svg viewBox="0 0 24 24"><path d="M3 12h18M12 4v16"/></svg></button>
+      <div class="tool-spacer"></div>
+      <button class:chosen={consoleVisible} title={consoleVisible ? t("workspace.commandConsole.hide") : t("workspace.commandConsole.show")} aria-label={consoleVisible ? t("workspace.commandConsole.hide") : t("workspace.commandConsole.show")} aria-pressed={consoleVisible} onclick={toggleCommandConsole}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></button>
+    </div>
     <main>
         <div class="workspace-layout">
-          <div class="layout-tools" role="toolbar" aria-label={t("workspace.layout")}>
-            <button bind:this={newTabButton} class="tool-add" title={t("workspace.newTab")} onclick={openPicker}>+</button>
-            <button class:chosen={layoutPreset === "single"} title={t("workspace.layout.single")} aria-label={t("workspace.layout.single")} aria-pressed={layoutPreset === "single"} onclick={() => chooseLayout("single")}>1</button>
-            <button class:chosen={layoutPreset === "left-right"} title={t("workspace.layout.leftRight")} aria-label={t("workspace.layout.leftRight")} aria-pressed={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}>▥</button>
-            <button class:chosen={layoutPreset === "top-bottom"} title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}>▤</button>
-            <button class:chosen={layoutPreset === "grid"} title={t("workspace.layout.grid")} aria-label={t("workspace.layout.grid")} aria-pressed={layoutPreset === "grid"} onclick={() => chooseLayout("grid")}>▦</button>
-            <span class="tool-separator"></span>
-            <button title={t("workspace.splitLeftRight")} aria-label={t("workspace.splitLeftRight")} disabled={!currentPaneId()} onclick={() => splitFocusedPane("horizontal")}>↔</button>
-            <button title={t("workspace.splitTopBottom")} aria-label={t("workspace.splitTopBottom")} disabled={!currentPaneId()} onclick={() => splitFocusedPane("vertical")}>↕</button>
-            <span class="tool-separator"></span>
-            <button class:chosen={consoleVisible} title={consoleVisible ? t("workspace.commandConsole.hide") : t("workspace.commandConsole.show")} aria-label={consoleVisible ? t("workspace.commandConsole.hide") : t("workspace.commandConsole.show")} aria-pressed={consoleVisible} onclick={toggleCommandConsole}>⌨</button>
-          </div>
           <div class="panes" bind:this={panesElement}>
             {#each layoutGeometry.leaves as pane (pane.sessionId)}
               <div class="pane-slot" ondragover={(event) => onPaneDragOver(event, pane.sessionId)} ondragleave={onPaneDragLeave} ondrop={(event) => onPaneDrop(event, pane.sessionId)} onfocusin={() => (focusedPaneId = pane.sessionId)} onpointerdown={() => (focusedPaneId = pane.sessionId)} role="group" class:focused={pane.sessionId === currentPaneId()} class:split-layout={layoutGeometry.leaves.length > 1} style={`left: ${pane.rect.x * 100}%; top: ${pane.rect.y * 100}%; width: ${pane.rect.width * 100}%; height: ${pane.rect.height * 100}%;`}>
@@ -914,14 +916,13 @@
             {/each}
           </div>
         </div>
-      {#if consoleVisible && tabs.length > 0}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
-        <div class="console-resizer" role="separator" aria-orientation="horizontal"
-          aria-label={t("workspace.resizeConsole")} aria-valuemin="110" aria-valuemax={maxConsoleHeight()}
-          aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize}
-          onkeydown={adjustConsoleHeight} onkeyup={saveConsoleResizeAfterKeyboard} title={t("workspace.resizeConsole")}></div>
+      {#if consoleVisible}
+        {#if tabs.length > 0}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
+          <div class="console-resizer" role="separator" aria-orientation="horizontal" aria-label={t("workspace.resizeConsole")} aria-valuemin="110" aria-valuemax={maxConsoleHeight()} aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize} onkeydown={adjustConsoleHeight} onkeyup={saveConsoleResizeAfterKeyboard} title={t("workspace.resizeConsole")}></div>
+        {/if}
+        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeId} height={consoleHeight} />
       {/if}
-      <CommandConsole visible={consoleVisible && tabs.length > 0} sessions={consoleSessions} activeSessionId={activeId} height={consoleHeight} />
     </main>
   </div>
 
@@ -1079,13 +1080,22 @@
     background: var(--app-bg);
   }
   .workspace-layout { flex: 1; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
+  .properties-resizer { flex: 0 0 4px; cursor: col-resize; background: var(--border); touch-action: none; }
+  .properties-resizer:hover, .properties-resizer:focus-visible { background: var(--accent); }
+  .layout-tools { display:flex; flex-direction:column; align-items:center; flex:0 0 48px; gap:4px; padding:8px 7px; box-sizing:border-box; background:var(--surface); border-right:1px solid var(--border); }
+  .layout-tools button { width:32px; height:32px; min-width:32px; min-height:32px; display:inline-flex; align-items:center; justify-content:center; padding:0; color:var(--muted); background:transparent; border:1px solid transparent; border-radius:4px; cursor:pointer; }
+  .layout-tools button svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .layout-tools button:hover { color:var(--text); background:var(--surface-hover); border-color:var(--border); }
+  .layout-tools button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .layout-tools button:disabled { opacity:.4; cursor:default; }
+  .layout-tools button.chosen { color:var(--accent); background:var(--surface-raised); border-color:var(--border); }
+  .tool-spacer { flex:1 1 auto; }
   .panes { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--app-bg); }
   .pane-slot { position: absolute; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface); }
-  .pane-slot.focused { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
-  .pane-slot.focused.split-layout { outline-offset: -6px; }
+  .pane-slot.focused { outline:1px solid var(--accent); outline-offset:-1px; z-index:2; }
   .pane-tabs { display: flex; flex: 0 0 auto; min-height: 1.7rem; overflow-x: auto; gap: 2px; padding: 2px 3px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .pane-tab { display: flex; align-items: center; min-width: 0; max-width: 11rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-hover); }
-  .pane-tab.active { border-color: var(--accent); background: var(--surface-raised); }
+  .pane-tab.active { border-color:var(--border); border-top:2px solid var(--accent); border-bottom-color:var(--surface-raised); border-radius:4px 4px 0 0; margin-bottom:-1px; background:var(--surface-raised); }
   .pane-tab button { min-width: 0; display: flex; align-items: center; gap: 0.35rem; overflow: hidden; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: 0.68rem; cursor: pointer; }
   .pane-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pane-tab-indicator {
@@ -1125,7 +1135,7 @@
   .terminal-parking { position: fixed; left: -10000px; top: 0; width: 800px; height: 400px; overflow: hidden; visibility: hidden; pointer-events: none; }
   .pane-tab[draggable="true"] { cursor: grab; }
   .pane-tab.dragging { opacity: 0.45; }
-  .pane-tabs.drop-tabs { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .pane-tabs.drop-tabs { outline:2px solid var(--accent); outline-offset:-2px; background:var(--surface-raised); }
   .drop-zone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 2px solid var(--accent); border-radius: 3px; }
   .drop-zone.center { inset: 1.9rem 0 0 0; }
   .drop-zone.left { top: 1.9rem; bottom: 0; left: 0; width: 50%; }

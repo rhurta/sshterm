@@ -282,7 +282,6 @@
     font-weight: 400;
     margin-left: 0.35rem;
   }
-  .titlebar-actions,
   .tunnel-status-button {
     display: inline-flex;
     align-items: center;
@@ -319,10 +318,7 @@
     align-items: center;
     height: 100%;
   }
-  .titlebar-actions {
-    gap: 0.65rem;
-    flex: 0 0 auto;
-  }
+  .titlebar-actions { display:inline-flex; align-items:center; gap:.65rem; flex:0 0 auto; }
   .theme-select {
     max-width: 7.5rem;
     font: inherit;

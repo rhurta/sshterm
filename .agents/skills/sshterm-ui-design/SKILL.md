@@ -211,3 +211,14 @@ Design and implement these, not just the happy path:
 - [ ] Strings go through i18n (English and Spanish).
 - [ ] Works at the minimum window size and with long names/hosts (truncate with a tooltip).
 - [ ] `npm run check` passes and CI is green.
+
+
+## 9. Refined workspace shell
+
+- The connection tree is followed by a selected-connection properties pane. The pane is resizable from 250 to 450 px and uses a sticky search field plus a 100 px label / flexible value grid. Values are read-only here; use Edit to change a connection.
+- The 48 px vertical toolbar follows the left panels and spans the full workspace height, including beside the command console. Toolbar hit targets are square 32 x 32 px with centered 20 px inline SVG icons and localized hover titles/ARIA labels. Tree, properties and command console visibility are toggles.
+- The command console is available with zero terminal sessions; its editor stays visible and sending is disabled until a valid target exists.
+- Connection-tree top actions use square icon-only buttons with localized hover descriptions.
+- The tunnel status control is rendered only while at least one independent tunnel is starting, active or stopping. The titlebar action group remains neutral and must not inherit the tunnel success background.
+- Preserve the split-tree and terminal parking architecture. Never remount terminal components when moving tabs. Do not attach drag handlers to the new side panels or toolbar; terminal tab drag/drop zones and their MIME payloads remain unchanged.
+- Active tabs use a top accent edge aligned to the tab bar, and focused panes use a 1 px inset outline. Do not add transforms or drag-wrapper spacing that changes tab hit boxes.

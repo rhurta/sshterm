@@ -38,6 +38,8 @@ export const en = {
   "workspace.splitTopBottom": "Split focused pane top/bottom",
   "workspace.commandConsole.show": "Show command console (Ctrl+Alt+K)",
   "workspace.commandConsole.hide": "Hide command console (Ctrl+Alt+K)",
+  "workspace.toggleTree": "Show or hide connections tree", "workspace.toggleProperties": "Show or hide connection properties",
+  "properties.title": "Connection properties", "properties.search": "Search parameters…", "properties.searchLabel": "Search connection parameters", "properties.resize": "Resize connection properties pane", "properties.loading": "Loading connection properties…", "properties.missing": "This connection no longer exists.", "properties.selectConnection": "Select a connection to inspect its properties.", "properties.noMatches": "No properties match “{query}”.", "properties.edit": "Edit connection", "properties.name": "Name", "properties.host": "Host IP", "properties.port": "Port", "properties.username": "Username", "properties.authMethod": "Auth method", "properties.auth.password": "Password", "properties.auth.key": "Private key", "properties.auth.agent": "SSH agent", "properties.sshKey": "SSH key", "properties.jumpHosts": "Jump hosts", "properties.keepalive": "Keepalive", "properties.protected": "Broadcast protected", "properties.tunnels": "Forwards", "properties.highlight": "Highlight sets", "properties.none": "None", "common.yes": "Yes", "common.no": "No",
   "workspace.resizeConsole": "Resize command console",
   "workspace.resizePanes": "Resize terminal panes",
   "workspace.session.protect": "Protect this session from broadcast",
