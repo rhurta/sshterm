@@ -5,12 +5,10 @@
 //! lifecycle and browser commands.
 
 use std::fmt;
-use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use russh::auth::{AuthResult, Signer};
 use russh::client::{self, Handle};
 use russh::keys::agent::{client::{AgentClient, AgentStream}, AgentIdentity};
 use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
@@ -18,7 +16,7 @@ use russh_sftp::client::SftpSession;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::store;
-use crate::vault::{Auth, Connection};
+use crate::vault::{Auth, Connection, SftpOptions};
 
 #[derive(Debug)]
 pub struct SftpError {
@@ -176,28 +174,6 @@ async fn best_rsa_hash(handle: &Handle<SftpHostKeyHandler>) -> Result<Option<Has
     })
 }
 
-struct AgentSigner<'a, S: AgentStream + Send + Unpin> {
-    agent: &'a mut AgentClient<S>,
-}
-
-impl<S: AgentStream + Send + Unpin> Signer for AgentSigner<'_, S> {
-    type Error = SftpError;
-
-    fn auth_sign(
-        &mut self,
-        key: &AgentIdentity,
-        hash_alg: Option<HashAlg>,
-        to_sign: Vec<u8>,
-    ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        async move {
-            self.agent
-                .sign_request(key, hash_alg, to_sign)
-                .await
-                .map_err(|error| SftpError::new("sftp_agent", error.to_string()))
-        }
-    }
-}
-
 async fn authenticate_with_agent<S>(
     handle: &mut Handle<SftpHostKeyHandler>,
     user: &str,
@@ -227,10 +203,12 @@ where
             // authentication request. Do not silently downgrade them.
             AgentIdentity::Certificate { .. } => continue,
         };
-        let mut signer = AgentSigner { agent: &mut agent };
+        // Russh implements its private Signer trait directly for AgentClient.
+        // The trait stays encapsulated by Russh; map its typed agent error here.
         let result = handle
-            .authenticate_publickey_with(user, public_key, rsa_hash, &mut signer)
-            .await?;
+            .authenticate_publickey_with(user, public_key, rsa_hash, &mut agent)
+            .await
+            .map_err(|error| SftpError::new("sftp_agent", error.to_string()))?;
         if result.success() {
             return Ok(());
         }
@@ -329,6 +307,7 @@ async fn authenticate(
 pub struct SftpClient {
     sftp: SftpSession,
     sessions: Vec<Handle<SftpHostKeyHandler>>,
+    start_dir: String,
 }
 
 impl SftpClient {
@@ -337,8 +316,9 @@ impl SftpClient {
     }
 
     pub async fn current_directory(&self) -> Result<String, SftpError> {
+        let path = if self.start_dir.is_empty() { "." } else { &self.start_dir };
         self.sftp
-            .canonicalize(".")
+            .canonicalize(path)
             .await
             .map_err(|error| SftpError::new("sftp_protocol", error.to_string()))
     }
@@ -426,7 +406,14 @@ pub async fn connect(
         .map_err(|error| SftpError::new("sftp_subsystem", error.to_string()))?;
     sessions.push(target);
 
-    Ok(SftpClient { sftp, sessions })
+    let start_dir = connection
+        .sftp
+        .as_ref()
+        .map(|options| options.start_dir.trim().to_string())
+        .filter(|path| !path.is_empty())
+        .unwrap_or_default();
+
+    Ok(SftpClient { sftp, sessions, start_dir })
 }
 
 #[cfg(test)]
@@ -475,12 +462,27 @@ mod tests {
     }
 
     #[test]
+    fn hashed_known_host_entry_is_matched() {
+        let directory = tempfile::tempdir().unwrap();
+        let known_hosts = directory.path().join("known_hosts");
+        std::fs::write(
+            &known_hosts,
+            "|1|O33ESRMWPVkMYIwJ1Uw+n877jTo=|nuuC5vEqXlEZ/8BXQR7m619W6Ak= ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF\n",
+        ).unwrap();
+        let key = keys::parse_public_key_base64(
+            "AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF",
+        ).unwrap();
+
+        assert!(verify_or_learn_host_key("example.com", 22, &key, &known_hosts).unwrap());
+    }
+
+    #[test]
     fn endpoint_uses_target_sftp_override_but_not_for_jump_hops() {
         let target = Connection {
             host: "target.example".into(),
             user: "admin".into(),
             port: 22,
-            sftp: Some(crate::vault::SftpOptions { port: Some(2222), start_dir: String::new() }),
+            sftp: Some(SftpOptions { port: Some(2222), start_dir: String::new() }),
             ..Connection::default()
         };
         let hop = Connection {

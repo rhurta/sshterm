@@ -19,7 +19,7 @@ Use `russh 0.65.2` and `russh-sftp 3.0.1` after confirming transitive dependency
 
 **Do not use Russh before 0.65.1.** The affected versions allowed an overridden `client::Handler::kex_done()` callback to run with KEX shared-secret material before server host-key trust was established. Keep the default no-op handler; do not expose or act on that secret. Fixed in 0.65.1. See [GHSA-9264-jvgf-6w2f](https://github.com/Eugeny/russh/security/advisories/GHSA-9264-jvgf-6w2f) and the [OSV advisory](https://osv.dev/vulnerability/GHSA-9264-jvgf-6w2f).
 
-Use the portable `known_hosts` file and preserve OpenSSH's accept-new semantics: match existing normal/hashed entries and non-default ports; learn only unknown keys; reject changed keys without replacing the trusted key. This policy must apply to every hop and the target.
+Use the portable `known_hosts` file and preserve OpenSSH's accept-new semantics: match existing normal/hashed entries and non-default ports; learn only unknown keys; reject changed keys without replacing the trusted key. This policy must apply to every hop and the target. Host certificates are rejected until CA/principal/revocation validation is implemented.
 
 ## Proof matrix
 
@@ -32,7 +32,7 @@ Use the portable `known_hosts` file and preserve OpenSSH's accept-new semantics:
 | Windows SSH agent / Pageant | Use session-bound agent signer | Implemented; integration pending |
 | SFTP subsystem over `Channel::into_stream()` | Initialize `SftpSession` | Implemented; integration pending |
 | Known/unknown/changed host keys | Match / learn / reject | Unit tests added; integration pending |
-| Hashed host and non-22 port | Correct known-host matching | Parser reused; integration pending |
+| Hashed host and non-22 port | Correct known-host matching | Hashed-entry unit test added; live integration pending |
 | Two-hop `direct-tcpip` route | Target SFTP works through each hop | Implemented; integration pending |
 | Distinct hop auth | Each hop uses its own credentials | Implemented; integration pending |
 | Windows x64 CI and portable executable | All checks pass | Pending |
