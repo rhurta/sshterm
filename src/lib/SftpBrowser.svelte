@@ -34,8 +34,10 @@
   let nameMode = $state<"mkdir" | "rename" | null>(null);
   let nameValue = $state("");
   let deleteTarget = $state<SftpEntry | null>(null);
-  let localPaths = $state<string[]>([]);
-  let localDestination = $state("");
+  let localPathsBySession = $state<Record<string, string[]>>({});
+  let localDestinationsBySession = $state<Record<string, string>>({});
+  const localPaths = $derived(localPathsBySession[activeId] ?? []);
+  const localDestination = $derived(localDestinationsBySession[activeId] ?? "");
   let selectedRemotePaths = $state<Record<string, string[]>>({});
   type TransferProgress = {
     transfer_id: string; session_id: string; direction: "upload" | "download";
@@ -44,7 +46,7 @@
   };
   type TransferStartResult = { transfer_id: string | null; conflicts: string[] };
   let transferJobs = $state<TransferProgress[]>([]);
-  let overwriteConfirm = $state<{ direction: "upload" | "download"; sources: string[]; destination: string; conflicts: string[] } | null>(null);
+  let overwriteConfirm = $state<{ sessionId: string; direction: "upload" | "download"; sources: string[]; destination: string; conflicts: string[] } | null>(null);
   let overwriteConfirmButton: HTMLButtonElement | undefined = $state();
   let searchInput: HTMLInputElement | undefined = $state();
   let pickerInput: HTMLInputElement | undefined = $state();
@@ -145,6 +147,8 @@
       pathValue = opened.current_path;
       selectedPaths = { ...selectedPaths, [opened.session_id]: "" };
       selectedRemotePaths = { ...selectedRemotePaths, [opened.session_id]: [] };
+      localPathsBySession = { ...localPathsBySession, [opened.session_id]: [] };
+      localDestinationsBySession = { ...localDestinationsBySession, [opened.session_id]: "" };
       await listDirectory(opened.session_id, opened.current_path);
       if (opened.agent_binding === "legacy_unbound") {
         statusMessage = t("sftp.agentUnboundWarning");
@@ -211,6 +215,15 @@
     const nextSelected = { ...selectedPaths };
     delete nextSelected[sessionId];
     selectedPaths = nextSelected;
+    const nextRemoteSelected = { ...selectedRemotePaths };
+    delete nextRemoteSelected[sessionId];
+    selectedRemotePaths = nextRemoteSelected;
+    const nextLocalPaths = { ...localPathsBySession };
+    delete nextLocalPaths[sessionId];
+    localPathsBySession = nextLocalPaths;
+    const nextLocalDestinations = { ...localDestinationsBySession };
+    delete nextLocalDestinations[sessionId];
+    localDestinationsBySession = nextLocalDestinations;
     try {
       await invoke("sftp_close", { sessionId });
     } catch (error) {
@@ -337,37 +350,45 @@
   }
 
   async function chooseLocalFiles() {
+    const sessionId = activeId;
     try {
       const result = await open({ multiple: true, directory: false });
       const selected = Array.isArray(result) ? result : result ? [result] : [];
-      localPaths = [...new Set([...localPaths, ...selected])];
+      const existing = localPathsBySession[sessionId] ?? [];
+      localPathsBySession = { ...localPathsBySession, [sessionId]: [...new Set([...existing, ...selected])] };
     } catch (error) {
       errorMessage = t("sftp.dialogFailed", { detail: message(error) });
     }
   }
 
   async function chooseLocalFolder() {
+    const sessionId = activeId;
     try {
       const result = await open({ multiple: false, directory: true });
       const selected = typeof result === "string" ? [result] : Array.isArray(result) ? result : [];
-      localPaths = [...new Set([...localPaths, ...selected])];
+      const existing = localPathsBySession[sessionId] ?? [];
+      localPathsBySession = { ...localPathsBySession, [sessionId]: [...new Set([...existing, ...selected])] };
     } catch (error) {
       errorMessage = t("sftp.dialogFailed", { detail: message(error) });
     }
   }
 
   async function chooseLocalDestination() {
+    const sessionId = activeId;
     try {
       const result = await open({ multiple: false, directory: true });
-      if (typeof result === "string") localDestination = result;
-      else if (Array.isArray(result) && result[0]) localDestination = result[0];
+      const destination = typeof result === "string" ? result : Array.isArray(result) ? result[0] : undefined;
+      if (destination) localDestinationsBySession = { ...localDestinationsBySession, [sessionId]: destination };
     } catch (error) {
       errorMessage = t("sftp.dialogFailed", { detail: message(error) });
     }
   }
 
   function removeLocalPath(path: string) {
-    localPaths = localPaths.filter((item) => item !== path);
+    localPathsBySession = {
+      ...localPathsBySession,
+      [activeId]: (localPathsBySession[activeId] ?? []).filter((item) => item !== path),
+    };
   }
 
   function toggleRemoteSelection(path: string, checked: boolean) {
@@ -386,7 +407,7 @@
     } else transferJobs = transferJobs.map((job) => job.transfer_id === progress.transfer_id ? progress : job);
     if (progress.status === "completed") {
       statusMessage = t("sftp.transferCompleted", { count: progress.files_completed });
-      if (progress.direction === "upload" && activeId === progress.session_id) localPaths = [];
+      if (progress.direction === "upload") localPathsBySession = { ...localPathsBySession, [progress.session_id]: [] };
       if (progress.direction === "download" && activeId === progress.session_id) selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [] };
       if (activeId === progress.session_id) void refreshDirectory();
     } else if (progress.status === "failed") {
@@ -396,20 +417,24 @@
     }
   }
 
-  async function startTransfer(direction: "upload" | "download", overwrite = false, suppliedSources?: string[], suppliedDestination?: string) {
-    if (!activeSession || busy) return;
-    const sources = suppliedSources ?? (direction === "upload" ? localPaths : (selectedRemotePaths[activeId] ?? []));
-    const destination = suppliedDestination ?? (direction === "upload" ? activeDirectory?.current_path ?? "" : localDestination);
+  async function startTransfer(
+    direction: "upload" | "download", overwrite = false,
+    suppliedSources?: string[], suppliedDestination?: string, sessionId = activeId,
+  ) {
+    const session = sessions.find((item) => item.session_id === sessionId);
+    if (!session || busy) return;
+    const sources = suppliedSources ?? (direction === "upload" ? localPathsBySession[sessionId] ?? [] : (selectedRemotePaths[sessionId] ?? []));
+    const destination = suppliedDestination ?? (direction === "upload" ? directories[sessionId]?.current_path ?? "" : localDestinationsBySession[sessionId] ?? "");
     if (!sources.length || !destination) return;
     busy = true;
     errorMessage = "";
     try {
-      const result = await invoke<TransferStartResult>("sftp_transfer_start", { sessionId: activeId, direction, sources, destination, overwrite });
+      const result = await invoke<TransferStartResult>("sftp_transfer_start", { sessionId, direction, sources, destination, overwrite });
       if (result.conflicts.length && !overwrite) {
-        overwriteConfirm = { direction, sources, destination, conflicts: result.conflicts };
+        overwriteConfirm = { sessionId, direction, sources, destination, conflicts: result.conflicts };
       } else if (result.transfer_id) {
         if (!transferJobs.some((job) => job.transfer_id === result.transfer_id)) updateTransferProgress({
-          transfer_id: result.transfer_id, session_id: activeId, direction, status: "running", current_file: "",
+          transfer_id: result.transfer_id, session_id: sessionId, direction, status: "running", current_file: "",
           files_completed: 0, files_total: 0, bytes_transferred: 0, bytes_total: 0, error: null,
         });
         statusMessage = t("sftp.transferStarted");
@@ -425,7 +450,7 @@
     const pending = overwriteConfirm;
     if (!pending) return;
     overwriteConfirm = null;
-    await startTransfer(pending.direction, true, pending.sources, pending.destination);
+    await startTransfer(pending.direction, true, pending.sources, pending.destination, pending.sessionId);
   }
 
   async function cancelTransfer(transferId: string) {
