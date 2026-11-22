@@ -7,9 +7,13 @@
 
   let {
     connectionId = null,
+    embedded = false,
+    visible = true,
     onclose,
   }: {
     connectionId?: string | null;
+    embedded?: boolean;
+    visible?: boolean;
     onclose: () => void;
   } = $props();
 
@@ -424,6 +428,7 @@
   }
 
   function onBrowserKeydown(event: KeyboardEvent) {
+    if (!visible) return;
     if (event.key === "Tab") {
       const activeDialog = browserDialog?.querySelector<HTMLElement>(".sftp-small-dialog") ?? browserDialog;
       const focusable = Array.from(
@@ -490,6 +495,10 @@
     }
   }
 
+  $effect(() => {
+    if (visible) void tick().then(() => searchInput?.focus());
+  });
+
   onMount(() => {
     void initialize();
     return () => {
@@ -502,7 +511,7 @@
 
 <svelte:window onkeydown={onBrowserKeydown} />
 
-<div class="sftp-backdrop">
+<div class="sftp-backdrop" class:embedded class:hidden={!visible}>
   <section bind:this={browserDialog} class="sftp-browser" role="dialog" aria-modal="true" aria-labelledby="sftp-title">
     <header class="sftp-header">
       <div class="sftp-heading">
@@ -767,6 +776,9 @@
     background: color-mix(in srgb, var(--c-app-bg) 72%, transparent);
     backdrop-filter: blur(3px);
   }
+  .sftp-backdrop.embedded { position: absolute; inset: 0; z-index: 1; padding: 0; background: transparent; backdrop-filter: none; }
+  .sftp-backdrop.hidden { display: none; }
+  .sftp-backdrop.embedded .sftp-browser { width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
   .sftp-browser {
     position: relative;
     display: flex;

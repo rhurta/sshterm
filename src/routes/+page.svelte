@@ -20,8 +20,9 @@
   let tunnelPanelOpen = $state(false);
   let sftpAcceptanceOpen = $state(false);
   let sftpStaleSessionIds = $state<string[]>([]);
-  let sftpBrowserOpen = $state(false);
-  let sftpBrowserConnectionId = $state<string | null>(null);
+  type WorkspaceTab = { id: string; kind: "terminal" } | { id: string; kind: "sftp"; connectionId: string | null };
+  let workspaceTabs = $state<WorkspaceTab[]>([{ id: "terminal", kind: "terminal" }]);
+  let activeWorkspaceTabId = $state("terminal");
   let dir = $state("");
   let theme = $state<AppTheme>(DEFAULT_THEME);
   let appearance = $state<AppearanceSettings>({ ...DEFAULT_APPEARANCE_SETTINGS });
@@ -87,9 +88,16 @@
   const terminalOpacity = $derived(backgroundData ? appearance.terminal_opacity : 100);
 
   function openSftpBrowser(connectionId: string | null) {
-    sftpBrowserConnectionId = connectionId;
-    sftpBrowserOpen = true;
+    const id = crypto.randomUUID();
+    workspaceTabs = [...workspaceTabs, { id, kind: "sftp", connectionId }];
+    activeWorkspaceTabId = id;
     sftpAcceptanceOpen = false;
+  }
+
+  function closeWorkspaceTab(id: string) {
+    if (id === "terminal") return;
+    workspaceTabs = workspaceTabs.filter((tab) => tab.id !== id);
+    if (activeWorkspaceTabId === id) activeWorkspaceTabId = "terminal";
   }
 
   async function lock() {
@@ -99,8 +107,8 @@
     await invoke("vault_lock");
     unlocked = false;
     sftpAcceptanceOpen = false;
-    sftpBrowserOpen = false;
-    sftpBrowserConnectionId = null;
+    workspaceTabs = [{ id: "terminal", kind: "terminal" }];
+    activeWorkspaceTabId = "terminal";
   }
 
   async function lockFromSftpAcceptance(sessionIds: string[]) {
@@ -129,30 +137,49 @@
       onsftpqa={() => (sftpAcceptanceOpen = true)}
       onlock={lock}
     />
+    {#if ready && unlocked}
+      <nav class="workspace-tabs" role="tablist" aria-label="Workspace tabs">
+        {#each workspaceTabs as tab (tab.id)}
+          <div class="workspace-tab" class:active={activeWorkspaceTabId === tab.id}>
+            <button role="tab" aria-selected={activeWorkspaceTabId === tab.id}
+              onclick={() => (activeWorkspaceTabId = tab.id)}>
+              {tab.kind === "terminal" ? "Terminal" : "SFTP"}
+            </button>
+            {#if tab.kind === "sftp"}
+              <button class="workspace-tab-close" aria-label="Close SFTP tab" title="Close"
+                onclick={() => closeWorkspaceTab(tab.id)}>×</button>
+            {/if}
+          </div>
+        {/each}
+      </nav>
+    {/if}
     {#if ready}
       <div class="screen">
         {#if unlocked}
-          <Workspace
-            {dir}
-            {theme}
-            {appearance}
-            {terminalOpacity}
-            onthemechange={changeTheme}
-            onappearancechange={changeAppearance}
-            onsftpopen={openSftpBrowser}
-            bind:settingsOpen
-            bind:tunnelPanelOpen
-          />
+          <div class="workspace-host" class:inactive={activeWorkspaceTabId !== "terminal"}>
+            <Workspace
+              {dir}
+              {theme}
+              {appearance}
+              {terminalOpacity}
+              onthemechange={changeTheme}
+              onappearancechange={changeAppearance}
+              onsftpopen={openSftpBrowser}
+              bind:settingsOpen
+              bind:tunnelPanelOpen
+            />
+          </div>
+          {#each workspaceTabs as tab (tab.id)}
+            {#if tab.kind === "sftp"}
+              <SftpBrowser embedded visible={activeWorkspaceTabId === tab.id}
+                connectionId={tab.connectionId}
+                onclose={() => closeWorkspaceTab(tab.id)} />
+            {/if}
+          {/each}
         {:else}
           <LockScreen onunlocked={() => (unlocked = true)} />
         {/if}
       </div>
-    {/if}
-    {#if ready && unlocked && sftpBrowserOpen}
-      <SftpBrowser
-        connectionId={sftpBrowserConnectionId}
-        onclose={() => { sftpBrowserOpen = false; sftpBrowserConnectionId = null; }}
-      />
     {/if}
     {#if ready && unlocked && sftpAcceptanceOpen}
       <SftpAcceptancePanel
@@ -402,11 +429,63 @@
     display: flex;
     flex-direction: column;
   }
+  .workspace-tabs {
+    display: flex;
+    flex: 0 0 34px;
+    align-items: stretch;
+    gap: 3px;
+    padding: 3px 8px 0;
+    overflow-x: auto;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .workspace-tab {
+    display: flex;
+    align-items: center;
+    min-width: 96px;
+    max-width: 220px;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: 5px 5px 0 0;
+    background: var(--surface-hover);
+  }
+  .workspace-tab.active { background: var(--surface-raised); border-top: 2px solid var(--accent); }
+  .workspace-tab > button:first-child {
+    min-width: 0;
+    flex: 1;
+    height: 28px;
+    padding: 0 10px;
+    overflow: hidden;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--ui-font-dense);
+  }
+  .workspace-tab.active > button:first-child { color: var(--text); }
+  .workspace-tab-close {
+    width: 24px;
+    height: 24px;
+    margin-right: 3px;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .workspace-tab-close:hover { color: var(--danger); background: var(--surface-hover); }
+  .workspace-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
   .screen {
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
+  .workspace-host { position: absolute; inset: 0; visibility: visible; }
+  .workspace-host.inactive { visibility: hidden; pointer-events: none; }
   :global(html, body) {
     width: 100%;
     height: 100%;
