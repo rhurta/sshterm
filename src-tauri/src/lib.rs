@@ -219,6 +219,9 @@ pub fn run() {
             tunnels::tunnel_stop_all,
             sftp::sftp_open,
             sftp::sftp_list,
+            sftp::sftp_mkdir,
+            sftp::sftp_rename,
+            sftp::sftp_delete,
             sftp::sftp_close,
             sftp::sftp_close_all,
         ])

@@ -161,9 +161,10 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 
 ### M8c — Browser UI and file operations
 
-- Add SFTP entry points in the connection UI and the dedicated browser.
-- Implement path navigation, listing, refresh, create directory, rename and safe delete.
-- Add local open/save/folder dialogs and keyboard navigation.
+- [ ] Add SFTP entry points in the connection UI and the dedicated browser.
+- [x] Add backend create-directory, same-directory rename and non-recursive safe-delete commands; delete does not follow symlinks or recurse into directories.
+- [ ] Implement path navigation, listing, refresh, create directory, rename and safe delete in the browser UI.
+- [ ] Add local open/save/folder dialogs and keyboard navigation.
 
 ### M8d — Transfer queue
 

@@ -833,6 +833,39 @@ fn remote_child(parent: &str, name: &str) -> String {
     }
 }
 
+fn validate_remote_name(name: &str) -> Result<(), SftpError> {
+    if name.is_empty()
+        || name.len() > 255
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.chars().any(char::is_control)
+    {
+        return Err(SftpError::new(
+            "sftp_bad_name",
+            "Use a single file or directory name without path separators or control characters.",
+        ));
+    }
+    Ok(())
+}
+
+async fn canonical_sibling(
+    session: &SftpSession,
+    remote_path: &str,
+) -> Result<(String, String), SftpError> {
+    validate_remote_path(remote_path)?;
+    let trimmed = remote_path.trim_end_matches('/');
+    let name = trimmed.rsplit('/').next().unwrap_or_default();
+    validate_remote_name(name)?;
+    let parent = remote_parent(trimmed).unwrap_or_else(|| "/".to_string());
+    let canonical_parent = session
+        .canonicalize(parent)
+        .await
+        .map_err(|error| SftpError::new("sftp_protocol", error.to_string()))?;
+    Ok((canonical_parent, name.to_string()))
+}
+
 impl SftpState {
     async fn close_all_inner(&self) -> Result<(), String> {
         // Wait for active operations and prevent a new open/list from slipping
@@ -957,6 +990,88 @@ pub async fn sftp_list(
 }
 
 #[tauri::command]
+pub async fn sftp_mkdir(
+    state: State<'_, SftpState>,
+    session_id: String,
+    remote_path: String,
+    name: String,
+) -> Result<(), String> {
+    let _lifecycle = state.gate.read().await;
+    validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    validate_remote_path(&remote_path).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    let session = state.sessions.lock().await.get(&session_id).cloned()
+        .ok_or_else(|| "sftp_session_not_found".to_string())?;
+    let client = session.lock().await;
+    let parent = client.session().canonicalize(remote_path).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    let target = remote_child(&parent, &name);
+    if client.session().try_exists(target.clone()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?
+    {
+        return Err(format!("sftp_already_exists: {name}"));
+    }
+    client.session().create_dir(target).await
+        .map_err(|error| format!("sftp_protocol: {error}"))
+}
+
+#[tauri::command]
+pub async fn sftp_rename(
+    state: State<'_, SftpState>,
+    session_id: String,
+    remote_path: String,
+    new_name: String,
+) -> Result<(), String> {
+    let _lifecycle = state.gate.read().await;
+    validate_remote_name(&new_name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    let session = state.sessions.lock().await.get(&session_id).cloned()
+        .ok_or_else(|| "sftp_session_not_found".to_string())?;
+    let client = session.lock().await;
+    let (parent, old_name) = canonical_sibling(client.session(), &remote_path).await
+        .map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    if old_name == new_name {
+        return Ok(());
+    }
+    let old_path = remote_child(&parent, &old_name);
+    let new_path = remote_child(&parent, &new_name);
+    if client.session().try_exists(new_path.clone()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?
+    {
+        return Err(format!("sftp_already_exists: {new_name}"));
+    }
+    client.session().rename(old_path, new_path).await
+        .map_err(|error| format!("sftp_protocol: {error}"))
+}
+
+#[tauri::command]
+pub async fn sftp_delete(
+    state: State<'_, SftpState>,
+    session_id: String,
+    remote_path: String,
+) -> Result<(), String> {
+    let _lifecycle = state.gate.read().await;
+    let session = state.sessions.lock().await.get(&session_id).cloned()
+        .ok_or_else(|| "sftp_session_not_found".to_string())?;
+    let client = session.lock().await;
+    let (parent, name) = canonical_sibling(client.session(), &remote_path).await
+        .map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    let target = remote_child(&parent, &name);
+    let metadata = client.session().symlink_metadata(target.clone()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+
+    // Never follow symlinks and never recurse. Directory removal only succeeds
+    // for an empty directory on the server.
+    if metadata.is_symlink() || metadata.is_regular() {
+        client.session().remove_file(target).await
+            .map_err(|error| format!("sftp_protocol: {error}"))
+    } else if metadata.is_dir() {
+        client.session().remove_dir(target).await
+            .map_err(|error| format!("sftp_protocol: {error}"))
+    } else {
+        Err("sftp_delete_unsupported: This remote entry type cannot be deleted safely.".to_string())
+    }
+}
+
+#[tauri::command]
 pub async fn sftp_close(
     state: State<'_, SftpState>,
     session_id: String,
@@ -1011,6 +1126,15 @@ mod lifecycle_tests {
         assert!(validate_remote_path("folder with spaces").is_ok());
         assert!(matches!(validate_remote_path("/bad\npath"), Err(SftpError { code: "sftp_bad_path", .. })));
         assert!(matches!(validate_remote_path(&"x".repeat(4097)), Err(SftpError { code: "sftp_bad_path", .. })));
+    }
+
+    #[test]
+    fn remote_names_reject_path_traversal_and_control_characters() {
+        assert!(validate_remote_name("report final.txt").is_ok());
+        assert!(validate_remote_name("資料").is_ok());
+        for invalid in ["", ".", "..", "../escape", "a/b", "a\\b", "bad\nname"] {
+            assert!(matches!(validate_remote_name(invalid), Err(SftpError { code: "sftp_bad_name", .. })));
+        }
     }
 
     #[test]
