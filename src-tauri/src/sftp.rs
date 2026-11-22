@@ -1547,14 +1547,14 @@ async fn run_transfer(
                 }
             }
             ("upload", TransferKind::File) => {
-                upload_file(sftp, item, transfer_id, index, overwrite, cancel, progress, app).await?;
+                upload_file(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await?;
                 progress.files_completed += 1;
             }
             ("download", TransferKind::Directory) => {
                 tokio::fs::create_dir_all(&item.destination).await.map_err(|error| TransferFailure::failed("sftp_transfer_local_mkdir", error))?;
             }
             ("download", TransferKind::File) => {
-                download_file(sftp, item, transfer_id, index, overwrite, cancel, progress, app).await?;
+                download_file(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await?;
                 progress.files_completed += 1;
             }
             _ => return Err(TransferFailure::Failed("sftp_transfer_bad_direction: Unsupported transfer direction.".into())),
@@ -1845,7 +1845,13 @@ mod lifecycle_tests {
         assert!(matches!(cancelled, Err(TransferFailure::Cancelled)));
         assert!(remote_target_exists(direct.session(), &remote_child(&remote_base, "cancel.bin")).await.unwrap().is_none());
         let remote_entries = direct.session().read_dir(remote_base.clone()).await.expect("list remote work folder");
-        assert!(!remote_entries.iter().any(|entry| entry.file_name().to_string().contains(&format!(".sshterm-{cancel_id}-"))));
+        let mut temporary_found = false;
+        for entry in remote_entries {
+            if entry.file_name().to_string().contains(&format!(".sshterm-{cancel_id}-")) {
+                temporary_found = true;
+            }
+        }
+        assert!(!temporary_found);
 
         // The same target and transfer logic must work through a direct-tcpip jump.
         let hop = integration_connection("jump-host", &user, hop_port, &key);
