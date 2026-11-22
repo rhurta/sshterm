@@ -16,6 +16,7 @@ use russh::client::{self, Handle};
 use russh::keys::agent::{client::{AgentClient, AgentStream}, AgentIdentity};
 use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
 use rand::{rngs::OsRng, RngCore};
+use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -1183,7 +1184,7 @@ fn remote_name(path: &str) -> Result<String, String> {
     Ok(name)
 }
 
-async fn remote_target_exists(sftp: &SftpSession, path: &str) -> Result<Option<russh_sftp::protocol::Metadata>, String> {
+async fn remote_target_exists(sftp: &SftpSession, path: &str) -> Result<Option<Metadata>, String> {
     if !sftp.try_exists(path.to_string()).await.map_err(|error| format!("sftp_protocol: {error}"))? {
         return Ok(None);
     }
@@ -1402,12 +1403,17 @@ async fn upload_file(
     let result = loop {
         if *cancel.borrow() { break Err(TransferFailure::Cancelled); }
         let count = tokio::select! {
-            result = source.read(&mut buffer) => result.map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?,
+            result = source.read(&mut buffer) => match result {
+                Ok(count) => count,
+                Err(error) => break Err(TransferFailure::failed("sftp_transfer_local_io", error)),
+            },
             _ = cancel.changed() => break Err(TransferFailure::Cancelled),
         };
         if count == 0 { break Ok(()); }
         tokio::select! {
-            result = target.write_all(&buffer[..count]) => result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?,
+            result = target.write_all(&buffer[..count]) => if let Err(error) = result {
+                break Err(TransferFailure::failed("sftp_transfer_remote_io", error));
+            },
             _ = cancel.changed() => break Err(TransferFailure::Cancelled),
         }
         progress.bytes_transferred = progress.bytes_transferred.saturating_add(count as u64);
@@ -1418,9 +1424,15 @@ async fn upload_file(
         let _ = sftp.remove_file(temporary).await;
         return Err(error);
     }
-    target.close().await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_close", error))?;
-    commit_remote_file(sftp, &temporary, &item.destination, transfer_id, index, overwrite).await
-        .map_err(TransferFailure::Failed)
+    if let Err(error) = target.close().await {
+        let _ = sftp.remove_file(&temporary).await;
+        return Err(TransferFailure::failed("sftp_transfer_remote_close", error));
+    }
+    if let Err(error) = commit_remote_file(sftp, &temporary, &item.destination, transfer_id, index, overwrite).await {
+        let _ = sftp.remove_file(&temporary).await;
+        return Err(TransferFailure::Failed(error));
+    }
+    Ok(())
 }
 
 async fn download_file(
@@ -1436,12 +1448,17 @@ async fn download_file(
     let result = loop {
         if *cancel.borrow() { break Err(TransferFailure::Cancelled); }
         let count = tokio::select! {
-            result = source.read(&mut buffer) => result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?,
+            result = source.read(&mut buffer) => match result {
+                Ok(count) => count,
+                Err(error) => break Err(TransferFailure::failed("sftp_transfer_remote_io", error)),
+            },
             _ = cancel.changed() => break Err(TransferFailure::Cancelled),
         };
         if count == 0 { break Ok(()); }
         tokio::select! {
-            result = target.write_all(&buffer[..count]) => result.map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?,
+            result = target.write_all(&buffer[..count]) => if let Err(error) = result {
+                break Err(TransferFailure::failed("sftp_transfer_local_io", error));
+            },
             _ = cancel.changed() => break Err(TransferFailure::Cancelled),
         }
         progress.bytes_transferred = progress.bytes_transferred.saturating_add(count as u64);
@@ -1453,12 +1470,28 @@ async fn download_file(
         let _ = source.close().await;
         return Err(error);
     }
-    target.flush().await.map_err(|error| TransferFailure::failed("sftp_transfer_local_flush", error))?;
-    target.sync_all().await.map_err(|error| TransferFailure::failed("sftp_transfer_local_sync", error))?;
+    if let Err(error) = target.flush().await {
+        drop(target);
+        let _ = tokio::fs::remove_file(&temporary).await;
+        let _ = source.close().await;
+        return Err(TransferFailure::failed("sftp_transfer_local_flush", error));
+    }
+    if let Err(error) = target.sync_all().await {
+        drop(target);
+        let _ = tokio::fs::remove_file(&temporary).await;
+        let _ = source.close().await;
+        return Err(TransferFailure::failed("sftp_transfer_local_sync", error));
+    }
     drop(target);
-    source.close().await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_close", error))?;
-    commit_local_file(&temporary, &destination, transfer_id, index, overwrite).await
-        .map_err(TransferFailure::Failed)
+    if let Err(error) = source.close().await {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(TransferFailure::failed("sftp_transfer_remote_close", error));
+    }
+    if let Err(error) = commit_local_file(&temporary, &destination, transfer_id, index, overwrite).await {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(TransferFailure::Failed(error));
+    }
+    Ok(())
 }
 
 async fn run_transfer(
