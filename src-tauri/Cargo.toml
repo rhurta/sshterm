@@ -31,7 +31,7 @@ regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # M2: ssh.exe over ConPTY, password hand-off via named pipe, and events
 portable-pty = "0.9"
-tokio = { version = "1", features = ["sync", "net", "io-util", "time", "rt"] }
+tokio = { version = "1", features = ["sync", "net", "io-util", "time", "rt", "fs"] }
 base64 = "0.22"
 async-trait = "0.1"
 # M8a: native SSH/SFTP transport; pin the audited protocol implementation.

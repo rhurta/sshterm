@@ -223,6 +223,8 @@ pub fn run() {
             sftp::sftp_mkdir,
             sftp::sftp_rename,
             sftp::sftp_delete,
+            sftp::sftp_transfer_start,
+            sftp::sftp_transfer_cancel,
             sftp::sftp_close,
             sftp::sftp_close_all,
         ])

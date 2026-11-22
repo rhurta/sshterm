@@ -4,7 +4,7 @@
 //! the SSH/SFTP transport independently before M8b adds the application-facing
 //! lifecycle and browser commands.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -18,10 +18,10 @@ use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCe
 use rand::{rngs::OsRng, RngCore};
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use sha1::Sha1;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{Mutex, RwLock};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::{watch, Mutex, RwLock};
 
 use crate::store;
 use crate::vault::{Auth, Connection};
@@ -760,6 +760,13 @@ mod tests {
 pub struct SftpState {
     gate: RwLock<()>,
     sessions: Mutex<HashMap<String, Arc<Mutex<SftpClient>>>>,
+    transfers: Arc<Mutex<HashMap<String, SftpTransferControl>>>,
+}
+
+struct SftpTransferControl {
+    session_id: String,
+    cancel: watch::Sender<bool>,
+    done: watch::Receiver<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -868,9 +875,17 @@ async fn canonical_sibling(
 
 impl SftpState {
     async fn close_all_inner(&self) -> Result<(), String> {
-        // Wait for active operations and prevent a new open/list from slipping
-        // in while the vault is being locked.
+        // Prevent new work, cancel and reap transfers, then close every SFTP/SSH
+        // handle before the vault can be locked or the app exits.
         let _lifecycle = self.gate.write().await;
+        let pending = {
+            let transfers = self.transfers.lock().await;
+            transfers.values().map(|item| {
+                let _ = item.cancel.send(true);
+                item.done.clone()
+            }).collect::<Vec<_>>()
+        };
+        wait_for_transfers(pending).await;
         let sessions = std::mem::take(&mut *self.sessions.lock().await);
         let mut first_error = None;
         for (_, session) in sessions {
@@ -1077,6 +1092,14 @@ pub async fn sftp_close(
     session_id: String,
 ) -> Result<(), String> {
     let _lifecycle = state.gate.write().await;
+    let pending = {
+        let transfers = state.transfers.lock().await;
+        transfers.values().filter(|item| item.session_id == session_id).map(|item| {
+            let _ = item.cancel.send(true);
+            item.done.clone()
+        }).collect::<Vec<_>>()
+    };
+    wait_for_transfers(pending).await;
     let session = state.sessions.lock().await.remove(&session_id)
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
     session.lock().await.close().await
@@ -1086,6 +1109,445 @@ pub async fn sftp_close(
 #[tauri::command]
 pub async fn sftp_close_all(state: State<'_, SftpState>) -> Result<(), String> {
     state.close_all_inner().await
+}
+
+const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
+const MAX_TRANSFER_ENTRIES: usize = 100_000;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SftpTransferStatus { Running, Completed, Cancelled, Failed }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpTransferProgress {
+    pub transfer_id: String,
+    pub session_id: String,
+    pub direction: String,
+    pub status: SftpTransferStatus,
+    pub current_file: String,
+    pub files_completed: u64,
+    pub files_total: u64,
+    pub bytes_transferred: u64,
+    pub bytes_total: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpTransferStartResult {
+    pub transfer_id: Option<String>,
+    pub conflicts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransferKind { Directory, File }
+
+#[derive(Debug, Clone)]
+struct TransferItem {
+    source: String,
+    destination: String,
+    kind: TransferKind,
+    size: u64,
+}
+
+#[derive(Debug)]
+enum TransferFailure { Cancelled, Failed(String) }
+
+impl TransferFailure {
+    fn failed(code: &str, detail: impl std::fmt::Display) -> Self {
+        Self::Failed(format!("{code}: {detail}"))
+    }
+}
+
+async fn wait_for_transfers(mut pending: Vec<watch::Receiver<bool>>) {
+    for done in &mut pending {
+        while !*done.borrow() {
+            if done.changed().await.is_err() { break; }
+        }
+    }
+}
+
+fn emit_transfer(app: &AppHandle, progress: &SftpTransferProgress) {
+    let _ = app.emit("sftp:progress", progress.clone());
+}
+
+fn local_name(path: &std::path::Path) -> Result<String, String> {
+    let name = path.file_name().ok_or_else(|| "sftp_transfer_bad_local_path: Missing file name.".to_string())?;
+    let name = name.to_string_lossy().into_owned();
+    validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    Ok(name)
+}
+
+fn remote_name(path: &str) -> Result<String, String> {
+    let name = path.trim_end_matches('/').rsplit('/').next().unwrap_or_default().to_string();
+    validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    Ok(name)
+}
+
+async fn remote_target_exists(sftp: &SftpSession, path: &str) -> Result<Option<russh_sftp::protocol::Metadata>, String> {
+    if !sftp.try_exists(path.to_string()).await.map_err(|error| format!("sftp_protocol: {error}"))? {
+        return Ok(None);
+    }
+    let metadata = sftp.symlink_metadata(path.to_string()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    Ok(Some(metadata))
+}
+
+async fn local_target_metadata(path: &std::path::Path) -> Result<Option<std::fs::Metadata>, String> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("sftp_transfer_local_io: {error}")),
+    }
+}
+
+fn push_transfer_item(items: &mut Vec<TransferItem>, item: TransferItem) -> Result<(), String> {
+    if items.len() >= MAX_TRANSFER_ENTRIES {
+        return Err(format!("sftp_transfer_too_many_entries: A transfer is limited to {MAX_TRANSFER_ENTRIES} entries."));
+    }
+    items.push(item);
+    Ok(())
+}
+
+async fn build_upload_plan(
+    sftp: &SftpSession,
+    local_sources: &[String],
+    remote_destination: &str,
+) -> Result<(Vec<TransferItem>, Vec<String>), String> {
+    if local_sources.is_empty() { return Err("sftp_transfer_empty: Select at least one local file or folder.".into()); }
+    validate_remote_path(remote_destination).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    let destination = sftp.canonicalize(remote_destination.to_string()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    let destination_meta = sftp.metadata(destination.clone()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    if !destination_meta.is_dir() { return Err("sftp_transfer_destination_not_directory: Choose a remote directory for uploads.".into()); }
+
+    let mut items = Vec::new();
+    let mut stack: Vec<(std::path::PathBuf, String)> = Vec::new();
+    for source in local_sources {
+        let path = std::path::PathBuf::from(source);
+        let metadata = tokio::fs::symlink_metadata(&path).await
+            .map_err(|error| format!("sftp_transfer_local_io: {source}: {error}"))?;
+        if metadata.file_type().is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Local symbolic links are not followed: {source}")); }
+        let target = remote_child(&destination, &local_name(&path)?);
+        if metadata.is_dir() {
+            push_transfer_item(&mut items, TransferItem { source: source.clone(), destination: target.clone(), kind: TransferKind::Directory, size: 0 })?;
+            stack.push((path, target));
+        } else if metadata.is_file() {
+            push_transfer_item(&mut items, TransferItem { source: source.clone(), destination: target, kind: TransferKind::File, size: metadata.len() })?;
+        } else {
+            return Err(format!("sftp_transfer_type_unsupported: Unsupported local item: {source}"));
+        }
+    }
+    while let Some((directory, remote_directory)) = stack.pop() {
+        let mut entries = tokio::fs::read_dir(&directory).await
+            .map_err(|error| format!("sftp_transfer_local_io: {}: {error}", directory.display()))?;
+        while let Some(entry) = entries.next_entry().await
+            .map_err(|error| format!("sftp_transfer_local_io: {}: {error}", directory.display()))? {
+            let path = entry.path();
+            let metadata = tokio::fs::symlink_metadata(&path).await
+                .map_err(|error| format!("sftp_transfer_local_io: {}: {error}", path.display()))?;
+            if metadata.file_type().is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Local symbolic links are not followed: {}", path.display())); }
+            let target = remote_child(&remote_directory, &local_name(&path)?);
+            if metadata.is_dir() {
+                push_transfer_item(&mut items, TransferItem { source: path.to_string_lossy().into_owned(), destination: target.clone(), kind: TransferKind::Directory, size: 0 })?;
+                stack.push((path, target));
+            } else if metadata.is_file() {
+                push_transfer_item(&mut items, TransferItem { source: path.to_string_lossy().into_owned(), destination: target, kind: TransferKind::File, size: metadata.len() })?;
+            } else {
+                return Err(format!("sftp_transfer_type_unsupported: Unsupported local item: {}", path.display()));
+            }
+        }
+    }
+
+    let mut conflicts = Vec::new();
+    for item in &items {
+        if let Some(existing) = remote_target_exists(sftp, &item.destination).await? {
+            if existing.is_symlink() { return Err(format!("sftp_transfer_symlink_conflict: Refusing to replace a remote symbolic link: {}", item.destination)); }
+            match item.kind {
+                TransferKind::Directory if existing.is_dir() => {}
+                TransferKind::File if existing.is_regular() => conflicts.push(item.destination.clone()),
+                _ => return Err(format!("sftp_transfer_type_conflict: Remote item type differs at {}", item.destination)),
+            }
+        }
+    }
+    Ok((items, conflicts))
+}
+
+async fn build_download_plan(
+    sftp: &SftpSession,
+    remote_sources: &[String],
+    local_destination: &str,
+) -> Result<(Vec<TransferItem>, Vec<String>), String> {
+    if remote_sources.is_empty() { return Err("sftp_transfer_empty: Select at least one remote file or folder.".into()); }
+    let local_root = std::path::PathBuf::from(local_destination);
+    let root_metadata = tokio::fs::symlink_metadata(&local_root).await
+        .map_err(|error| format!("sftp_transfer_local_io: {}: {error}", local_root.display()))?;
+    if root_metadata.file_type().is_symlink() || !root_metadata.is_dir() {
+        return Err("sftp_transfer_destination_not_directory: Choose an existing local folder for downloads.".into());
+    }
+
+    let mut items = Vec::new();
+    let mut stack: Vec<(String, std::path::PathBuf)> = Vec::new();
+    let mut seen = HashSet::new();
+    for source in remote_sources {
+        validate_remote_path(source).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+        if !seen.insert(source.clone()) { continue; }
+        let metadata = remote_target_exists(sftp, source).await?
+            .ok_or_else(|| format!("sftp_transfer_source_missing: Remote item no longer exists: {source}"))?;
+        if metadata.is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Remote symbolic links are not followed: {source}")); }
+        let target = local_root.join(remote_name(source)?);
+        if metadata.is_dir() {
+            push_transfer_item(&mut items, TransferItem { source: source.clone(), destination: target.to_string_lossy().into_owned(), kind: TransferKind::Directory, size: 0 })?;
+            stack.push((source.clone(), target));
+        } else if metadata.is_regular() {
+            push_transfer_item(&mut items, TransferItem { source: source.clone(), destination: target.to_string_lossy().into_owned(), kind: TransferKind::File, size: metadata.size.unwrap_or(0) })?;
+        } else {
+            return Err(format!("sftp_transfer_type_unsupported: Unsupported remote item: {source}"));
+        }
+    }
+    while let Some((remote_directory, local_directory)) = stack.pop() {
+        let entries = sftp.read_dir(remote_directory.clone()).await
+            .map_err(|error| format!("sftp_protocol: {error}"))?;
+        for entry in entries {
+            let name = entry.file_name().to_string();
+            if name == "." || name == ".." { continue; }
+            validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+            let remote_path = remote_child(&remote_directory, &name);
+            let metadata = entry.metadata();
+            let local_path = local_directory.join(&name);
+            if metadata.is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Remote symbolic links are not followed: {remote_path}")); }
+            if metadata.is_dir() {
+                push_transfer_item(&mut items, TransferItem { source: remote_path.clone(), destination: local_path.to_string_lossy().into_owned(), kind: TransferKind::Directory, size: 0 })?;
+                stack.push((remote_path, local_path));
+            } else if metadata.is_regular() {
+                push_transfer_item(&mut items, TransferItem { source: remote_path, destination: local_path.to_string_lossy().into_owned(), kind: TransferKind::File, size: metadata.size.unwrap_or(0) })?;
+            } else {
+                return Err(format!("sftp_transfer_type_unsupported: Unsupported remote item: {remote_path}"));
+            }
+        }
+    }
+
+    let mut conflicts = Vec::new();
+    for item in &items {
+        let path = std::path::Path::new(&item.destination);
+        if let Some(existing) = local_target_metadata(path).await? {
+            if existing.file_type().is_symlink() { return Err(format!("sftp_transfer_symlink_conflict: Refusing to replace a local symbolic link: {}", path.display())); }
+            match item.kind {
+                TransferKind::Directory if existing.is_dir() => {}
+                TransferKind::File if existing.is_file() => conflicts.push(item.destination.clone()),
+                _ => return Err(format!("sftp_transfer_type_conflict: Local item type differs at {}", path.display())),
+            }
+        }
+    }
+    Ok((items, conflicts))
+}
+
+fn remote_temp_sibling(path: &str, transfer_id: &str, index: usize, suffix: &str) -> Result<String, String> {
+    let parent = remote_parent(path).unwrap_or_else(|| "/".to_string());
+    let name = format!(".sshterm-{transfer_id}-{index}.{suffix}");
+    validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    Ok(remote_child(&parent, &name))
+}
+
+fn local_temp_sibling(path: &std::path::Path, transfer_id: &str, index: usize, suffix: &str) -> Result<std::path::PathBuf, String> {
+    let name = format!(".sshterm-{transfer_id}-{index}.{suffix}");
+    let parent = path.parent().ok_or_else(|| "sftp_transfer_bad_local_path: Destination has no parent directory.".to_string())?;
+    Ok(parent.join(name))
+}
+
+async fn commit_remote_file(sftp: &SftpSession, temporary: &str, destination: &str, transfer_id: &str, index: usize, overwrite: bool) -> Result<(), String> {
+    let mut backup = None;
+    if let Some(existing) = remote_target_exists(sftp, destination).await? {
+        if !overwrite { return Err(format!("sftp_overwrite_required: {}", destination)); }
+        if !existing.is_regular() || existing.is_symlink() { return Err(format!("sftp_transfer_type_conflict: Refusing to replace non-regular remote item: {destination}")); }
+        let backup_path = remote_temp_sibling(destination, transfer_id, index, "bak")?;
+        sftp.rename(destination.to_string(), backup_path.clone()).await
+            .map_err(|error| format!("sftp_transfer_backup_failed: {error}"))?;
+        backup = Some(backup_path);
+    }
+    if let Err(error) = sftp.rename(temporary.to_string(), destination.to_string()).await {
+        if let Some(backup_path) = &backup { let _ = sftp.rename(backup_path.clone(), destination.to_string()).await; }
+        return Err(format!("sftp_transfer_commit_failed: {error}"));
+    }
+    if let Some(backup_path) = backup { sftp.remove_file(backup_path).await.map_err(|error| format!("sftp_transfer_backup_cleanup: {error}"))?; }
+    Ok(())
+}
+
+async fn commit_local_file(temporary: &std::path::Path, destination: &std::path::Path, transfer_id: &str, index: usize, overwrite: bool) -> Result<(), String> {
+    let mut backup = None;
+    if let Some(existing) = local_target_metadata(destination).await? {
+        if !overwrite { return Err(format!("sftp_overwrite_required: {}", destination.display())); }
+        if existing.file_type().is_symlink() || !existing.is_file() { return Err(format!("sftp_transfer_type_conflict: Refusing to replace non-file local item: {}", destination.display())); }
+        let backup_path = local_temp_sibling(destination, transfer_id, index, "bak")?;
+        tokio::fs::rename(destination, &backup_path).await
+            .map_err(|error| format!("sftp_transfer_backup_failed: {error}"))?;
+        backup = Some(backup_path);
+    }
+    if let Err(error) = tokio::fs::rename(temporary, destination).await {
+        if let Some(backup_path) = &backup { let _ = tokio::fs::rename(backup_path, destination).await; }
+        return Err(format!("sftp_transfer_commit_failed: {error}"));
+    }
+    if let Some(backup_path) = backup { tokio::fs::remove_file(backup_path).await.map_err(|error| format!("sftp_transfer_backup_cleanup: {error}"))?; }
+    Ok(())
+}
+
+async fn upload_file(
+    sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
+    overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, app: &AppHandle,
+) -> Result<(), TransferFailure> {
+    let mut source = tokio::fs::File::open(&item.source).await.map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
+    let temporary = remote_temp_sibling(&item.destination, transfer_id, index, "part").map_err(|error| TransferFailure::Failed(error))?;
+    let mut target = sftp.create(temporary.clone()).await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?;
+    let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
+    let result = loop {
+        if *cancel.borrow() { break Err(TransferFailure::Cancelled); }
+        let count = tokio::select! {
+            result = source.read(&mut buffer) => result.map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?,
+            _ = cancel.changed() => break Err(TransferFailure::Cancelled),
+        };
+        if count == 0 { break Ok(()); }
+        tokio::select! {
+            result = target.write_all(&buffer[..count]) => result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?,
+            _ = cancel.changed() => break Err(TransferFailure::Cancelled),
+        }
+        progress.bytes_transferred = progress.bytes_transferred.saturating_add(count as u64);
+        emit_transfer(app, progress);
+    };
+    if let Err(error) = result {
+        let _ = target.close().await;
+        let _ = sftp.remove_file(temporary).await;
+        return Err(error);
+    }
+    target.close().await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_close", error))?;
+    commit_remote_file(sftp, &temporary, &item.destination, transfer_id, index, overwrite).await
+        .map_err(TransferFailure::Failed)
+}
+
+async fn download_file(
+    sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
+    overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, app: &AppHandle,
+) -> Result<(), TransferFailure> {
+    let mut source = sftp.open(item.source.clone()).await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?;
+    let destination = std::path::PathBuf::from(&item.destination);
+    let temporary = local_temp_sibling(&destination, transfer_id, index, "part").map_err(TransferFailure::Failed)?;
+    let mut target = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).await
+        .map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
+    let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
+    let result = loop {
+        if *cancel.borrow() { break Err(TransferFailure::Cancelled); }
+        let count = tokio::select! {
+            result = source.read(&mut buffer) => result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?,
+            _ = cancel.changed() => break Err(TransferFailure::Cancelled),
+        };
+        if count == 0 { break Ok(()); }
+        tokio::select! {
+            result = target.write_all(&buffer[..count]) => result.map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?,
+            _ = cancel.changed() => break Err(TransferFailure::Cancelled),
+        }
+        progress.bytes_transferred = progress.bytes_transferred.saturating_add(count as u64);
+        emit_transfer(app, progress);
+    };
+    if let Err(error) = result {
+        drop(target);
+        let _ = tokio::fs::remove_file(&temporary).await;
+        let _ = source.close().await;
+        return Err(error);
+    }
+    target.flush().await.map_err(|error| TransferFailure::failed("sftp_transfer_local_flush", error))?;
+    target.sync_all().await.map_err(|error| TransferFailure::failed("sftp_transfer_local_sync", error))?;
+    drop(target);
+    source.close().await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_close", error))?;
+    commit_local_file(&temporary, &destination, transfer_id, index, overwrite).await
+        .map_err(TransferFailure::Failed)
+}
+
+async fn run_transfer(
+    sftp: &SftpSession, items: &[TransferItem], direction: &str, transfer_id: &str, overwrite: bool,
+    cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, app: &AppHandle,
+) -> Result<(), TransferFailure> {
+    for (index, item) in items.iter().enumerate() {
+        if *cancel.borrow() { return Err(TransferFailure::Cancelled); }
+        progress.current_file = if direction == "upload" { item.source.clone() } else { item.source.clone() };
+        match (direction, item.kind) {
+            ("upload", TransferKind::Directory) => {
+                if !sftp.try_exists(item.destination.clone()).await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_stat", error))? {
+                    sftp.create_dir(item.destination.clone()).await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_mkdir", error))?;
+                }
+            }
+            ("upload", TransferKind::File) => {
+                upload_file(sftp, item, transfer_id, index, overwrite, cancel, progress, app).await?;
+                progress.files_completed += 1;
+            }
+            ("download", TransferKind::Directory) => {
+                tokio::fs::create_dir_all(&item.destination).await.map_err(|error| TransferFailure::failed("sftp_transfer_local_mkdir", error))?;
+            }
+            ("download", TransferKind::File) => {
+                download_file(sftp, item, transfer_id, index, overwrite, cancel, progress, app).await?;
+                progress.files_completed += 1;
+            }
+            _ => return Err(TransferFailure::Failed("sftp_transfer_bad_direction: Unsupported transfer direction.".into())),
+        }
+        emit_transfer(app, progress);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sftp_transfer_start(
+    state: State<'_, SftpState>, app: AppHandle, session_id: String, direction: String,
+    sources: Vec<String>, destination: String, overwrite: bool,
+) -> Result<SftpTransferStartResult, String> {
+    let _lifecycle = state.gate.read().await;
+    let session = state.sessions.lock().await.get(&session_id).cloned()
+        .ok_or_else(|| "sftp_session_not_found".to_string())?;
+    if !matches!(direction.as_str(), "upload" | "download") { return Err("sftp_transfer_bad_direction: Expected upload or download.".into()); }
+    let (items, conflicts) = {
+        let client = session.lock().await;
+        if direction == "upload" { build_upload_plan(client.session(), &sources, &destination).await? }
+        else { build_download_plan(client.session(), &sources, &destination).await? }
+    };
+    if !overwrite && !conflicts.is_empty() {
+        return Ok(SftpTransferStartResult { transfer_id: None, conflicts });
+    }
+    let transfer_id = new_session_id();
+    let files_total = items.iter().filter(|item| item.kind == TransferKind::File).count() as u64;
+    let bytes_total = items.iter().filter(|item| item.kind == TransferKind::File).fold(0u64, |sum, item| sum.saturating_add(item.size));
+    let mut progress = SftpTransferProgress {
+        transfer_id: transfer_id.clone(), session_id: session_id.clone(), direction: direction.clone(),
+        status: SftpTransferStatus::Running, current_file: String::new(), files_completed: 0,
+        files_total, bytes_transferred: 0, bytes_total, error: None,
+    };
+    let (cancel_tx, mut cancel_rx) = watch::channel(false);
+    let (done_tx, done_rx) = watch::channel(false);
+    state.transfers.lock().await.insert(transfer_id.clone(), SftpTransferControl {
+        session_id: session_id.clone(), cancel: cancel_tx, done: done_rx,
+    });
+    emit_transfer(&app, &progress);
+    let transfer_registry = state.transfers.clone();
+    let worker_session = session.clone();
+    let worker_id = transfer_id.clone();
+    tokio::spawn(async move {
+        let result = {
+            let client = worker_session.lock().await;
+            run_transfer(client.session(), &items, &direction, &worker_id, overwrite, &mut cancel_rx, &mut progress, &app).await
+        };
+        match result {
+            Ok(()) => progress.status = SftpTransferStatus::Completed,
+            Err(TransferFailure::Cancelled) => progress.status = SftpTransferStatus::Cancelled,
+            Err(TransferFailure::Failed(error)) => { progress.status = SftpTransferStatus::Failed; progress.error = Some(error); }
+        }
+        emit_transfer(&app, &progress);
+        let _ = done_tx.send(true);
+        transfer_registry.lock().await.remove(&worker_id);
+    });
+    Ok(SftpTransferStartResult { transfer_id: Some(transfer_id), conflicts: Vec::new() })
+}
+
+#[tauri::command]
+pub async fn sftp_transfer_cancel(state: State<'_, SftpState>, transfer_id: String) -> Result<(), String> {
+    let transfers = state.transfers.lock().await;
+    let transfer = transfers.get(&transfer_id).ok_or_else(|| "sftp_transfer_not_found".to_string())?;
+    transfer.cancel.send(true).map_err(|_| "sftp_transfer_not_running".to_string())
 }
 
 #[cfg(test)]
