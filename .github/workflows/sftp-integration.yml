@@ -48,6 +48,11 @@ jobs:
           test_user="sftp-test"
           test_key="$RUNNER_TEMP/sftp-test-key"
           sudo useradd --create-home --shell /bin/bash "$test_user"
+          # useradd leaves the account password-locked; unlock it with a
+          # disposable password even though PasswordAuthentication is disabled.
+          test_password="$(openssl rand -base64 32)"
+          printf '%s:%s\\n' "$test_user" "$test_password" | sudo chpasswd
+          unset test_password
           ssh-keygen -q -t ed25519 -N '' -f "$test_key"
           sudo install -d -m 700 -o "$test_user" -g "$test_user" "/home/$test_user/.ssh"
           sudo install -m 600 -o "$test_user" -g "$test_user" "$test_key.pub" "/home/$test_user/.ssh/authorized_keys"
@@ -89,9 +94,12 @@ jobs:
               sleep 1
             done
             test "$ready" -eq 1
-            ssh -p "$port" -i "$test_key" \
+            if ! ssh -p "$port" -i "$test_key" \
               -o BatchMode=yes -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null "$test_user@127.0.0.1" true
+              -o UserKnownHostsFile=/dev/null "$test_user@127.0.0.1" true; then
+              sudo cat "$RUNNER_TEMP/sshd-$port.log"
+              exit 1
+            fi
           done
 
       - name: Run direct, jump, recursive transfer and cancellation test
