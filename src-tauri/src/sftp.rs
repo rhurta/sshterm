@@ -300,12 +300,13 @@ impl AgentBindingStatus {
     }
 }
 
-fn is_unsupported_agent_session_binding(error: &keys::Error) -> bool {
-    matches!(
-        error,
-        keys::Error::IO(io_error)
-            if io_error.kind() == std::io::ErrorKind::UnexpectedEof
-    )
+fn is_legacy_agent_session_binding_failure(error: &keys::Error) -> bool {
+    matches!(error, keys::Error::AgentFailure)
+        || matches!(
+            error,
+            keys::Error::IO(io_error)
+                if io_error.kind() == std::io::ErrorKind::UnexpectedEof
+        )
 }
 
 async fn authenticate_with_agent<S>(
@@ -322,9 +323,9 @@ where
             SftpError::new("sftp_agent_binding", "SSH agent session binding is unavailable.")
         })?;
         agent.bind_session(&binding, false).await.map_err(|error| {
-            let unsupported = is_unsupported_agent_session_binding(&error);
+            let legacy_fallback = is_legacy_agent_session_binding_failure(&error);
             SftpError::new(
-                if unsupported { "sftp_agent_binding_unsupported" } else { "sftp_agent_binding" },
+                if legacy_fallback { "sftp_agent_binding_rejected" } else { "sftp_agent_binding" },
                 error.to_string(),
             )
         })?;
@@ -436,11 +437,12 @@ async fn authenticate_agent(
 
     match authenticate_with_agent(handle, user, agent, true).await {
         Ok(()) => Ok(AgentBindingStatus::Bound),
-        Err(error) if error.code == "sftp_agent_binding_unsupported" => {
-            // The first agent pipe was closed by its unsupported bind extension.
-            // Reconnect before sending any other request. Continue with ordinary
-            // agent signing, and surface the reduced destination-constraint
-            // protection in SftpSessionInfo so the UI can warn the user.
+        Err(error) if error.code == "sftp_agent_binding_rejected" => {
+            // Windows OpenSSH 9.5 agents may return SSH_AGENT_FAILURE for the
+            // session-bind extension while remaining usable for ordinary
+            // identity listing and signing. Other legacy agents may close the
+            // pipe instead. Reconnect to get a clean request stream, continue
+            // unbound, and expose that reduced security state to the UI.
             let legacy_agent = connect_windows_agent(&source).await.map_err(|reconnect_error| {
                 SftpError::new(
                     "sftp_agent_unavailable",
@@ -993,14 +995,14 @@ mod lifecycle_tests {
     }
 
     #[test]
-    fn only_unexpected_eof_enables_legacy_agent_binding_fallback() {
-        assert!(is_unsupported_agent_session_binding(&keys::Error::IO(
+    fn agent_failure_or_unexpected_eof_enables_legacy_binding_fallback() {
+        assert!(is_legacy_agent_session_binding_failure(&keys::Error::IO(
             std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
         )));
-        assert!(!is_unsupported_agent_session_binding(&keys::Error::IO(
+        assert!(!is_legacy_agent_session_binding_failure(&keys::Error::IO(
             std::io::Error::from(std::io::ErrorKind::PermissionDenied),
         )));
-        assert!(!is_unsupported_agent_session_binding(&keys::Error::AgentFailure));
+        assert!(is_legacy_agent_session_binding_failure(&keys::Error::AgentFailure));
     }
 
     #[test]

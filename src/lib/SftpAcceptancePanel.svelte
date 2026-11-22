@@ -283,8 +283,8 @@
           </div>
           {#if activeSession.agent_binding === "legacy_unbound"}
             <div class="qa-warning" role="note">
-              This Windows SSH agent closed the session-binding request. Authentication is continuing in legacy unbound mode.
-              Agent destination constraints are not enforced in this mode. Do not use destination-constrained identities unless you switch to an agent that supports session binding.
+              This Windows SSH agent rejected or closed the session-binding request. Authentication is continuing in legacy unbound mode.
+              This session is not cryptographically bound to the destination. Do not rely on destination constraints; use an agent that successfully supports session binding when those restrictions are required.
             </div>
           {:else if activeSession.agent_binding === "bound"}
             <div class="qa-binding-ok"><span class="qa-dot"></span> SSH agent is bound to the verified server session.</div>
