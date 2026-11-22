@@ -591,10 +591,13 @@
       if (entry.kind !== "symlink" && entry.kind !== "other") toggleLocalSelection(entry.path, !localSelectedPaths.includes(entry.path));
     } else if (event.key === "F2") {
       event.preventDefault();
+      event.stopPropagation();
       if (entry.kind !== "symlink" && entry.kind !== "other") void showNameDialog("rename", "local", entry);
     } else if (event.key === "Delete") {
       event.preventDefault();
-      requestDelete("local", entry);
+      event.stopPropagation();
+      if (localSelectedPaths.includes(entry.path)) requestDelete("local");
+      else requestDelete("local", entry);
     } else if (event.key === "Backspace") {
       event.preventDefault();
       openLocalParent();
@@ -801,11 +804,14 @@
       openEntry(entry);
     } else if (event.key === "F2") {
       event.preventDefault();
+      event.stopPropagation();
       chooseEntry(entry);
       void showNameDialog("rename", "remote", entry);
     } else if (event.key === "Delete") {
       event.preventDefault();
-      requestDelete("remote", entry);
+      event.stopPropagation();
+      if ((selectedRemotePaths[activeId] ?? []).includes(entry.path)) requestDelete("remote");
+      else requestDelete("remote", entry);
     } else if (event.key === "Backspace") {
       event.preventDefault();
       openParent();
@@ -868,13 +874,13 @@
     if (event.key === "Escape") {
       event.preventDefault();
       void closeBrowser();
-    } else if (event.key === "F2" && selectedEntry) {
+    } else if (event.key === "F2" && activePane === "remote" && selectedRemoteEntries.length === 1) {
       event.preventDefault();
-      void showNameDialog("rename");
-    } else if (event.key === "Delete" && selectedEntry) {
+      void showNameDialog("rename", "remote");
+    } else if (event.key === "Delete" && activePane === "remote" && selectedRemoteEntries.length > 0) {
       event.preventDefault();
-      deleteTarget = selectedEntry;
-    } else if (event.key === "Backspace" && !(event.target instanceof HTMLInputElement)) {
+      requestDelete("remote");
+    } else if (event.key === "Backspace" && activePane === "remote" && !(event.target instanceof HTMLInputElement)) {
       event.preventDefault();
       openParent();
     }
