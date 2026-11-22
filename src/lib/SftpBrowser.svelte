@@ -71,9 +71,11 @@
   const selectedRemoteEntries = $derived(
     activeDirectory?.entries.filter((entry) => (selectedRemotePaths[activeId] ?? []).includes(entry.path)) ?? [],
   );
-  const localRoot = $derived(
-    localDirectory?.roots.find((root) => localDirectory.current_path.toLocaleLowerCase().startsWith(root.toLocaleLowerCase())) ?? "",
-  );
+  const localRoot = $derived.by(() => {
+    const directory = localDirectory;
+    if (!directory) return "";
+    return directory.roots.find((root) => directory.current_path.toLocaleLowerCase().startsWith(root.toLocaleLowerCase())) ?? "";
+  });
   const filteredLocalEntries = $derived.by(() => {
     const query = localSearch.trim().toLocaleLowerCase();
     const entries = localDirectory?.entries ?? [];
@@ -664,14 +666,15 @@
       return;
     }
     const target = event.target;
+    const localTarget = target instanceof Element && target.closest(".local-pane") !== null;
     if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === "l") {
       event.preventDefault();
-      const localTarget = target instanceof Element && target.closest(".local-pane") !== null;
       const input = localTarget ? localPathInput : pathInput;
       input?.focus();
       input?.select();
       return;
     }
+    if (localTarget && event.key !== "Escape") return;
     const editingText = target instanceof HTMLInputElement
       || target instanceof HTMLTextAreaElement
       || (target instanceof HTMLElement && target.isContentEditable);
