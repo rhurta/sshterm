@@ -777,42 +777,15 @@
           <svg viewBox="0 0 24 24"><path d="M4 7h16m-10 4v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
           <span>{t("sftp.delete")}</span>
         </button>
-        <button class="tool-button text-tool" title={t("sftp.download")} onclick={() => void startTransfer("download")} disabled={!activeSession || !selectedRemoteEntries.length || !localDestination || busy}>
+        <button class="tool-button text-tool" title={t("sftp.download")} onclick={() => void startTransfer("download")} disabled={!activeSession || !selectedRemoteEntries.length || !localDirectory || busy || localListing}>
           <svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg>
           <span>{t("sftp.download") + (selectedRemoteEntries.length ? " (" + selectedRemoteEntries.length + ")" : "")}</span>
         </button>
-        <button class="tool-button text-tool" title={t("sftp.upload")} onclick={() => void startTransfer("upload")} disabled={!activeSession || !localPaths.length || busy}>
+        <button class="tool-button text-tool" title={t("sftp.upload")} onclick={() => void startTransfer("upload")} disabled={!activeSession || !localSelectedPaths.length || !activeDirectory || busy}>
           <svg viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M4 17v4h16v-4"/></svg>
-          <span>{t("sftp.upload") + (localPaths.length ? " (" + localPaths.length + ")" : "")}</span>
+          <span>{t("sftp.upload") + (localSelectedPaths.length ? " (" + localSelectedPaths.length + ")" : "")}</span>
         </button>
       </div>
-      <div class="toolbar-spacer"></div>
-      <button class="tool-button text-tool local-tool" title={t("sftp.chooseLocalFiles")} onclick={() => void chooseLocalFiles()}>
-        <svg viewBox="0 0 24 24"><path d="M4 5h6l2 2h8v12H4z"/><path d="M12 10v6m-3-3 3-3 3 3"/></svg>
-        <span>{t("sftp.chooseLocalFiles")}</span>
-      </button>
-      <button class="tool-button text-tool local-tool" title={t("sftp.chooseLocalFolder")} onclick={() => void chooseLocalFolder()}>
-        <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/><path d="M12 11v5m-2.5-2.5h5"/></svg>
-        <span>{t("sftp.chooseLocalFolder")}</span>
-      </button>
-      <button class="tool-button text-tool local-tool" title={t("sftp.chooseLocalDestination")} onclick={() => void chooseLocalDestination()}>
-        <svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg>
-        <span>{t("sftp.chooseLocalDestination")}</span>
-      </button>
-    </div>
-
-    <div class="sftp-location">
-      <div class="breadcrumbs" aria-label={t("sftp.path")}>
-        <button class="crumb" onclick={() => void navigate("/") } disabled={!activeSession || busy}>/</button>
-        {#each breadcrumbs as crumb (crumb.path)}
-          <span class="crumb-separator" aria-hidden="true">/</span>
-          <button class="crumb" title={crumb.path} onclick={() => void navigate(crumb.path)} disabled={!activeSession || busy}>{crumb.name}</button>
-        {/each}
-      </div>
-      <form class="path-form" onsubmit={(event) => { event.preventDefault(); void navigateFromInput(); }}>
-        <input bind:this={pathInput} bind:value={pathValue} aria-label={t("sftp.path")} placeholder={t("sftp.pathPlaceholder")} disabled={!activeSession || busy} spellcheck="false" />
-        <button type="submit" title={t("sftp.go")} aria-label={t("sftp.go")} disabled={!activeSession || busy}>{t("sftp.go")}</button>
-      </form>
     </div>
 
     {#if activeSession?.agent_binding === "legacy_unbound"}
@@ -827,77 +800,144 @@
     {/if}
 
     <div class="sftp-content">
-      {#if !activeSession}
-        <div class="sftp-empty">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/><path d="M3 7V5h7l2 2"/></svg>
-          <p>{t("sftp.noSession")}</p>
-          <button class="primary-button" onclick={openConnectionPicker}>{t("sftp.openConnection")}</button>
-        </div>
-      {:else if listing && !activeDirectory}
-        <div class="sftp-empty"><span class="spinner"></span><p>{t("sftp.loading")}</p></div>
-      {:else if activeDirectory}
-        <div class="sftp-list-head" role="row">
-          <span>{t("sftp.name")}</span>
-          <span>{t("sftp.size")}</span>
-          <span>{t("sftp.modified")}</span>
-          <span>{t("sftp.permissions")}</span>
-        </div>
-        <div class="sftp-list" bind:this={rowList} role="list" aria-label={t("sftp.remoteEntries")}>
-          {#if listing}
-            <div class="list-loading"><span class="spinner"></span>{t("sftp.loading")}</div>
-          {:else if filteredEntries.length === 0}
-            <div class="sftp-empty-list">{search ? t("sftp.noSearchResults") : t("sftp.emptyDirectory")}</div>
-          {:else}
-            {#each filteredEntries as entry, index (entry.path)}
-              <div class="sftp-entry" class:selected={selectedPaths[activeId] === entry.path || (selectedRemotePaths[activeId] ?? []).includes(entry.path)}>
-                <div class="entry-name-cell">
-                  <input class="entry-select" type="checkbox" checked={(selectedRemotePaths[activeId] ?? []).includes(entry.path)} aria-label={t("sftp.selectEntry", { name: entry.name })} onchange={(event) => toggleRemoteSelection(entry.path, event.currentTarget.checked)} />
-                <button
-                  class="entry-name"
-                  class:directory-entry={entry.kind === "directory"}
-                  class:symlink-entry={entry.kind === "symlink"}
-                  tabindex={selectedPaths[activeId] === entry.path || (!selectedPaths[activeId] && index === 0) ? 0 : -1}
-                  aria-label={entry.name + (entry.kind === "directory" ? ", " + t("sftp.directory") : "")}
-                  onclick={() => chooseEntry(entry)}
-                  ondblclick={() => openEntry(entry)}
-                  onfocus={() => chooseEntry(entry)}
-                  onkeydown={(event) => onRowKeydown(event, index, entry)}
-                >
-                  <span class="entry-icon" aria-hidden="true">
-                    {#if entry.kind === "directory"}
-                      <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v12H3z"/><path d="M3 6V4h7l2 2"/></svg>
-                    {:else if entry.kind === "symlink"}
-                      <svg viewBox="0 0 24 24"><path d="M10 13a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5"/><path d="M14 11a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1.5-1.5"/></svg>
-                    {:else}
-                      <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4M9 13h6m-6 4h6"/></svg>
-                    {/if}
-                  </span>
-                  <span class="entry-label" title={entry.name}>{entry.name}</span>
-                </button>
+      <div class="sftp-dual-panes">
+        <section class="file-pane local-pane" aria-label={t("sftp.localPane")}>
+          <header class="pane-heading">
+            <div class="pane-heading-title">
+              <strong>{t("sftp.localPane")}</strong>
+              <span>{localDirectory ? t("sftp.itemCount", { count: localDirectory.entries.length }) : t("sftp.loading")}</span>
+            </div>
+            <div class="pane-heading-actions">
+              <button class="tool-button" title={t("sftp.localParent")} aria-label={t("sftp.localParent")} onclick={openLocalParent} disabled={!localDirectory?.parent_path || localListing}>
+                <svg viewBox="0 0 24 24"><path d="M19 12H5m7-7-7 7 7 7"/></svg>
+              </button>
+              <button class="tool-button" title={t("sftp.localRefresh")} aria-label={t("sftp.localRefresh")} onclick={refreshLocalDirectory} disabled={!localDirectory || localListing}>
+                <svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 12-2L20 12M4 12l2.4 5a7 7 0 0 0 12-2"/></svg>
+              </button>
+              <select class="local-root-select" value={localRoot} aria-label={t("sftp.localDrives")} title={t("sftp.localDrives")} onchange={(event) => { const root = event.currentTarget.value; if (root) void loadLocalDirectory(root); }}>
+                <option value="">{t("sftp.localDrives")}</option>
+                {#each localDirectory?.roots ?? [] as root (root)}<option value={root}>{root}</option>{/each}
+              </select>
+            </div>
+          </header>
+          <form class="pane-path-form" onsubmit={(event) => { event.preventDefault(); void navigateLocalFromInput(); }}>
+            <input bind:this={localPathInput} bind:value={localPathValue} aria-label={t("sftp.localPath")} placeholder={t("sftp.localPathPlaceholder")} disabled={localListing} spellcheck="false" />
+            <button type="submit" title={t("sftp.go")} aria-label={t("sftp.go")} disabled={localListing}>{t("sftp.go")}</button>
+          </form>
+          <div class="local-list-head" role="row">
+            <span>{t("sftp.name")}</span>
+            <span>{t("sftp.size")}</span>
+            <span>{t("sftp.modified")}</span>
+          </div>
+          <div class="local-list" bind:this={localRowList} role="list" aria-label={t("sftp.localEntries")} ondragover={(event) => event.preventDefault()} ondrop={onLocalDrop}>
+            {#if localListing}
+              <div class="list-loading"><span class="spinner"></span>{t("sftp.loading")}</div>
+            {:else if localErrorMessage}
+              <div class="sftp-empty-list local-list-error">{localErrorMessage}</div>
+            {:else if filteredLocalEntries.length === 0}
+              <div class="sftp-empty-list">{localSearch ? t("sftp.noSearchResults") : t("sftp.emptyDirectory")}</div>
+            {:else}
+              {#each filteredLocalEntries as entry, index (entry.path)}
+                <div class="local-entry" class:selected={localSelectedPaths.includes(entry.path)} class:focused={localFocusedPath === entry.path}>
+                  <div class="entry-name-cell">
+                    <input class="entry-select" type="checkbox" checked={localSelectedPaths.includes(entry.path)} disabled={entry.kind === "symlink" || entry.kind === "other"} aria-label={t("sftp.selectLocalEntry", { name: entry.name })} onchange={(event) => toggleLocalSelection(entry.path, event.currentTarget.checked)} />
+                    <button class="entry-name local-entry-button" class:directory-entry={entry.kind === "directory"} class:symlink-entry={entry.kind === "symlink"} tabindex={localFocusedPath === entry.path || (!localFocusedPath && index === 0) ? 0 : -1} draggable={entry.kind === "file" || entry.kind === "directory"} aria-label={entry.name + (entry.kind === "directory" ? ", " + t("sftp.directory") : "")} onclick={(event) => selectLocalEntry(entry, event)} ondblclick={() => openLocalEntry(entry)} onfocus={() => (localFocusedPath = entry.path)} onkeydown={(event) => onLocalRowKeydown(event, index, entry)} ondragstart={(event) => { event.dataTransfer?.setData("application/x-sshterm-local-path", entry.path); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy"; }}>
+                      <span class="entry-icon" aria-hidden="true">
+                        {#if entry.kind === "directory"}
+                          <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v12H3z"/><path d="M3 6V4h7l2 2"/></svg>
+                        {:else if entry.kind === "symlink"}
+                          <svg viewBox="0 0 24 24"><path d="M10 13a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5"/><path d="M14 11a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1.5-1.5"/></svg>
+                        {:else}
+                          <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4M9 13h6m-6 4h6"/></svg>
+                        {/if}
+                      </span>
+                      <span class="entry-label" title={entry.name}>{entry.name}</span>
+                    </button>
+                  </div>
+                  <span class="entry-meta size-meta">{entry.kind === "directory" ? "—" : formatSize(entry.size)}</span>
+                  <span class="entry-meta modified-meta" title={formatModified(entry.modified)}>{formatModified(entry.modified)}</span>
                 </div>
-                <span class="entry-meta size-meta">{entry.kind === "directory" ? "—" : formatSize(entry.size)}</span>
-                <span class="entry-meta modified-meta" title={formatModified(entry.modified)}>{formatModified(entry.modified)}</span>
-                <span class="entry-meta permission-meta">{formatPermissions(entry.permissions)}</span>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      {/if}
-    </div>
+              {/each}
+            {/if}
+          </div>
+          <footer class="pane-footer">
+            <div class="sftp-filter">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
+              <input bind:this={localSearchInput} bind:value={localSearch} onkeydown={onLocalSearchKeydown} placeholder={t("sftp.localSearch")} aria-label={t("sftp.localSearch")} disabled={!localDirectory} />
+              {#if localSearch}<button title={t("sftp.clearSearch")} aria-label={t("sftp.clearSearch")} onclick={() => { localSearch = ""; localSearchInput?.focus(); }}>×</button>{/if}
+            </div>
+            <span class="footer-status">{t("sftp.localSelectedCount", { count: localSelectedPaths.length })}</span>
+          </footer>
+        </section>
 
-    <footer class="sftp-footer">
-      <div class="sftp-filter">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
-        <input bind:this={searchInput} bind:value={search} onkeydown={onSearchKeydown} placeholder={t("sftp.search")} aria-label={t("sftp.search")} disabled={!activeSession} />
-        {#if search}
-          <button title={t("sftp.clearSearch")} aria-label={t("sftp.clearSearch")} onclick={() => { search = ""; searchInput?.focus(); }}>×</button>
-        {/if}
+        <section class="file-pane remote-pane" aria-label={t("sftp.remotePane")}>
+          <header class="pane-heading">
+            <div class="pane-heading-title">
+              <strong>{t("sftp.remotePane")}</strong>
+              <span>{activeSession ? activeSession.user + "@" + activeSession.host + ":" + activeSession.port : t("sftp.selectConnection")}</span>
+            </div>
+          </header>
+          <form class="pane-path-form" onsubmit={(event) => { event.preventDefault(); void navigateFromInput(); }}>
+            <input bind:this={pathInput} bind:value={pathValue} aria-label={t("sftp.path")} placeholder={t("sftp.pathPlaceholder")} disabled={!activeSession || busy} spellcheck="false" />
+            <button type="submit" title={t("sftp.go")} aria-label={t("sftp.go")} disabled={!activeSession || busy}>{t("sftp.go")}</button>
+          </form>
+          <div class="sftp-list-head" role="row">
+            <span>{t("sftp.name")}</span>
+            <span>{t("sftp.size")}</span>
+            <span>{t("sftp.modified")}</span>
+            <span>{t("sftp.permissions")}</span>
+          </div>
+          <div class="sftp-list" bind:this={rowList} role="list" aria-label={t("sftp.remoteEntries")} ondragover={(event) => event.preventDefault()} ondrop={onRemoteDrop}>
+            {#if !activeSession}
+              <div class="sftp-empty">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/><path d="M3 7V5h7l2 2"/></svg>
+                <p>{t("sftp.noSession")}</p>
+                <button class="primary-button" onclick={openConnectionPicker}>{t("sftp.openConnection")}</button>
+              </div>
+            {:else if listing && !activeDirectory}
+              <div class="sftp-empty"><span class="spinner"></span><p>{t("sftp.loading")}</p></div>
+            {:else if !activeDirectory}
+              <div class="sftp-empty-list">{t("sftp.emptyDirectory")}</div>
+            {:else if listing}
+              <div class="list-loading"><span class="spinner"></span>{t("sftp.loading")}</div>
+            {:else if filteredEntries.length === 0}
+              <div class="sftp-empty-list">{search ? t("sftp.noSearchResults") : t("sftp.emptyDirectory")}</div>
+            {:else}
+              {#each filteredEntries as entry, index (entry.path)}
+                <div class="sftp-entry" class:selected={selectedPaths[activeId] === entry.path || (selectedRemotePaths[activeId] ?? []).includes(entry.path)}>
+                  <div class="entry-name-cell">
+                    <input class="entry-select" type="checkbox" checked={(selectedRemotePaths[activeId] ?? []).includes(entry.path)} aria-label={t("sftp.selectEntry", { name: entry.name })} onchange={(event) => toggleRemoteSelection(entry.path, event.currentTarget.checked)} />
+                    <button class="entry-name" class:directory-entry={entry.kind === "directory"} class:symlink-entry={entry.kind === "symlink"} tabindex={selectedPaths[activeId] === entry.path || (!selectedPaths[activeId] && index === 0) ? 0 : -1} draggable={entry.kind === "file" || entry.kind === "directory"} aria-label={entry.name + (entry.kind === "directory" ? ", " + t("sftp.directory") : "")} onclick={() => chooseEntry(entry)} ondblclick={() => openEntry(entry)} onfocus={() => chooseEntry(entry)} onkeydown={(event) => onRowKeydown(event, index, entry)} ondragstart={(event) => { event.dataTransfer?.setData("application/x-sshterm-remote-path", entry.path); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy"; }}>
+                      <span class="entry-icon" aria-hidden="true">
+                        {#if entry.kind === "directory"}
+                          <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v12H3z"/><path d="M3 6V4h7l2 2"/></svg>
+                        {:else if entry.kind === "symlink"}
+                          <svg viewBox="0 0 24 24"><path d="M10 13a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5"/><path d="M14 11a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1.5-1.5"/></svg>
+                        {:else}
+                          <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4M9 13h6m-6 4h6"/></svg>
+                        {/if}
+                      </span>
+                      <span class="entry-label" title={entry.name}>{entry.name}</span>
+                    </button>
+                  </div>
+                  <span class="entry-meta size-meta">{entry.kind === "directory" ? "—" : formatSize(entry.size)}</span>
+                  <span class="entry-meta modified-meta" title={formatModified(entry.modified)}>{formatModified(entry.modified)}</span>
+                  <span class="entry-meta permission-meta">{formatPermissions(entry.permissions)}</span>
+                </div>
+              {/each}
+            {/if}
+          </div>
+          <footer class="pane-footer">
+            <div class="sftp-filter">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
+              <input bind:this={searchInput} bind:value={search} onkeydown={onSearchKeydown} placeholder={t("sftp.search")} aria-label={t("sftp.search")} disabled={!activeSession} />
+              {#if search}<button title={t("sftp.clearSearch")} aria-label={t("sftp.clearSearch")} onclick={() => { search = ""; searchInput?.focus(); }}>×</button>{/if}
+            </div>
+            <span class="footer-status" aria-live="polite">{#if statusMessage}{statusMessage}{:else if activeDirectory}{t("sftp.itemCount", { count: activeDirectory.entries.length })}{:else}{t("sftp.ready")}{/if}</span>
+          </footer>
+        </section>
       </div>
-      <span class="footer-status" aria-live="polite">
-        {#if statusMessage}{statusMessage}{:else if activeDirectory}{t("sftp.itemCount", { count: activeDirectory.entries.length })}{:else}{t("sftp.ready")}{/if}
-      </span>
-      <span class="footer-shortcuts">Enter {t("sftp.openFolderHint")} · F2 {t("sftp.rename")} · Del {t("sftp.delete")}</span>
-    </footer>
+    </div>
 
     {#if activeTransferJobs.length > 0}
       <section class="transfer-queue" aria-label={t("sftp.transferQueue")} aria-live="polite">
@@ -917,20 +957,6 @@
           </div>
         {/each}
       </section>
-    {/if}
-    {#if localPaths.length || localDestination}
-      <div class="local-selection">
-        {#if localPaths.length}
-          <strong>{t("sftp.localFilesSelected", { count: localPaths.length })}</strong>
-          {#each localPaths as path (path)}
-            <span class="local-path-chip" title={path}>
-              <span>{path}</span>
-              <button type="button" aria-label={t("sftp.removeLocalSelection")} title={t("sftp.removeLocalSelection")} onclick={() => removeLocalPath(path)}>×</button>
-            </span>
-          {/each}
-        {/if}
-        {#if localDestination}<span class="local-destination" title={localDestination}>{t("sftp.destination")}: {localDestination}</span>{/if}
-      </div>
     {/if}
 
     {#if pickerOpen}
