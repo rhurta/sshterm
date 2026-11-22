@@ -199,12 +199,13 @@ test("splitPaneById splits an empty pane and rejects unknown or duplicate ids", 
 
 test("mixed SSH and SFTP workspace tabs share pane move and split helpers", () => {
   const mixed = addSessionToPane(leaf("ssh:alpha"), "ssh:alpha", "sftp:beta");
-  const split = splitPaneById(mixed, "ssh:alpha", "ssh:gamma", "horizontal");
-  const moved = moveSession(split, "sftp:beta", "ssh:gamma", 0);
-  assert.equal(paneOfSession(moved, "sftp:beta"), "ssh:gamma");
+  const split = splitPaneById(mixed, "ssh:alpha", "pane:gamma", "horizontal");
+  const withSsh = addSessionToPane(split, "pane:gamma", "ssh:gamma");
+  const moved = moveSession(withSsh, "sftp:beta", "pane:gamma", 0);
+  assert.equal(paneOfSession(moved, "sftp:beta"), "pane:gamma");
   assert.deepEqual(
-    getLayoutGeometry(moved).leaves.find((pane) => pane.sessionId === "ssh:gamma")?.sessionIds,
-    ["sftp:beta"],
+    getLayoutGeometry(moved).leaves.find((pane) => pane.sessionId === "pane:gamma")?.sessionIds,
+    ["sftp:beta", "ssh:gamma"],
   );
   const newPane = moveSessionToNewPane(moved, "sftp:beta", "ssh:alpha", "pane:sftp", "vertical", true);
   assert.equal(paneOfSession(newPane, "sftp:beta"), "pane:sftp");
