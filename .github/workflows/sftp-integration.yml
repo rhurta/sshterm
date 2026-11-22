@@ -51,7 +51,7 @@ jobs:
           # useradd leaves the account password-locked; unlock it with a
           # disposable password even though PasswordAuthentication is disabled.
           test_password="$(openssl rand -base64 32)"
-          printf '%s:%s\\n' "$test_user" "$test_password" | sudo chpasswd
+          printf '%s:%s\n' "$test_user" "$test_password" | sudo chpasswd
           unset test_password
           ssh-keygen -q -t ed25519 -N '' -f "$test_key"
           sudo install -d -m 700 -o "$test_user" -g "$test_user" "/home/$test_user/.ssh"
