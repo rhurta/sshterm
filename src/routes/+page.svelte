@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import LockScreen from "$lib/LockScreen.svelte";
   import SftpAcceptancePanel from "$lib/SftpAcceptancePanel.svelte";
+  import SftpBrowser from "$lib/SftpBrowser.svelte";
   import Workspace from "$lib/Workspace.svelte";
   import TitleBar from "$lib/TitleBar.svelte";
   import { initLocale } from "$lib/i18n/index.svelte";
@@ -19,6 +20,8 @@
   let tunnelPanelOpen = $state(false);
   let sftpAcceptanceOpen = $state(false);
   let sftpStaleSessionIds = $state<string[]>([]);
+  let sftpBrowserOpen = $state(false);
+  let sftpBrowserConnectionId = $state<string | null>(null);
   let dir = $state("");
   let theme = $state<AppTheme>(DEFAULT_THEME);
   let appearance = $state<AppearanceSettings>({ ...DEFAULT_APPEARANCE_SETTINGS });
@@ -83,6 +86,12 @@
   const panelAlpha = $derived(backgroundData ? appearance.panel_opacity : 100);
   const terminalOpacity = $derived(backgroundData ? appearance.terminal_opacity : 100);
 
+  function openSftpBrowser(connectionId: string | null) {
+    sftpBrowserConnectionId = connectionId;
+    sftpBrowserOpen = true;
+    sftpAcceptanceOpen = false;
+  }
+
   async function lock() {
     // Without this, ssh.exe processes would be left open after unmounting
     // the Workspace.
@@ -90,6 +99,8 @@
     await invoke("vault_lock");
     unlocked = false;
     sftpAcceptanceOpen = false;
+    sftpBrowserOpen = false;
+    sftpBrowserConnectionId = null;
   }
 
   async function lockFromSftpAcceptance(sessionIds: string[]) {
@@ -114,6 +125,7 @@
       onchange={changeTheme}
       onsettings={() => (settingsOpen = true)}
       ontunnels={() => (tunnelPanelOpen = true)}
+      onsftp={() => openSftpBrowser(null)}
       onsftpqa={() => (sftpAcceptanceOpen = true)}
       onlock={lock}
     />
@@ -127,6 +139,7 @@
             {terminalOpacity}
             onthemechange={changeTheme}
             onappearancechange={changeAppearance}
+            onsftpopen={openSftpBrowser}
             bind:settingsOpen
             bind:tunnelPanelOpen
           />
@@ -134,6 +147,12 @@
           <LockScreen onunlocked={() => (unlocked = true)} />
         {/if}
       </div>
+    {/if}
+    {#if ready && unlocked && sftpBrowserOpen}
+      <SftpBrowser
+        connectionId={sftpBrowserConnectionId}
+        onclose={() => { sftpBrowserOpen = false; sftpBrowserConnectionId = null; }}
+      />
     {/if}
     {#if ready && unlocked && sftpAcceptanceOpen}
       <SftpAcceptancePanel

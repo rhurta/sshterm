@@ -18,6 +18,7 @@
     openIds,
     refreshToken,
     onopen,
+    onopensftp,
     onedit,
     onnewconn,
     ontunnels,
@@ -26,6 +27,7 @@
     openIds: string[];
     refreshToken: number;
     onopen: (c: ConnectionSummary) => void;
+    onopensftp: (c: ConnectionSummary) => void;
     onedit: (c: ConnectionSummary) => void;
     onnewconn: (parentId: string | null) => void;
     ontunnels: () => void;
@@ -239,6 +241,7 @@
     {selectedId}
     {autoRename}
     {onopen}
+    onsftp={(c) => onopensftp(c)}
     onedit={(c) => onedit(c)}
     onduplicate={(c) => duplicate(c)}
     ondelete={(node) => (pendingDelete = node)}
