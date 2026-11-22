@@ -1019,6 +1019,7 @@
           <div class="sftp-parking" aria-hidden="true">
             {#each sftpTabs as tab (tab.id)}
               <SftpBrowser embedded visible={paneActiveIds[sessionPane[tab.id]] === tab.id}
+                focused={activeId === tab.id} workspaceItemId={tab.id} onactivate={activateSession}
                 container={paneEls[sessionPane[tab.id]] ?? null}
                 connectionId={tab.connectionId} onclose={() => closeTab(tab.id)} />
             {/each}
