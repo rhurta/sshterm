@@ -1058,6 +1058,36 @@ pub async fn sftp_rename(
         .map_err(|error| format!("sftp_protocol: {error}"))
 }
 
+async fn delete_remote_entry(session: &SftpSession, remote_path: &str) -> Result<(), String> {
+    let (parent, name) = canonical_sibling(session, remote_path).await
+        .map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    let target = remote_child(&parent, &name);
+    let metadata = session.symlink_metadata(target.clone()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    // Symlinks are unlinked, never followed. Directories are removed only when empty.
+    if metadata.is_symlink() || metadata.is_regular() {
+        session.remove_file(target).await
+            .map_err(|error| format!("sftp_protocol: {error}"))
+    } else if metadata.is_dir() {
+        session.remove_dir(target).await
+            .map_err(|error| format!("sftp_protocol: {error}"))
+    } else {
+        Err("sftp_delete_unsupported: This remote entry type cannot be deleted safely.".to_string())
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpDeleteFailure {
+    pub path: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpDeleteResult {
+    pub deleted: Vec<String>,
+    pub failed: Vec<SftpDeleteFailure>,
+}
+
 #[tauri::command]
 pub async fn sftp_delete(
     state: State<'_, SftpState>,
@@ -1068,23 +1098,34 @@ pub async fn sftp_delete(
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
     let client = session.lock().await;
-    let (parent, name) = canonical_sibling(client.session(), &remote_path).await
-        .map_err(|error| format!("{}: {}", error.code, error.detail))?;
-    let target = remote_child(&parent, &name);
-    let metadata = client.session().symlink_metadata(target.clone()).await
-        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    delete_remote_entry(client.session(), &remote_path).await
+}
 
-    // Never follow symlinks and never recurse. Directory removal only succeeds
-    // for an empty directory on the server.
-    if metadata.is_symlink() || metadata.is_regular() {
-        client.session().remove_file(target).await
-            .map_err(|error| format!("sftp_protocol: {error}"))
-    } else if metadata.is_dir() {
-        client.session().remove_dir(target).await
-            .map_err(|error| format!("sftp_protocol: {error}"))
-    } else {
-        Err("sftp_delete_unsupported: This remote entry type cannot be deleted safely.".to_string())
+#[tauri::command]
+pub async fn sftp_delete_many(
+    state: State<'_, SftpState>,
+    session_id: String,
+    remote_paths: Vec<String>,
+) -> Result<SftpDeleteResult, String> {
+    if remote_paths.len() > 10_000 {
+        return Err("sftp_delete_limit: Select no more than 10,000 items at once.".to_string());
     }
+    let _lifecycle = state.gate.read().await;
+    let session = state.sessions.lock().await.get(&session_id).cloned()
+        .ok_or_else(|| "sftp_session_not_found".to_string())?;
+    let client = session.lock().await;
+    let mut result = SftpDeleteResult { deleted: Vec::new(), failed: Vec::new() };
+    let mut seen = HashSet::new();
+    for path in remote_paths {
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        match delete_remote_entry(client.session(), &path).await {
+            Ok(()) => result.deleted.push(path),
+            Err(detail) => result.failed.push(SftpDeleteFailure { path, detail }),
+        }
+    }
+    Ok(result)
 }
 
 #[tauri::command]
