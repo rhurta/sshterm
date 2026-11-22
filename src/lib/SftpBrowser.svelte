@@ -339,8 +339,8 @@
   async function chooseLocalFiles() {
     try {
       const result = await open({ multiple: true, directory: false });
-      if (Array.isArray(result)) localPaths = result;
-      else if (result) localPaths = [result];
+      const selected = Array.isArray(result) ? result : result ? [result] : [];
+      localPaths = [...new Set([...localPaths, ...selected])];
     } catch (error) {
       errorMessage = t("sftp.dialogFailed", { detail: message(error) });
     }
@@ -349,8 +349,8 @@
   async function chooseLocalFolder() {
     try {
       const result = await open({ multiple: false, directory: true });
-      if (typeof result === "string") localPaths = [result];
-      else if (Array.isArray(result)) localPaths = result;
+      const selected = typeof result === "string" ? [result] : Array.isArray(result) ? result : [];
+      localPaths = [...new Set([...localPaths, ...selected])];
     } catch (error) {
       errorMessage = t("sftp.dialogFailed", { detail: message(error) });
     }
@@ -366,6 +366,10 @@
     }
   }
 
+  function removeLocalPath(path: string) {
+    localPaths = localPaths.filter((item) => item !== path);
+  }
+
   function toggleRemoteSelection(path: string, checked: boolean) {
     const selected = selectedRemotePaths[activeId] ?? [];
     selectedRemotePaths = { ...selectedRemotePaths, [activeId]: checked ? [...selected, path] : selected.filter((item) => item !== path) };
@@ -373,8 +377,13 @@
 
   function updateTransferProgress(progress: TransferProgress) {
     const index = transferJobs.findIndex((job) => job.transfer_id === progress.transfer_id);
-    if (index < 0) transferJobs = [...transferJobs, progress].slice(-8);
-    else transferJobs = transferJobs.map((job) => job.transfer_id === progress.transfer_id ? progress : job);
+    if (index < 0) {
+      const next = [...transferJobs, progress];
+      transferJobs = [
+        ...next.filter((job) => job.status === "running"),
+        ...next.filter((job) => job.status !== "running").slice(-20),
+      ];
+    } else transferJobs = transferJobs.map((job) => job.transfer_id === progress.transfer_id ? progress : job);
     if (progress.status === "completed") {
       statusMessage = t("sftp.transferCompleted", { count: progress.files_completed });
       if (progress.direction === "upload" && activeId === progress.session_id) localPaths = [];
@@ -807,8 +816,16 @@
     {/if}
     {#if localPaths.length || localDestination}
       <div class="local-selection">
-        {#if localPaths.length}<strong>{t("sftp.localFilesSelected", { count: localPaths.length })}</strong>{/if}
-        {#if localDestination}<span title={localDestination}>{t("sftp.destination")}: {localDestination}</span>{/if}
+        {#if localPaths.length}
+          <strong>{t("sftp.localFilesSelected", { count: localPaths.length })}</strong>
+          {#each localPaths as path (path)}
+            <span class="local-path-chip" title={path}>
+              <span>{path}</span>
+              <button type="button" aria-label={t("sftp.removeLocalSelection")} title={t("sftp.removeLocalSelection")} onclick={() => removeLocalPath(path)}>×</button>
+            </span>
+          {/each}
+        {/if}
+        {#if localDestination}<span class="local-destination" title={localDestination}>{t("sftp.destination")}: {localDestination}</span>{/if}
       </div>
     {/if}
 
@@ -1048,8 +1065,11 @@
   .overwrite-list small { color: var(--muted); font-size: var(--ui-font-meta); }
   .local-selection { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 6px 10px; background: var(--surface); border-top: 1px solid var(--border); color: var(--text-secondary); font-size: var(--ui-font-meta); }
   .local-selection strong { color: var(--text); }
-  .local-selection span { max-width: 280px; overflow: hidden; padding: 2px 5px; border: 1px solid var(--border); border-radius: 3px; text-overflow: ellipsis; white-space: nowrap; }
-  .local-selection em { margin-left: auto; color: var(--muted); font-style: normal; }
+  .local-path-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 320px; padding: 2px 4px 2px 6px; border: 1px solid var(--border); border-radius: 3px; }
+  .local-path-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .local-path-chip button { width: 20px; height: 20px; flex: 0 0 20px; color: var(--muted); background: transparent; border: 0; border-radius: 3px; cursor: pointer; }
+  .local-path-chip button:hover { color: var(--danger); background: var(--surface-hover); }
+  .local-destination { max-width: min(420px, 100%); overflow: hidden; margin-left: auto; text-overflow: ellipsis; white-space: nowrap; }
   .sftp-empty, .sftp-empty-list { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; flex: 1; min-height: 100px; color: var(--muted); text-align: center; font-size: var(--ui-font-body); }
   .sftp-empty svg { width: 36px; height: 36px; fill: none; stroke: var(--muted); stroke-width: 1.3; }
   .sftp-empty p { margin: 0; }
