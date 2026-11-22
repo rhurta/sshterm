@@ -1188,9 +1188,9 @@ fn validate_local_component(name: &str) -> Result<(), String> {
         || name.ends_with(' ')
         || name.ends_with('.')
         || name.chars().any(|character| {
-            character.is_control() || matches!(character, '<' | '>' | ':' | '"' | '/' | '\\\\' | '|' | '?' | '*')
+            character.is_control() || matches!(character, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
         });
-    let stem = name.split('.').next().unwrap_or_default().trim_end_matches([' ', '.']).to_ascii_uppercase();
+    let stem = name.split('.').next().unwrap_or_default().trim_end_matches(|character| character == ' ' || character == '.').to_ascii_uppercase();
     let numbered_device = |prefix: &str| {
         stem.strip_prefix(prefix).is_some_and(|suffix| {
             suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9')
