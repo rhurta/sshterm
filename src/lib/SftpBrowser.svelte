@@ -2,9 +2,8 @@
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { open } from "@tauri-apps/plugin-dialog";
   import { t } from "$lib/i18n/index.svelte";
-  import type { ConnectionSummary, SftpDirectory, SftpEntry, SftpSessionInfo } from "$lib/types";
+  import type { ConnectionSummary, LocalDirectoryListing, SftpDirectory, SftpEntry, SftpSessionInfo } from "$lib/types";
 
   let {
     connectionId = null,
@@ -25,6 +24,13 @@
   let selectedPaths = $state<Record<string, string>>({});
   let search = $state("");
   let pathValue = $state("");
+  let localDirectory = $state<LocalDirectoryListing | null>(null);
+  let localPathValue = $state("");
+  let localSearch = $state("");
+  let localSelectedPaths = $state<string[]>([]);
+  let localFocusedPath = $state("");
+  let localListing = $state(false);
+  let localErrorMessage = $state("");
   let busy = $state(false);
   let listing = $state(false);
   let errorMessage = $state("");
@@ -34,10 +40,6 @@
   let nameMode = $state<"mkdir" | "rename" | null>(null);
   let nameValue = $state("");
   let deleteTarget = $state<SftpEntry | null>(null);
-  let localPathsBySession = $state<Record<string, string[]>>({});
-  let localDestinationsBySession = $state<Record<string, string>>({});
-  const localPaths = $derived(localPathsBySession[activeId] ?? []);
-  const localDestination = $derived(localDestinationsBySession[activeId] ?? "");
   let selectedRemotePaths = $state<Record<string, string[]>>({});
   type TransferProgress = {
     transfer_id: string; session_id: string; direction: "upload" | "download";
@@ -49,10 +51,13 @@
   let overwriteConfirm = $state<{ sessionId: string; direction: "upload" | "download"; sources: string[]; destination: string; conflicts: string[] } | null>(null);
   let overwriteConfirmButton: HTMLButtonElement | undefined = $state();
   let searchInput: HTMLInputElement | undefined = $state();
+  let localSearchInput: HTMLInputElement | undefined = $state();
   let pickerInput: HTMLInputElement | undefined = $state();
   let pathInput: HTMLInputElement | undefined = $state();
+  let localPathInput: HTMLInputElement | undefined = $state();
   let nameInput: HTMLInputElement | undefined = $state();
   let rowList: HTMLDivElement | undefined = $state();
+  let localRowList: HTMLDivElement | undefined = $state();
   let browserDialog: HTMLElement | undefined = $state();
   let deleteCancelButton: HTMLButtonElement | undefined = $state();
 
@@ -66,6 +71,16 @@
   const selectedRemoteEntries = $derived(
     activeDirectory?.entries.filter((entry) => (selectedRemotePaths[activeId] ?? []).includes(entry.path)) ?? [],
   );
+  const localRoot = $derived(
+    localDirectory?.roots.find((root) => localDirectory.current_path.toLocaleLowerCase().startsWith(root.toLocaleLowerCase())) ?? "",
+  );
+  const filteredLocalEntries = $derived.by(() => {
+    const query = localSearch.trim().toLocaleLowerCase();
+    const entries = localDirectory?.entries ?? [];
+    return entries
+      .filter((entry) => !query || entry.name.toLocaleLowerCase().includes(query))
+      .sort((left, right) => Number(right.kind === "directory") - Number(left.kind === "directory") || left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
+  });
   const activeTransferJobs = $derived(transferJobs.filter((job) => sessions.some((session) => session.session_id === job.session_id)));
   const filteredEntries = $derived.by(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -86,16 +101,6 @@
     if (overwriteConfirm) void tick().then(() => overwriteConfirmButton?.focus());
   });
 
-  const breadcrumbs = $derived.by(() => {
-    const path = activeDirectory?.current_path ?? "";
-    const parts = path.split("/").filter(Boolean);
-    let current = "";
-    return parts.map((name) => {
-      current += "/" + name;
-      return { name, path: current };
-    });
-  });
-
   function message(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
@@ -111,7 +116,7 @@
   }
 
   async function initialize() {
-    const loaded = await refreshConnections();
+    const [loaded] = await Promise.all([refreshConnections(), loadLocalDirectory()]);
     if (!loaded) return;
     if (connectionId && connections.some((item) => item.id === connectionId)) {
       await openSession(connectionId);
@@ -147,8 +152,6 @@
       pathValue = opened.current_path;
       selectedPaths = { ...selectedPaths, [opened.session_id]: "" };
       selectedRemotePaths = { ...selectedRemotePaths, [opened.session_id]: [] };
-      localPathsBySession = { ...localPathsBySession, [opened.session_id]: [] };
-      localDestinationsBySession = { ...localDestinationsBySession, [opened.session_id]: "" };
       await listDirectory(opened.session_id, opened.current_path);
       if (opened.agent_binding === "legacy_unbound") {
         statusMessage = t("sftp.agentUnboundWarning");
@@ -218,12 +221,6 @@
     const nextRemoteSelected = { ...selectedRemotePaths };
     delete nextRemoteSelected[sessionId];
     selectedRemotePaths = nextRemoteSelected;
-    const nextLocalPaths = { ...localPathsBySession };
-    delete nextLocalPaths[sessionId];
-    localPathsBySession = nextLocalPaths;
-    const nextLocalDestinations = { ...localDestinationsBySession };
-    delete nextLocalDestinations[sessionId];
-    localDestinationsBySession = nextLocalDestinations;
     try {
       await invoke("sftp_close", { sessionId });
     } catch (error) {
@@ -349,46 +346,129 @@
     }
   }
 
-  async function chooseLocalFiles() {
-    const sessionId = activeId;
+  async function loadLocalDirectory(path: string | null = null) {
+    if (localListing) return;
+    localListing = true;
+    localErrorMessage = "";
     try {
-      const result = await open({ multiple: true, directory: false });
-      const selected = Array.isArray(result) ? result : result ? [result] : [];
-      const existing = localPathsBySession[sessionId] ?? [];
-      localPathsBySession = { ...localPathsBySession, [sessionId]: [...new Set([...existing, ...selected])] };
+      const result = await invoke<LocalDirectoryListing>("local_list_directory", { path });
+      localDirectory = result;
+      localPathValue = result.current_path;
+      localSelectedPaths = [];
+      localFocusedPath = result.entries.find((entry) => entry.kind !== "symlink" && entry.kind !== "other")?.path ?? "";
     } catch (error) {
-      errorMessage = t("sftp.dialogFailed", { detail: message(error) });
+      localErrorMessage = message(error);
+    } finally {
+      localListing = false;
     }
   }
 
-  async function chooseLocalFolder() {
-    const sessionId = activeId;
-    try {
-      const result = await open({ multiple: false, directory: true });
-      const selected = typeof result === "string" ? [result] : Array.isArray(result) ? result : [];
-      const existing = localPathsBySession[sessionId] ?? [];
-      localPathsBySession = { ...localPathsBySession, [sessionId]: [...new Set([...existing, ...selected])] };
-    } catch (error) {
-      errorMessage = t("sftp.dialogFailed", { detail: message(error) });
+  async function navigateLocalFromInput() {
+    if (!localPathValue.trim()) return;
+    localSearch = "";
+    await loadLocalDirectory(localPathValue.trim());
+    await tick();
+    localSearchInput?.focus();
+  }
+
+  function openLocalParent() {
+    if (localDirectory?.parent_path) void loadLocalDirectory(localDirectory.parent_path);
+  }
+
+  function refreshLocalDirectory() {
+    if (localDirectory) void loadLocalDirectory(localDirectory.current_path);
+  }
+
+  function toggleLocalSelection(path: string, checked: boolean) {
+    localSelectedPaths = checked
+      ? [...new Set([...localSelectedPaths, path])]
+      : localSelectedPaths.filter((item) => item !== path);
+    localFocusedPath = path;
+  }
+
+  function selectLocalEntry(entry: LocalDirectoryListing["entries"][number], event: MouseEvent) {
+    localFocusedPath = entry.path;
+    if (entry.kind === "symlink" || entry.kind === "other") return;
+    if (event.ctrlKey || event.metaKey) {
+      toggleLocalSelection(entry.path, !localSelectedPaths.includes(entry.path));
+    } else {
+      localSelectedPaths = [entry.path];
     }
   }
 
-  async function chooseLocalDestination() {
-    const sessionId = activeId;
-    try {
-      const result = await open({ multiple: false, directory: true });
-      const destination = typeof result === "string" ? result : Array.isArray(result) ? result[0] : undefined;
-      if (destination) localDestinationsBySession = { ...localDestinationsBySession, [sessionId]: destination };
-    } catch (error) {
-      errorMessage = t("sftp.dialogFailed", { detail: message(error) });
+  function openLocalEntry(entry: LocalDirectoryListing["entries"][number]) {
+    if (entry.kind === "directory") {
+      localSearch = "";
+      void loadLocalDirectory(entry.path);
     }
   }
 
-  function removeLocalPath(path: string) {
-    localPathsBySession = {
-      ...localPathsBySession,
-      [activeId]: (localPathsBySession[activeId] ?? []).filter((item) => item !== path),
-    };
+  function focusLocalRow(index: number) {
+    const rows = localRowList?.querySelectorAll<HTMLButtonElement>("button.local-entry-button");
+    if (!rows?.length) return;
+    const target = Math.max(0, Math.min(index, rows.length - 1));
+    rows[target]?.focus();
+  }
+
+  function onLocalSearchKeydown(event: KeyboardEvent) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusLocalRow(0);
+    } else if (event.key === "Enter" && filteredLocalEntries.length > 0) {
+      event.preventDefault();
+      const first = filteredLocalEntries[0];
+      if (first) openLocalEntry(first);
+    } else if (event.key === "Escape" && localSearch) {
+      event.preventDefault();
+      event.stopPropagation();
+      localSearch = "";
+    }
+  }
+
+  function onLocalRowKeydown(event: KeyboardEvent, index: number, entry: LocalDirectoryListing["entries"][number]) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusLocalRow(index + 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (index === 0) localSearchInput?.focus();
+      else focusLocalRow(index - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      focusLocalRow(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      focusLocalRow(filteredLocalEntries.length - 1);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      if (entry.kind === "directory") openLocalEntry(entry);
+      else if (entry.kind !== "symlink" && entry.kind !== "other") toggleLocalSelection(entry.path, !localSelectedPaths.includes(entry.path));
+    } else if (event.key === " ") {
+      event.preventDefault();
+      if (entry.kind !== "symlink" && entry.kind !== "other") toggleLocalSelection(entry.path, !localSelectedPaths.includes(entry.path));
+    } else if (event.key === "Backspace") {
+      event.preventDefault();
+      openLocalParent();
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      localSelectedPaths = filteredLocalEntries.filter((item) => item.kind !== "symlink" && item.kind !== "other").map((item) => item.path);
+    }
+  }
+
+  function onRemoteDrop(event: DragEvent) {
+    event.preventDefault();
+    const source = event.dataTransfer?.getData("application/x-sshterm-local-path");
+    if (source && activeDirectory && activeId) {
+      void startTransfer("upload", false, [source], activeDirectory.current_path, activeId);
+    }
+  }
+
+  function onLocalDrop(event: DragEvent) {
+    event.preventDefault();
+    const source = event.dataTransfer?.getData("application/x-sshterm-remote-path");
+    if (source && activeId && localDirectory) {
+      void startTransfer("download", false, [source], localDirectory.current_path, activeId);
+    }
   }
 
   function toggleRemoteSelection(path: string, checked: boolean) {
@@ -407,7 +487,6 @@
     } else transferJobs = transferJobs.map((job) => job.transfer_id === progress.transfer_id ? progress : job);
     if (progress.status === "completed") {
       statusMessage = t("sftp.transferCompleted", { count: progress.files_completed });
-      if (progress.direction === "upload") localPathsBySession = { ...localPathsBySession, [progress.session_id]: [] };
       if (progress.direction === "download" && activeId === progress.session_id) selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [] };
       if (activeId === progress.session_id) void refreshDirectory();
     } else if (progress.status === "failed") {
@@ -423,8 +502,8 @@
   ) {
     const session = sessions.find((item) => item.session_id === sessionId);
     if (!session || busy) return;
-    const sources = suppliedSources ?? (direction === "upload" ? localPathsBySession[sessionId] ?? [] : (selectedRemotePaths[sessionId] ?? []));
-    const destination = suppliedDestination ?? (direction === "upload" ? directories[sessionId]?.current_path ?? "" : localDestinationsBySession[sessionId] ?? "");
+    const sources = suppliedSources ?? (direction === "upload" ? localSelectedPaths : (selectedRemotePaths[sessionId] ?? []));
+    const destination = suppliedDestination ?? (direction === "upload" ? directories[sessionId]?.current_path ?? "" : localDirectory?.current_path ?? "");
     if (!sources.length || !destination) return;
     busy = true;
     errorMessage = "";
