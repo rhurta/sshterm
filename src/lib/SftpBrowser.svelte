@@ -37,6 +37,7 @@
   let nameInput: HTMLInputElement | undefined = $state();
   let rowList: HTMLDivElement | undefined = $state();
   let browserDialog: HTMLElement | undefined = $state();
+  let deleteCancelButton: HTMLButtonElement | undefined = $state();
 
   const activeSession = $derived(sessions.find((item) => item.session_id === activeId) ?? null);
   const activeDirectory = $derived(activeSession ? directories[activeSession.session_id] ?? null : null);
@@ -59,6 +60,12 @@
         .some((value) => value.toLocaleLowerCase().includes(query)),
     );
   });
+  $effect(() => {
+    if (deleteTarget) {
+      void tick().then(() => deleteCancelButton?.focus());
+    }
+  });
+
   const breadcrumbs = $derived.by(() => {
     const path = activeDirectory?.current_path ?? "";
     const parts = path.split("/").filter(Boolean);
@@ -279,6 +286,12 @@
     }
   }
 
+  async function dismissDelete() {
+    deleteTarget = null;
+    await tick();
+    searchInput?.focus();
+  }
+
   async function confirmDelete() {
     const target = deleteTarget;
     if (!target || !activeSession || busy) return;
@@ -294,6 +307,8 @@
       selectedPaths = { ...selectedPaths, [activeId]: "" };
       statusMessage = t("sftp.deleted", { name: target.name });
       await listDirectory(activeId, currentPath);
+      await tick();
+      searchInput?.focus();
     } catch (error) {
       errorMessage = t("sftp.deleteFailed", { detail: message(error) });
     } finally {
@@ -439,7 +454,7 @@
         } else if (nameMode) {
           nameMode = null;
         } else {
-          deleteTarget = null;
+          void dismissDelete();
         }
       }
       return;
@@ -731,7 +746,7 @@
             <p class="confirm-hint">{t("sftp.emptyDirectoryOnly")}</p>
           {/if}
           <div class="small-dialog-actions">
-            <button class="secondary-button" onclick={() => (deleteTarget = null)}>{t("editor.cancel")}</button>
+            <button bind:this={deleteCancelButton} class="secondary-button" onclick={() => void dismissDelete()}>{t("editor.cancel")}</button>
             <button class="danger-button" onclick={() => void confirmDelete()} disabled={busy}>{t("sftp.delete")}</button>
           </div>
         </section>
