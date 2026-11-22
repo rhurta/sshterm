@@ -65,6 +65,17 @@ fn local_roots() -> Vec<String> {
     }
 }
 
+fn is_root(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        path.components().count() <= 2
+    }
+    #[cfg(not(windows))]
+    {
+        path == Path::new("/")
+    }
+}
+
 fn list_directory(path: Option<String>) -> Result<LocalDirectoryListing, String> {
     let requested = path.filter(|value| !value.trim().is_empty()).map(PathBuf::from).unwrap_or_else(default_path);
     let current = std::fs::canonicalize(&requested)
@@ -105,9 +116,13 @@ fn list_directory(path: Option<String>) -> Result<LocalDirectoryListing, String>
         });
     }
 
-    let parent_path = current.parent()
-        .filter(|parent| *parent != current && !parent.as_os_str().is_empty())
-        .map(|parent| parent.to_string_lossy().into_owned());
+    let parent_path = if is_root(&current) {
+        None
+    } else {
+        current.parent()
+            .filter(|parent| *parent != current && !parent.as_os_str().is_empty())
+            .map(|parent| parent.to_string_lossy().into_owned())
+    };
     Ok(LocalDirectoryListing {
         current_path: current.to_string_lossy().into_owned(),
         parent_path,

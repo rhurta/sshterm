@@ -396,10 +396,12 @@
     }
   }
 
-  function openLocalEntry(entry: LocalDirectoryListing["entries"][number]) {
+  async function openLocalEntry(entry: LocalDirectoryListing["entries"][number]) {
     if (entry.kind === "directory") {
       localSearch = "";
-      void loadLocalDirectory(entry.path);
+      await loadLocalDirectory(entry.path);
+      await tick();
+      localSearchInput?.focus();
     }
   }
 
@@ -487,7 +489,10 @@
     } else transferJobs = transferJobs.map((job) => job.transfer_id === progress.transfer_id ? progress : job);
     if (progress.status === "completed") {
       statusMessage = t("sftp.transferCompleted", { count: progress.files_completed });
-      if (progress.direction === "download" && activeId === progress.session_id) selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [] };
+      if (progress.direction === "download") {
+        if (activeId === progress.session_id) selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [] };
+        if (localDirectory) void loadLocalDirectory(localDirectory.current_path);
+      }
       if (activeId === progress.session_id) void refreshDirectory();
     } else if (progress.status === "failed") {
       errorMessage = progress.error ?? t("sftp.transferFailed");
@@ -659,17 +664,18 @@
       return;
     }
     const target = event.target;
+    if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === "l") {
+      event.preventDefault();
+      const localTarget = target instanceof Element && target.closest(".local-pane") !== null;
+      const input = localTarget ? localPathInput : pathInput;
+      input?.focus();
+      input?.select();
+      return;
+    }
     const editingText = target instanceof HTMLInputElement
       || target instanceof HTMLTextAreaElement
       || (target instanceof HTMLElement && target.isContentEditable);
-    if (editingText && event.key !== "Escape") {
-      if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === "l") {
-        event.preventDefault();
-        pathInput?.focus();
-        pathInput?.select();
-      }
-      return;
-    }
+    if (editingText && event.key !== "Escape") return;
     if (event.key === "Escape") {
       event.preventDefault();
       void closeBrowser();
@@ -682,10 +688,6 @@
     } else if (event.key === "Backspace" && !(event.target instanceof HTMLInputElement)) {
       event.preventDefault();
       openParent();
-    } else if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === "l") {
-      event.preventDefault();
-      pathInput?.focus();
-      pathInput?.select();
     }
   }
 
