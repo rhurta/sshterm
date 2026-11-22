@@ -49,6 +49,20 @@ fn default_path() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
+#[cfg(windows)]
+fn display_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\\") {
+        return format!("\\\\{rest}");
+    }
+    value.strip_prefix(r"\\?\\").unwrap_or(&value).to_string()
+}
+
+#[cfg(not(windows))]
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 fn local_roots() -> Vec<String> {
     #[cfg(windows)]
     {
@@ -109,7 +123,7 @@ fn list_directory(path: Option<String>) -> Result<LocalDirectoryListing, String>
             .map(|duration| duration.as_secs());
         entries.push(LocalFileEntry {
             name: item.file_name().to_string_lossy().into_owned(),
-            path: entry_path.to_string_lossy().into_owned(),
+            path: display_path(&entry_path),
             kind: kind.to_string(),
             size: (kind == "file").then_some(metadata.len()),
             modified,
@@ -124,7 +138,7 @@ fn list_directory(path: Option<String>) -> Result<LocalDirectoryListing, String>
             .map(|parent| parent.to_string_lossy().into_owned())
     };
     Ok(LocalDirectoryListing {
-        current_path: current.to_string_lossy().into_owned(),
+        current_path: display_path(&current),
         parent_path,
         roots: local_roots(),
         entries,
@@ -142,7 +156,7 @@ mod tests {
         std::fs::write(root.path().join("sample.txt"), b"contents are not returned").unwrap();
 
         let listing = list_directory(Some(root.path().to_string_lossy().into_owned())).unwrap();
-        assert_eq!(listing.current_path, std::fs::canonicalize(root.path()).unwrap().to_string_lossy().into_owned());
+        assert_eq!(listing.current_path, display_path(&std::fs::canonicalize(root.path()).unwrap()));
         assert!(listing.parent_path.is_some());
         let folder = listing.entries.iter().find(|entry| entry.name == "folder").unwrap();
         assert_eq!(folder.kind, "directory");
