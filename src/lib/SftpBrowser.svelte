@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { t } from "$lib/i18n/index.svelte";
@@ -9,14 +9,18 @@
     connectionId = null,
     embedded = false,
     visible = true,
+    container = null,
     onclose,
   }: {
     connectionId?: string | null;
     embedded?: boolean;
     visible?: boolean;
+    /** Pane body this browser is attached to; re-parenting preserves its SFTP sessions. */
+    container?: HTMLElement | null;
     onclose: () => void;
   } = $props();
 
+  let root = $state<HTMLDivElement | null>(null);
   let connections = $state<ConnectionSummary[]>([]);
   let sessions = $state<SftpSessionInfo[]>([]);
   let activeId = $state("");
@@ -820,6 +824,7 @@
 
   function onBrowserKeydown(event: KeyboardEvent) {
     if (!visible) return;
+    if (!visible) return;
     if (event.key === "Tab") {
       const activeDialog = browserDialog?.querySelector<HTMLElement>(".sftp-small-dialog") ?? browserDialog;
       const focusable = Array.from(
@@ -890,6 +895,16 @@
     if (visible) void tick().then(() => searchInput?.focus());
   });
 
+  // Keep this browser mounted while its workspace tab moves between panes.
+  // Re-parenting the root preserves active SFTP sessions and transfer state.
+  $effect(() => {
+    const target = container;
+    const node = root;
+    if (!target || !node || node.parentElement === target) return;
+    target.appendChild(node);
+    untrack(() => { if (visible) void tick().then(() => searchInput?.focus()); });
+  });
+
   onMount(() => {
     let mounted = true;
     let stopProgress: (() => void) | undefined;
@@ -908,7 +923,7 @@
 
 <svelte:window onkeydown={onBrowserKeydown} />
 
-<div class="sftp-backdrop" class:embedded class:hidden={!visible}>
+<div bind:this={root} class="sftp-backdrop" class:embedded class:hidden={!visible}>
   <section bind:this={browserDialog} class="sftp-browser" role="dialog" aria-modal="true" aria-labelledby="sftp-title">
     <header class="sftp-header">
       <div class="sftp-heading">
