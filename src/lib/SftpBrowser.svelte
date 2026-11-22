@@ -924,7 +924,7 @@
 <svelte:window onkeydown={onBrowserKeydown} />
 
 <div bind:this={root} class="sftp-backdrop" class:embedded class:hidden={!visible}>
-  <section bind:this={browserDialog} class="sftp-browser" role="dialog" aria-modal="true" aria-labelledby="sftp-title">
+  <section bind:this={browserDialog} class="sftp-browser" role="dialog" aria-modal={embedded ? "false" : "true"} aria-labelledby="sftp-title">
     <header class="sftp-header">
       <div class="sftp-heading">
         <span class="sftp-mark" aria-hidden="true">
