@@ -3,7 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { t } from "$lib/i18n/index.svelte";
-  import type { ConnectionSummary, LocalDirectoryListing, SftpDirectory, SftpEntry, SftpSessionInfo } from "$lib/types";
+  import type { ConnectionSummary, LocalDirectoryListing, LocalFileEntry, SftpDirectory, SftpEntry, SftpSessionInfo } from "$lib/types";
 
   let {
     connectionId = null,
@@ -20,6 +20,7 @@
   let connections = $state<ConnectionSummary[]>([]);
   let sessions = $state<SftpSessionInfo[]>([]);
   let activeId = $state("");
+  let activePane = $state<"local" | "remote">("remote");
   let directories = $state<Record<string, SftpDirectory>>({});
   let selectedPaths = $state<Record<string, string>>({});
   let search = $state("");
@@ -39,8 +40,9 @@
   let pickerOpen = $state(false);
   let pickerSearch = $state("");
   let nameMode = $state<"mkdir" | "rename" | null>(null);
+  let namePane = $state<"local" | "remote">("remote");
   let nameValue = $state("");
-  let deleteTarget = $state<SftpEntry | null>(null);
+  let deleteTarget = $state<{ pane: "local" | "remote"; entries: Array<SftpEntry | LocalFileEntry> } | null>(null);
   let selectedRemotePaths = $state<Record<string, string[]>>({});
   let remoteSelectionAnchors = $state<Record<string, string>>({});
   type TransferProgress = {
@@ -49,6 +51,7 @@
     files_completed: number; files_total: number; bytes_transferred: number; bytes_total: number; error: string | null;
   };
   type TransferStartResult = { transfer_id: string | null; conflicts: string[] };
+  type DeleteBatchResult = { deleted: string[]; failed: Array<{ path: string; detail: string }> };
   let transferJobs = $state<TransferProgress[]>([]);
   let transferQueueHeight = $state(168);
   let resizingTransferQueue = $state(false);
@@ -77,6 +80,10 @@
   const selectedRemoteEntries = $derived(
     activeDirectory?.entries.filter((entry) => (selectedRemotePaths[activeId] ?? []).includes(entry.path)) ?? [],
   );
+  const selectedLocalEntries = $derived(
+    localDirectory?.entries.filter((entry) => localSelectedPaths.includes(entry.path)) ?? [],
+  );
+  const selectedLocalEntry = $derived(selectedLocalEntries.length === 1 ? selectedLocalEntries[0] : null);
   const localRoot = $derived.by(() => {
     const directory = localDirectory;
     if (!directory) return "";
@@ -315,42 +322,71 @@
     if (activeDirectory) await navigate(activeDirectory.current_path);
   }
 
-  async function showNameDialog(mode: "mkdir" | "rename") {
-    if (!activeSession || busy) return;
-    if (mode === "rename" && !selectedEntry) return;
+  async function showNameDialog(mode: "mkdir" | "rename", pane: "local" | "remote" = "remote", entry?: SftpEntry | LocalFileEntry) {
+    if (busy) return;
+    if (pane === "local") {
+      if (!localDirectory || localListing) return;
+      const selected = entry && entry.kind !== "symlink" && entry.kind !== "other"
+        ? entry
+        : selectedLocalEntry;
+      if (mode === "rename" && !selected) return;
+      if (mode === "rename" && entry) localSelectedPaths = [entry.path];
+      nameValue = mode === "rename" ? selected?.name ?? "" : "";
+    } else {
+      if (!activeSession || listing) return;
+      const selected = entry && "permissions" in entry ? entry : selectedEntry;
+      if (mode === "rename" && !selected) return;
+      if (mode === "rename" && selected) {
+        selectedPaths = { ...selectedPaths, [activeId]: selected.path };
+        selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [selected.path] };
+      }
+      nameValue = mode === "rename" ? selected?.name ?? "" : "";
+    }
     nameMode = mode;
-    nameValue = mode === "rename" ? selectedEntry?.name ?? "" : "";
+    namePane = pane;
     await tick();
     nameInput?.focus();
     nameInput?.select();
   }
 
   async function saveName() {
-    if (!activeSession || !activeDirectory || !nameMode || busy) return;
+    if (!nameMode || busy) return;
     const value = nameValue.trim();
     if (!value) return;
-    const currentPath = activeDirectory.current_path;
     busy = true;
     errorMessage = "";
     try {
-      if (nameMode === "mkdir") {
-        await invoke("sftp_mkdir", {
-          sessionId: activeId,
-          remotePath: activeDirectory.current_path,
-          name: value,
-        });
-        statusMessage = t("sftp.folderCreated", { name: value });
-      } else if (selectedEntry) {
-        await invoke("sftp_rename", {
-          sessionId: activeId,
-          remotePath: selectedEntry.path,
-          newName: value,
-        });
-        statusMessage = t("sftp.renamed", { name: value });
+      if (namePane === "local") {
+        const currentPath = localDirectory?.current_path;
+        if (!currentPath) return;
+        if (nameMode === "mkdir") {
+          await invoke("local_create_directory", { parentPath: currentPath, name: value });
+          statusMessage = t("sftp.localFolderCreated", { name: value });
+        } else if (selectedLocalEntry) {
+          await invoke("local_rename_entry", { path: selectedLocalEntry.path, newName: value });
+          statusMessage = t("sftp.localRenamed", { name: value });
+        } else {
+          return;
+        }
+        nameMode = null;
+        await loadLocalDirectory(currentPath);
+      } else {
+        const currentPath = activeDirectory?.current_path;
+        if (!activeSession || !currentPath) return;
+        if (nameMode === "mkdir") {
+          await invoke("sftp_mkdir", { sessionId: activeId, remotePath: currentPath, name: value });
+          statusMessage = t("sftp.folderCreated", { name: value });
+        } else if (selectedEntry) {
+          await invoke("sftp_rename", { sessionId: activeId, remotePath: selectedEntry.path, newName: value });
+          statusMessage = t("sftp.renamed", { name: value });
+        } else {
+          return;
+        }
+        nameMode = null;
+        selectedPaths = { ...selectedPaths, [activeId]: "" };
+        selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [] };
+        await listDirectory(activeId, currentPath);
       }
-      nameMode = null;
-      selectedPaths = { ...selectedPaths, [activeId]: "" };
-      await listDirectory(activeId, currentPath);
     } catch (error) {
       errorMessage = t("sftp.operationFailed", { detail: message(error) });
     } finally {
@@ -358,29 +394,73 @@
     }
   }
 
+  function requestDelete(pane: "local" | "remote", entry?: SftpEntry | LocalFileEntry) {
+    if (busy) return;
+    if (pane === "local") {
+      const entries = entry && entry.kind !== "symlink" && entry.kind !== "other"
+        ? [entry]
+        : selectedLocalEntries.filter((item) => item.kind !== "symlink" && item.kind !== "other");
+      if (!entries.length) return;
+      deleteTarget = { pane, entries };
+    } else {
+      const entries = entry
+        ? [entry]
+        : selectedRemoteEntries;
+      if (!entries.length) return;
+      deleteTarget = { pane, entries };
+    }
+  }
+
   async function dismissDelete() {
+    const pane = deleteTarget?.pane ?? activePane;
     deleteTarget = null;
     await tick();
-    searchInput?.focus();
+    if (pane === "local") localSearchInput?.focus();
+    else searchInput?.focus();
   }
 
   async function confirmDelete() {
     const target = deleteTarget;
-    if (!target || !activeSession || busy) return;
-    const currentPath = activeDirectory?.current_path ?? ".";
+    if (!target || busy) return;
+    if (target.pane === "remote" && !activeSession) return;
+    const currentRemotePath = activeDirectory?.current_path ?? ".";
+    const currentLocalPath = localDirectory?.current_path ?? "";
     busy = true;
     errorMessage = "";
     try {
-      await invoke("sftp_delete", {
-        sessionId: activeId,
-        remotePath: target.path,
-      });
+      let result: DeleteBatchResult;
+      if (target.pane === "remote") {
+        result = await invoke<DeleteBatchResult>("sftp_delete_many", {
+          sessionId: activeId,
+          remotePaths: target.entries.map((entry) => entry.path),
+        });
+        selectedPaths = { ...selectedPaths, [activeId]: "" };
+        selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [] };
+        if (result.deleted.length) statusMessage = t("sftp.deletedCount", { count: result.deleted.length });
+        if (result.failed.length) errorMessage = t("sftp.deletePartial", {
+          deleted: result.deleted.length,
+          failed: result.failed.length,
+          detail: result.failed.slice(0, 3).map((item) => item.path + ": " + item.detail).join("; "),
+        });
+      } else {
+        result = await invoke<DeleteBatchResult>("local_delete_many", {
+          paths: target.entries.map((entry) => entry.path),
+        });
+        localSelectedPaths = [];
+        localSelectionAnchor = "";
+        if (result.deleted.length) statusMessage = t("sftp.localDeletedCount", { count: result.deleted.length });
+        if (result.failed.length) errorMessage = t("sftp.localDeletePartial", {
+          deleted: result.deleted.length,
+          failed: result.failed.length,
+          detail: result.failed.slice(0, 3).map((item) => item.path + ": " + item.detail).join("; "),
+        });
+      }
       deleteTarget = null;
-      selectedPaths = { ...selectedPaths, [activeId]: "" };
-      statusMessage = t("sftp.deleted", { name: target.name });
-      await listDirectory(activeId, currentPath);
+      if (target.pane === "remote" && result.deleted.length) await listDirectory(activeId, currentRemotePath);
+      else if (target.pane === "local" && result.deleted.length) await loadLocalDirectory(currentLocalPath);
       await tick();
-      searchInput?.focus();
+      if (target.pane === "local") localSearchInput?.focus();
+      else searchInput?.focus();
     } catch (error) {
       errorMessage = t("sftp.deleteFailed", { detail: message(error) });
     } finally {
