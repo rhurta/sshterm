@@ -167,7 +167,10 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 - [x] Host the browser in a distinct top-level workspace tab; keep the SSH workspace mounted while switching tabs.
 - [x] Implement remote path navigation, breadcrumbs, listing, refresh and in-browser filtering.
 - [x] Add backend-safe create-directory, same-directory rename and non-recursive delete commands; delete does not follow symlinks or recurse into directories.
-- [x] Add native local file/folder selection dialogs for upload sources and download destinations.
+- [x] Add a side-by-side local/remote file manager with local drive/path navigation, metadata listing, filtering and independent selection.
+- [x] Support plain click, Ctrl-click multi-selection, Shift-click range selection and Ctrl+Shift additive range selection in both panes.
+- [x] Support drag-and-drop and toolbar upload/download through the existing transfer queue; use the current local pane directory as the download destination.
+- [x] Add a fixed-default, pointer-resizable transfer queue with keyboard-accessible height controls.
 - [x] Add keyboard navigation, F2 rename, Delete confirmation, focus management and nested-dialog focus traps.
 - [ ] Windows UI acceptance across all seven themes, minimum window size, transfer operations and vault-lock lifecycle.
 
@@ -179,7 +182,7 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 - [x] Detect destination conflicts before starting and require explicit overwrite confirmation.
 - [x] Stage each destination file beside its final path and rename only after successful close/flush; restore the prior destination if overwrite commit fails.
 - [x] Remove incomplete temporary files on cancellation and transfer failures; cancel and reap jobs before closing a session or locking the vault.
-- [x] Keep local upload selections and download folders isolated per SFTP session.
+- [x] Resolve each transfer's local source/destination from the active local pane at launch, keeping the selected paths and destination explicit in the queued job.
 
 ### M8e — Hardening and release gate
 

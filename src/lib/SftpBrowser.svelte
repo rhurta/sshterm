@@ -290,11 +290,13 @@
     chooseEntry(entry);
     const selected = selectedRemotePaths[activeId] ?? [];
     if (event.shiftKey) {
-      const anchor = remoteSelectionAnchors[activeId] || entry.path;
-      const range = pathsBetween(filteredEntries.map((item) => item.path), anchor, entry.path);
+      const visiblePaths = filteredEntries.map((item) => item.path);
+      const savedAnchor = remoteSelectionAnchors[activeId];
+      const anchor = savedAnchor && visiblePaths.includes(savedAnchor) ? savedAnchor : entry.path;
+      const range = pathsBetween(visiblePaths, anchor, entry.path);
       const keep = event.ctrlKey || event.metaKey ? selected : [];
       selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [...new Set([...keep, ...range])] };
-      if (!remoteSelectionAnchors[activeId]) remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: entry.path };
+      if (anchor !== savedAnchor) remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: anchor };
     } else if (event.ctrlKey || event.metaKey) {
       selectedRemotePaths = { ...selectedRemotePaths, [activeId]: selected.includes(entry.path) ? selected.filter((path) => path !== entry.path) : [...selected, entry.path] };
       remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: entry.path };
@@ -432,12 +434,13 @@
     localFocusedPath = entry.path;
     if (entry.kind === "symlink" || entry.kind === "other") return;
     if (event.shiftKey) {
-      const anchor = localSelectionAnchor || entry.path;
       const eligiblePaths = filteredLocalEntries.filter((item) => item.kind !== "symlink" && item.kind !== "other").map((item) => item.path);
+      const savedAnchor = localSelectionAnchor;
+      const anchor = savedAnchor && eligiblePaths.includes(savedAnchor) ? savedAnchor : entry.path;
       const range = pathsBetween(eligiblePaths, anchor, entry.path);
       const keep = event.ctrlKey || event.metaKey ? localSelectedPaths : [];
       localSelectedPaths = [...new Set([...keep, ...range])];
-      if (!localSelectionAnchor) localSelectionAnchor = entry.path;
+      if (anchor !== savedAnchor) localSelectionAnchor = anchor;
     } else if (event.ctrlKey || event.metaKey) {
       localSelectedPaths = localSelectedPaths.includes(entry.path)
         ? localSelectedPaths.filter((path) => path !== entry.path)
@@ -1001,7 +1004,7 @@
               <div class="sftp-empty-list">{search ? t("sftp.noSearchResults") : t("sftp.emptyDirectory")}</div>
             {:else}
               {#each filteredEntries as entry, index (entry.path)}
-                <div class="sftp-entry" class:selected={selectedPaths[activeId] === entry.path || (selectedRemotePaths[activeId] ?? []).includes(entry.path)}>
+                <div class="sftp-entry" class:selected={(selectedRemotePaths[activeId] ?? []).includes(entry.path)} class:focused={selectedPaths[activeId] === entry.path}>
                   <div class="entry-name-cell">
                     <input class="entry-select" type="checkbox" checked={(selectedRemotePaths[activeId] ?? []).includes(entry.path)} aria-label={t("sftp.selectEntry", { name: entry.name })} onchange={(event) => toggleRemoteSelection(entry.path, event.currentTarget.checked)} />
                     <button class="entry-name" class:directory-entry={entry.kind === "directory"} class:symlink-entry={entry.kind === "symlink"} tabindex={selectedPaths[activeId] === entry.path || (!selectedPaths[activeId] && index === 0) ? 0 : -1} draggable={entry.kind === "file" || entry.kind === "directory"} aria-label={entry.name + (entry.kind === "directory" ? ", " + t("sftp.directory") : "")} onclick={(event) => selectRemoteEntry(entry, event)} ondblclick={() => openEntry(entry)} onfocus={() => chooseEntry(entry)} onkeydown={(event) => onRowKeydown(event, index, entry)} ondragstart={(event) => { event.dataTransfer?.setData("application/x-sshterm-remote-path", entry.path); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy"; }}>
@@ -1259,7 +1262,7 @@
   .sftp-entry, .local-entry { flex: 0 0 30px; min-height: 30px; color: var(--text); border: 1px solid transparent; border-radius: 4px; font-size: var(--ui-font-dense); }
   .sftp-entry:hover, .local-entry:hover { background: var(--surface-hover); }
   .sftp-entry.selected, .local-entry.selected { background: var(--surface-hover); border-color: var(--accent); }
-  .local-entry.focused:not(.selected) { border-color: var(--border-strong); }
+  .local-entry.focused:not(.selected), .sftp-entry.focused:not(.selected) { border-color: var(--border-strong); }
   .entry-name-cell { display: flex; align-items: center; min-width: 0; gap: 5px; }
   .entry-select { width: 13px; height: 13px; flex: 0 0 13px; margin: 0; accent-color: var(--accent); }
   .entry-name { display: flex; align-items: center; min-width: 0; gap: 6px; width: 100%; height: 28px; padding: 0 2px; overflow: hidden; text-align: left; color: var(--text); background: transparent; border: 0; border-radius: 3px; cursor: pointer; font: inherit; font-size: var(--ui-font-dense); }

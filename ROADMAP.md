@@ -368,7 +368,7 @@ See [docs/M8-implementation-plan.md](docs/M8-implementation-plan.md) for archite
 
 - **M8a — Protocol/security:** pinned `russh` + `russh-sftp`; direct and multi-hop authentication, known-host verification, hashed/revoked-host checks and SFTP subsystem setup are implemented.
 - **M8b — Backend lifecycle:** managed sessions, typed open/list/close commands, remote listing/navigation, cleanup on vault lock and app exit. Earlier Windows acceptance confirmed password and Windows OpenSSH agent authentication.
-- **M8c — Browser UI:** multi-session browser hosted in top-level SFTP workspace tabs; path navigation/listing/filtering, safe create/rename/delete, local file/folder dialogs and keyboard/focus support implemented. Manual Windows visual acceptance remains pending.
+- **M8c — Browser UI:** multi-session browser hosted in top-level SFTP workspace tabs, with side-by-side local and remote file panes, independent path navigation/filtering, multi-selection, safe remote create/rename/delete, drag-and-drop transfers and keyboard/focus support. Manual Windows visual acceptance remains pending.
 - **M8d — Transfers:** recursive multi-select upload/download, bounded streaming, per-transfer progress, cancellation, overwrite confirmation, temporary-file cleanup and per-session local staging implemented.
 - **M8e — CI/hardening:** Windows portable build and frontend/Rust checks pass; Linux local-OpenSSH direct/jump integration passes recursive transfer, large/empty/Unicode/space-name, overwrite and cancellation checks. Permission/network-disconnect cases and final Windows UI/transfer smoke tests remain open.
 - The SFTP port override is optional and inherits the saved connection's SSH port when unset. Jump hosts retain their own saved ports.
