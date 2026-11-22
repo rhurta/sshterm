@@ -1,6 +1,6 @@
 # M8 — Native SFTP implementation plan
 
-**Status:** M8a in progress; architecture and delivery gates defined  
+**Status:** M8 implementation complete; Windows browser/transfer acceptance remains pending  
 **Scope:** A connection-backed SFTP browser with direct and multi-hop access, file operations, and cancellable transfers.  
 **Dependency boundary:** M8 introduces the native `russh` client for SFTP only. Interactive terminals continue using Windows OpenSSH through ConPTY; the broader transport replacement remains M10.
 
@@ -20,6 +20,8 @@ M8 is complete when a user can open an SFTP browser for a saved connection and:
 - Close SFTP sessions and cancel transfers on vault lock and application exit.
 
 The implementation must not store credentials, file contents, transfer drafts or remote directory listings in plain `config.toml`. Secrets remain in the encrypted vault or transient memory.
+
+**Workspace integration:** SFTP opens in its own top-level workspace tab. The existing SSH terminal and split-tree/drag-and-drop behavior remain unchanged; mixed SSH/SFTP panes are deliberately deferred to a follow-up after M8 is merged.
 
 ## 2. Architecture decisions
 
@@ -156,31 +158,38 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 - [x] Close SFTP sessions on vault lock independently of the M7 tunnel-lock preference.
 - [x] Close SFTP sessions on application exit.
 - [x] Add remote path validation and path-navigation unit tests.
-- [ ] Verify lifecycle and directory listing against Windows OpenSSH (manual acceptance).
-- [ ] Add integration coverage for open/list/close and vault-lock races.
+- [ ] Complete the Windows UI acceptance pass for open/list/close, vault locking and agent/password authentication in the integrated browser.
+- [ ] Add Tauri-command integration coverage for open/list/close and vault-lock races; the local protocol-level direct/jump coverage is in M8e.
 
 ### M8c — Browser UI and file operations
 
 - [x] Add SFTP entry points in the title bar and saved-connection context menu; open a dedicated multi-session browser.
+- [x] Host the browser in a distinct top-level workspace tab; keep the SSH workspace mounted while switching tabs.
 - [x] Implement remote path navigation, breadcrumbs, listing, refresh and in-browser filtering.
 - [x] Add backend-safe create-directory, same-directory rename and non-recursive delete commands; delete does not follow symlinks or recurse into directories.
-- [x] Add local open/save/folder selection dialogs; selections are staged for M8d transfers.
-- [x] Add keyboard navigation, F2 rename, Delete confirmation, and focus the search box or picker search when opened.
-- [ ] Windows UI acceptance across all seven themes, minimum window size and vault-lock lifecycle.
+- [x] Add native local file/folder selection dialogs for upload sources and download destinations.
+- [x] Add keyboard navigation, F2 rename, Delete confirmation, focus management and nested-dialog focus traps.
+- [ ] Windows UI acceptance across all seven themes, minimum window size, transfer operations and vault-lock lifecycle.
 
-### M8d — Transfer queue
+### M8d — Transfer queue (implemented)
 
-- Implement single/multi-file and recursive folder upload/download.
-- Add overwrite confirmation, per-file/overall progress, cancellation and partial-file cleanup.
-- Handle network drop, permission errors, remote disk full, disconnect and retry-safe cleanup.
+- [x] Stream single/multi-file and recursive folder upload/download in bounded 256 KiB chunks; cap a transfer plan at 100,000 entries.
+- [x] Build and validate the complete transfer plan before starting; preserve relative folder paths and reject symbolic links, unsupported names and duplicate destination mappings.
+- [x] Add per-transfer progress events, bytes/files totals, current-file status and independent cancellation.
+- [x] Detect destination conflicts before starting and require explicit overwrite confirmation.
+- [x] Stage each destination file beside its final path and rename only after successful close/flush; restore the prior destination if overwrite commit fails.
+- [x] Remove incomplete temporary files on cancellation and transfer failures; cancel and reap jobs before closing a session or locking the vault.
+- [x] Keep local upload selections and download folders isolated per SFTP session.
 
 ### M8e — Hardening and release gate
 
-- Run the Windows portable build and Rust/frontend checks.
-- Add Linux local-OpenSSH integration coverage for direct and multi-hop SFTP, while retaining Windows x64 build coverage.
-- Test large files, empty files, Unicode and spaces in names, deep folders, non-22 ports, overwrite/cancel, permission errors and remote disconnect.
-- Confirm vault lock and app exit close SFTP and leave no background transfers or partial final files.
-- Confirm M7 tunnels and existing OpenSSH terminal sessions are unaffected.
+- [x] Windows x64 portable executable build, frontend checks, Rust formatting and Rust tests in GitHub Actions.
+- [x] Linux local-OpenSSH integration test for direct and multi-hop access, recursive upload/download, empty/large/Unicode/space-containing files, overwrite and cancellation cleanup.
+- [x] Validate Windows-safe download names and duplicate destination rejection before copying.
+- [ ] Exercise the integrated browser and transfers manually on Windows across all seven themes, minimum window size and vault-lock lifecycle.
+- [ ] Add Tauri-command lifecycle/race coverage for open/list/close, vault lock and application exit.
+- [ ] Add explicit integration cases for permission-denied destinations, remote disk full, network interruption and disconnect during a transfer.
+- [ ] Re-run the M7 Windows smoke checklist against the final merged build.
 
 ## 6. Explicit non-goals
 
