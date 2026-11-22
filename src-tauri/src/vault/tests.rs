@@ -201,7 +201,7 @@ fn scripts_vault_roundtrips_and_is_independent_of_the_connections_vault() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("scripts.vault");
     let mut library = ScriptsVault::create_with(&path, "pw", FAST).unwrap();
-    let id = library.data.save_script(None, None, "Hello", "echo hi", false, 7).unwrap();
+    let id = library.data.save_script(None, None, "Hello", "echo hi", false, 7, None).unwrap();
     library.save().unwrap();
     drop(library);
 

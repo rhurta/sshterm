@@ -4,7 +4,7 @@
   import { toBase64 } from "$lib/encoding";
   import { t } from "$lib/i18n/index.svelte";
   import ScriptsDialog from "./ScriptsDialog.svelte";
-  import type { ScriptDetail } from "$lib/types";
+  import type { FavoriteScript, ScriptDetail } from "$lib/types";
   import { resolveBroadcastTargets, type BroadcastSession, type BroadcastTargetMode } from "$lib/broadcastTargets";
 
   let {
@@ -23,6 +23,9 @@
   // Scripts library: the dialog (save or load) and the script the text came from.
   let scriptsDialog = $state<"save" | "load" | null>(null);
   let loadedScript = $state<{ id: string; name: string } | null>(null);
+  // Favorite scripts: one-click buttons under the editor.
+  let favorites = $state<FavoriteScript[]>([]);
+  let pendingFavorite = $state<ScriptDetail | null>(null);
   let saveButton: HTMLButtonElement | undefined = $state();
   let loadButton: HTMLButtonElement | undefined = $state();
   let targetMode = $state<BroadcastTargetMode>("active");
@@ -192,9 +195,42 @@
     statusError = false;
   }
 
+  async function loadFavorites() {
+    try {
+      favorites = await invoke<FavoriteScript[]>("scripts_favorites");
+    } catch {
+      favorites = []; // library locked, needs its password, or unavailable: no buttons
+    }
+  }
+
+  // Refresh whenever the console is shown (the library may have changed meanwhile).
+  $effect(() => {
+    if (visible) void loadFavorites();
+  });
+
+  async function useFavorite(favorite: FavoriteScript) {
+    try {
+      const script = await invoke<ScriptDetail>("scripts_get", { id: favorite.id });
+      if (draft.trim().length === 0) {
+        applyLoadedScript(script, "replace");
+      } else {
+        pendingFavorite = script; // ask whether to replace or append
+      }
+    } catch {
+      await loadFavorites(); // it was deleted or the library closed
+    }
+  }
+
+  function finishFavorite(how: "replace" | "append") {
+    if (pendingFavorite) applyLoadedScript(pendingFavorite, how);
+    pendingFavorite = null;
+    editor?.focus();
+  }
+
   function scriptsDialogClosed() {
     const opener = scriptsDialog === "save" ? saveButton : loadButton;
     scriptsDialog = null;
+    void loadFavorites();
     void tick().then(() => (draft.length > 0 ? opener : loadButton)?.focus());
   }
 
@@ -307,6 +343,15 @@
         disabled={targetResolution.targets.length === 0 || sending}
       ></textarea>
 
+      {#if pendingFavorite}
+        <div class="favorite-confirm" role="alert">
+          <span>{t("scripts.draftNotEmpty")}</span>
+          <button class="send" onclick={() => finishFavorite("replace")}>{t("scripts.replace")}</button>
+          <button class="secondary" onclick={() => finishFavorite("append")}>{t("scripts.append")}</button>
+          <button class="secondary" onclick={() => (pendingFavorite = null)}>{t("scripts.cancel")}</button>
+        </div>
+      {/if}
+
       <div class="console-actions">
         <span class="status" class:error={statusError} role="status">{status}</span>
         {#if loadedScript}
@@ -325,6 +370,20 @@
           {sending ? t("console.sending") : t("console.send")}
         </button>
       </div>
+
+      {#if favorites.length > 0}
+        <div class="favorites" role="group" aria-label={t("console.favorites")}>
+          <span class="favorites-label" aria-hidden="true">★</span>
+          {#each favorites as favorite (favorite.id)}
+            <button
+              class="favorite"
+              onclick={() => useFavorite(favorite)}
+              title={favorite.folder_path ? `${favorite.folder_path} / ${favorite.name}` : favorite.name}
+              aria-label={t("console.loadFavorite", { name: favorite.name })}
+            >{favorite.name}</button>
+          {/each}
+        </div>
+      {/if}
     </div>
   </div>
 </section>
@@ -503,6 +562,14 @@
   }
   .status, .confirmation { flex: 1; min-width: 0; color: var(--text-secondary); font-size: var(--ui-font-meta); }
   .status.error { color: var(--danger); }
+  /* One line that scrolls sideways, so a short console keeps its editor. */
+  .favorites { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.3rem; overflow-x: auto; overflow-y: hidden; padding-bottom: 0.15rem; flex: 0 0 auto; }
+  .favorites-label { color: var(--warning); font-size: var(--ui-font-meta); }
+  .favorite { flex: 0 0 auto; font: inherit; font-size: var(--ui-font-meta); max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.55rem; cursor: pointer; }
+  .favorite:hover { color: var(--text); background: var(--surface-hover); }
+  .favorite:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .favorite-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; padding: 0.35rem 0.5rem; background: var(--warning-bg, var(--surface)); border: 1px solid var(--warning-border, var(--border)); border-radius: 4px; font-size: var(--ui-font-meta); }
+  .favorite-confirm span { flex: 1 1 10rem; }
   .loaded-script { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--ui-font-meta); }
   button {
     flex: 0 0 auto;

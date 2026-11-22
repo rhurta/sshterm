@@ -424,4 +424,10 @@ export const es: Record<MessageKey, string> = {
   "scripts.error.locked": "La biblioteca de scripts está bloqueada.",
   "scripts.error.io_error": "No se pudo escribir el archivo de scripts.",
   "scripts.error.unknown": "Algo salió mal: {detail}",
+  "console.favorites": "Scripts favoritos",
+  "console.loadFavorite": "Cargar “{name}” en el editor",
+  "scripts.favorite": "Favorito",
+  "scripts.unfavorite": "Quitar favorito",
+  "scripts.addFavorite": "Añadir a favoritos (botón bajo la consola)",
+  "scripts.favoriteMark": "Favorito",
 };

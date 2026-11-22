@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::paths;
-use crate::vault::scripts::{ScriptDetail, ScriptError, ScriptSummary, ScriptsData};
+use crate::vault::scripts::{FavoriteScript, ScriptDetail, ScriptError, ScriptSummary, ScriptsData};
 use crate::vault::{ScriptsVault, VaultError};
 
 pub enum ScriptsLibrary {
@@ -167,6 +167,9 @@ pub struct SaveScript {
     /// Replace a script with the same name in the folder (new scripts only).
     #[serde(default)]
     pub overwrite: bool,
+    /// `Some` sets or clears the favorite mark; omitted keeps it.
+    #[serde(default)]
+    pub favorite: Option<bool>,
 }
 
 #[tauri::command]
@@ -179,8 +182,19 @@ pub fn scripts_save(state: State<'_, ScriptsState>, request: SaveScript) -> Resu
             &request.body,
             request.overwrite,
             now(),
+            request.favorite,
         )
     })
+}
+
+#[tauri::command]
+pub fn scripts_favorites(state: State<'_, ScriptsState>) -> Result<Vec<FavoriteScript>, String> {
+    read(&state, |data| Ok(data.favorites()))
+}
+
+#[tauri::command]
+pub fn scripts_set_favorite(state: State<'_, ScriptsState>, id: String, favorite: bool) -> Result<(), String> {
+    mutate(&state, |data| data.set_favorite(&id, favorite))
 }
 
 #[tauri::command]

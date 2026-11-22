@@ -64,6 +64,20 @@ save overwrites the earlier one. Coordinate or keep personal libraries.
   anything: the multi-line confirmation and target selection of the console still apply.
 - The console shows `Script: name` while its text comes from a script; Clear resets it.
 
+**Favorites** (quick access under the console)
+- Mark a script as a favorite with the **☆ Favorite** button in either dialog (it shows
+  **★ Remove favorite** for favorites, and favorites carry a ★ in the tree), or tick
+  **Add to favorites** while saving. Updating a script keeps its mark unless you change the
+  checkbox.
+- Favorites appear as buttons in a row **below the command console**, sorted by name. The
+  row is one line that scrolls sideways; hovering a button shows the folder path, and
+  nothing shows while the library is locked or has no favorites.
+- Clicking a button loads that script into the editor, like Load. If the editor already
+  has text, you choose **Replace the text** or **Append to the text** (or cancel); with an
+  empty editor it loads at once. Loading never sends anything.
+- The row refreshes when the console is shown and when a scripts dialog closes. Deleting
+  a script removes its button. Folders cannot be favorites.
+
 **Managing the library** (both dialogs): New folder, Rename (F2), Move to…, Delete
 (Delete key; folders delete with their contents, after a confirmation).
 
@@ -86,7 +100,7 @@ library path (use `config.toml`).
   `ScriptsVault` are type aliases over it.
 - `vault/scripts.rs`: the tree (`ScriptNode`), validation and operations (save, rename,
   move with cycle check, delete, search), pure and unit-tested.
-- `script_store.rs`: `ScriptsState` and the `scripts_*` commands. Every change is
+- `script_store.rs`: `ScriptsState` and the `scripts_*` commands (including `scripts_favorites` and `scripts_set_favorite`; the favorite mark is a `favorite` field on each script, defaulting to false in older libraries). Every change is
   saved at once and rolled back in memory if the write fails.
 - Frontend: `ScriptsDialog.svelte`, `scriptsTree.ts` (visible rows, search filter,
   folder options, name suggestion; tested), and the two buttons in `CommandConsole.svelte`.

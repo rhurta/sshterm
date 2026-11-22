@@ -35,6 +35,8 @@
   let error = $state("");
   let busy = $state(false);
   let unlockPassword = $state("");
+  // Save mode: mark the saved script as a favorite (a button under the console).
+  let favoriteChecked = $state(false);
 
   type Edit = { kind: "newFolder" | "rename" | "move"; value: string };
   let edit = $state<Edit | null>(null);
@@ -91,6 +93,8 @@
       void loadPreview(loaded.id);
     }
     name = mode === "save" ? (loaded?.name ?? suggestScriptName(draft)) : "";
+    const loadedNode = loaded ? findScriptNode(tree, loaded.id) : null;
+    favoriteChecked = loadedNode?.type === "script" ? loadedNode.favorite : false;
     await tick();
     // Save mode focuses the name (the main thing to type); load mode focuses the search.
     if (status?.state === "needs_password") unlockEl?.focus();
@@ -131,7 +135,10 @@
     const node = findScriptNode(tree, id);
     if (node?.type === "script") {
       await loadPreview(id);
-      if (mode === "save") name = node.name; // like a file dialog: picking a file fills the name
+      if (mode === "save") {
+        name = node.name; // like a file dialog: picking a file fills the name
+        favoriteChecked = node.favorite;
+      }
     } else {
       preview = null;
     }
@@ -266,6 +273,18 @@
     });
   }
 
+  const selectedScript = $derived(selected?.type === "script" ? selected : null);
+
+  function toggleFavorite() {
+    const script = selectedScript;
+    if (!script) return;
+    void run(async () => {
+      await invoke("scripts_set_favorite", { id: script.id, favorite: !script.favorite });
+      await refresh();
+      if (mode === "save" && name.trim().toLowerCase() === script.name.toLowerCase()) favoriteChecked = !script.favorite;
+    });
+  }
+
   function askDelete() {
     if (!selectedId) return;
     edit = null;
@@ -303,7 +322,7 @@
       try {
         const id = await invoke<string>("scripts_save", {
           // Fields of the request object keep their Rust (snake_case) names.
-          request: { id: updating ? loaded!.id : null, folder_id: targetFolder, name: trimmed, body: draft, overwrite },
+          request: { id: updating ? loaded!.id : null, folder_id: targetFolder, name: trimmed, body: draft, overwrite, favorite: favoriteChecked },
         });
         onsaved({ id, name: trimmed });
         onclose();
@@ -381,6 +400,9 @@
             <button class="ghost" disabled={busy || !selected} onclick={() => startEdit("rename")}>{t("scripts.rename")}</button>
             <button class="ghost" disabled={busy || !selected} onclick={() => startEdit("move")}>{t("scripts.move")}</button>
             <button class="ghost" disabled={busy || !selected} onclick={askDelete}>{t("scripts.delete")}</button>
+            <button class="ghost" disabled={busy || !selectedScript} aria-pressed={selectedScript?.favorite ?? false} onclick={toggleFavorite}>
+              {selectedScript?.favorite ? `★ ${t("scripts.unfavorite")}` : `☆ ${t("scripts.favorite")}`}
+            </button>
           </div>
 
           {#if edit}
@@ -433,6 +455,9 @@
                 {:else}
                   <span class="chevron" aria-hidden="true">·</span>
                   <span>{row.node.name}</span>
+                  {#if row.node.favorite}
+                    <span class="star" role="img" aria-label={t("scripts.favoriteMark")} title={t("scripts.favoriteMark")}>★</span>
+                  {/if}
                 {/if}
               </button>
             {/each}
@@ -461,6 +486,10 @@
               {t("scripts.folder")}:
               <strong>{targetFolder ? (findScriptNode(tree, targetFolder)?.name ?? "") : t("scripts.topLevel")}</strong>
             </p>
+            <label class="check">
+              <input type="checkbox" bind:checked={favoriteChecked} />
+              {t("scripts.addFavorite")}
+            </label>
             <p class="hint">{t("scripts.saveHint")}</p>
             <textarea readonly value={draft} aria-label={t("scripts.preview")} spellcheck="false"></textarea>
           {:else}
@@ -647,6 +676,24 @@
     flex: 0 0 auto;
     color: var(--muted);
     text-align: center;
+  }
+  .star {
+    color: var(--warning);
+    font-size: 0.8rem;
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+  .check input {
+    accent-color: var(--accent);
+  }
+  button[aria-pressed="true"] {
+    color: var(--warning);
+    border-color: var(--warning-border, var(--border));
   }
   .folder-name {
     font-weight: 600;

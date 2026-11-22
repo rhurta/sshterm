@@ -28,6 +28,9 @@ pub enum ScriptNode {
         /// Unix seconds of the last save.
         #[serde(default)]
         updated_at: u64,
+        /// Shown as a one-click button under the command console.
+        #[serde(default)]
+        favorite: bool,
     },
 }
 
@@ -74,7 +77,7 @@ impl Default for ScriptsData {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ScriptSummary {
     Folder { id: String, name: String, children: Vec<ScriptSummary> },
-    Script { id: String, name: String, updated_at: u64, size: usize },
+    Script { id: String, name: String, updated_at: u64, size: usize, favorite: bool },
 }
 
 /// One script with its body and the folder it lives in (`None` = top level).
@@ -84,6 +87,16 @@ pub struct ScriptDetail {
     pub name: String,
     pub body: String,
     pub folder_id: Option<String>,
+    pub favorite: bool,
+}
+
+/// A favorite script as the console's quick-load row needs it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FavoriteScript {
+    pub id: String,
+    pub name: String,
+    /// Folder names from the top level, joined with " / " ("" at the top level).
+    pub folder_path: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,11 +224,12 @@ impl ScriptsData {
                     ScriptNode::Folder { id, name, children } => {
                         ScriptSummary::Folder { id: id.clone(), name: name.clone(), children: convert(children) }
                     }
-                    ScriptNode::Script { id, name, body, updated_at } => ScriptSummary::Script {
+                    ScriptNode::Script { id, name, body, updated_at, favorite } => ScriptSummary::Script {
                         id: id.clone(),
                         name: name.clone(),
                         updated_at: *updated_at,
                         size: body.len(),
+                        favorite: *favorite,
                     },
                 })
                 .collect()
@@ -225,11 +239,12 @@ impl ScriptsData {
 
     pub fn get(&self, id: &str) -> Result<ScriptDetail> {
         match find(&self.tree, id) {
-            Some(ScriptNode::Script { id, name, body, .. }) => Ok(ScriptDetail {
+            Some(ScriptNode::Script { id, name, body, favorite, .. }) => Ok(ScriptDetail {
                 id: id.clone(),
                 name: name.clone(),
                 body: body.clone(),
                 folder_id: parent_of(&self.tree, id, None).flatten(),
+                favorite: *favorite,
             }),
             _ => Err(ScriptError::NotFound),
         }
@@ -251,6 +266,9 @@ impl ScriptsData {
     /// - `id = Some(..)`: updates that script (body, and name/folder when they changed).
     /// - `id = None`: creates a script in `parent`; if a script with that name exists
     ///   there it is replaced only when `overwrite` is true, otherwise `NameExists`.
+    ///
+    /// `favorite`: `Some(flag)` sets the favorite mark, `None` keeps it (new scripts
+    /// start without one).
     pub fn save_script(
         &mut self,
         id: Option<&str>,
@@ -259,6 +277,7 @@ impl ScriptsData {
         body: &str,
         overwrite: bool,
         now: u64,
+        favorite: Option<bool>,
     ) -> Result<String> {
         let name = validate_name(name)?;
         if body.len() > MAX_SCRIPT_BYTES {
@@ -274,9 +293,12 @@ impl ScriptsData {
                     return Err(ScriptError::NameExists);
                 }
                 let mut node = take(&mut self.tree, id).ok_or(ScriptError::NotFound)?;
-                if let ScriptNode::Script { body: old_body, updated_at, .. } = &mut node {
+                if let ScriptNode::Script { body: old_body, updated_at, favorite: mark, .. } = &mut node {
                     *old_body = body.to_string();
                     *updated_at = now;
+                    if let Some(flag) = favorite {
+                        *mark = flag;
+                    }
                 }
                 node.set_name(name);
                 list_mut(&mut self.tree, parent)?.push(node);
@@ -286,19 +308,72 @@ impl ScriptsData {
                 let list = list_mut(&mut self.tree, parent)?;
                 if let Some(existing) = list.iter_mut().find(|node| same_name(node.name(), &name)) {
                     return match existing {
-                        ScriptNode::Script { id, body: old_body, updated_at, .. } if overwrite => {
+                        ScriptNode::Script { id, body: old_body, updated_at, favorite: mark, .. } if overwrite => {
                             *old_body = body.to_string();
                             *updated_at = now;
+                            if let Some(flag) = favorite {
+                                *mark = flag;
+                            }
                             Ok(id.clone())
                         }
                         _ => Err(ScriptError::NameExists),
                     };
                 }
                 let id = new_id();
-                list.push(ScriptNode::Script { id: id.clone(), name, body: body.to_string(), updated_at: now });
+                list.push(ScriptNode::Script {
+                    id: id.clone(),
+                    name,
+                    body: body.to_string(),
+                    updated_at: now,
+                    favorite: favorite.unwrap_or(false),
+                });
                 Ok(id)
             }
         }
+    }
+
+    pub fn set_favorite(&mut self, id: &str, favorite: bool) -> Result<()> {
+        fn walk(nodes: &mut [ScriptNode], id: &str, flag: bool) -> bool {
+            for node in nodes {
+                match node {
+                    ScriptNode::Script { id: script_id, favorite, .. } if script_id == id => {
+                        *favorite = flag;
+                        return true;
+                    }
+                    ScriptNode::Folder { children, .. } => {
+                        if walk(children, id, flag) {
+                            return true;
+                        }
+                    }
+                    ScriptNode::Script { .. } => {}
+                }
+            }
+            false
+        }
+        if walk(&mut self.tree, id, favorite) { Ok(()) } else { Err(ScriptError::NotFound) }
+    }
+
+    /// Favorite scripts sorted by name (case-insensitive), with their folder path.
+    pub fn favorites(&self) -> Vec<FavoriteScript> {
+        fn walk(nodes: &[ScriptNode], path: &mut Vec<String>, out: &mut Vec<FavoriteScript>) {
+            for node in nodes {
+                match node {
+                    ScriptNode::Folder { name, children, .. } => {
+                        path.push(name.clone());
+                        walk(children, path, out);
+                        path.pop();
+                    }
+                    ScriptNode::Script { id, name, favorite: true, .. } => {
+                        out.push(FavoriteScript { id: id.clone(), name: name.clone(), folder_path: path.join(" / ") });
+                    }
+                    ScriptNode::Script { .. } => {}
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&self.tree, &mut Vec::new(), &mut out);
+        out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
+        out
     }
 
     pub fn rename(&mut self, id: &str, name: &str) -> Result<()> {
@@ -366,7 +441,7 @@ mod tests {
         let mut data = ScriptsData::default();
         let ops = data.create_folder(None, "Ops").unwrap();
         let net = data.create_folder(Some(&ops), "Network").unwrap();
-        let script = data.save_script(None, Some(&net), "Check routes", "ip route\nip -6 route", false, 10).unwrap();
+        let script = data.save_script(None, Some(&net), "Check routes", "ip route\nip -6 route", false, 10, None).unwrap();
         (data, ops, net, script)
     }
 
@@ -386,45 +461,45 @@ mod tests {
         assert_eq!(detail.name, "Check routes");
         assert_eq!(detail.body, "ip route\nip -6 route");
         assert_eq!(detail.folder_id.as_deref(), Some(net.as_str()));
-        let top = data.save_script(None, None, "Top", "x", false, 1).unwrap();
+        let top = data.save_script(None, None, "Top", "x", false, 1, None).unwrap();
         assert_eq!(data.get(&top).unwrap().folder_id, None);
     }
 
     #[test]
     fn same_name_needs_overwrite_and_keeps_the_id() {
         let (mut data, _ops, net, script) = sample();
-        assert_eq!(data.save_script(None, Some(&net), "check ROUTES", "new", false, 20), Err(ScriptError::NameExists));
-        let again = data.save_script(None, Some(&net), "check ROUTES", "new", true, 20).unwrap();
+        assert_eq!(data.save_script(None, Some(&net), "check ROUTES", "new", false, 20, None), Err(ScriptError::NameExists));
+        let again = data.save_script(None, Some(&net), "check ROUTES", "new", true, 20, None).unwrap();
         assert_eq!(again, script);
         assert_eq!(data.get(&script).unwrap().body, "new");
         // a folder with that name is never overwritten
         data.create_folder(Some(&net), "Sub").unwrap();
-        assert_eq!(data.save_script(None, Some(&net), "sub", "x", true, 1), Err(ScriptError::NameExists));
+        assert_eq!(data.save_script(None, Some(&net), "sub", "x", true, 1, None), Err(ScriptError::NameExists));
     }
 
     #[test]
     fn updating_by_id_can_rename_and_move() {
         let (mut data, ops, _net, script) = sample();
-        let id = data.save_script(Some(&script), Some(&ops), "Routes v2", "ip r", false, 30).unwrap();
+        let id = data.save_script(Some(&script), Some(&ops), "Routes v2", "ip r", false, 30, None).unwrap();
         assert_eq!(id, script);
         let detail = data.get(&script).unwrap();
         assert_eq!((detail.name.as_str(), detail.body.as_str()), ("Routes v2", "ip r"));
         assert_eq!(detail.folder_id.as_deref(), Some(ops.as_str()));
         // collision at the destination leaves everything untouched
-        data.save_script(None, None, "Taken", "x", false, 1).unwrap();
-        assert_eq!(data.save_script(Some(&script), None, "taken", "y", false, 40), Err(ScriptError::NameExists));
+        data.save_script(None, None, "Taken", "x", false, 1, None).unwrap();
+        assert_eq!(data.save_script(Some(&script), None, "taken", "y", false, 40, None), Err(ScriptError::NameExists));
         assert_eq!(data.get(&script).unwrap().body, "ip r");
-        assert_eq!(data.save_script(Some("nope"), None, "n", "b", false, 1), Err(ScriptError::NotFound));
+        assert_eq!(data.save_script(Some("nope"), None, "n", "b", false, 1, None), Err(ScriptError::NotFound));
     }
 
     #[test]
     fn size_limit_and_bad_parents() {
         let mut data = ScriptsData::default();
         let big = "a".repeat(MAX_SCRIPT_BYTES + 1);
-        assert_eq!(data.save_script(None, None, "big", &big, false, 1), Err(ScriptError::TooLarge));
-        assert!(data.save_script(None, None, "ok", &"a".repeat(MAX_SCRIPT_BYTES), false, 1).is_ok());
-        assert_eq!(data.save_script(None, Some("missing"), "n", "b", false, 1), Err(ScriptError::NotFound));
-        let script = data.save_script(None, None, "s", "b", false, 1).unwrap();
+        assert_eq!(data.save_script(None, None, "big", &big, false, 1, None), Err(ScriptError::TooLarge));
+        assert!(data.save_script(None, None, "ok", &"a".repeat(MAX_SCRIPT_BYTES), false, 1, None).is_ok());
+        assert_eq!(data.save_script(None, Some("missing"), "n", "b", false, 1, None), Err(ScriptError::NotFound));
+        let script = data.save_script(None, None, "s", "b", false, 1, None).unwrap();
         assert_eq!(data.create_folder(Some(&script), "inside"), Err(ScriptError::NotFolder));
     }
 
@@ -455,11 +530,49 @@ mod tests {
     #[test]
     fn search_matches_names_and_bodies_case_insensitively() {
         let (mut data, _ops, _net, script) = sample();
-        let other = data.save_script(None, None, "Reboot host", "sudo REBOOT", false, 1).unwrap();
+        let other = data.save_script(None, None, "Reboot host", "sudo REBOOT", false, 1, None).unwrap();
         assert_eq!(data.search("ROUTE"), vec![script.clone()]);
         assert_eq!(data.search("reboot"), vec![other]);
         assert!(data.search("   ").is_empty());
         assert!(data.search("zzz").is_empty());
+    }
+
+    #[test]
+    fn favorites_are_marked_listed_with_paths_and_survive_updates() {
+        let (mut data, ops, _net, script) = sample();
+        let top = data.save_script(None, None, "alpha", "echo a", false, 1, Some(true)).unwrap();
+        assert_eq!(data.favorites().len(), 1);
+        data.set_favorite(&script, true).unwrap();
+        let favorites = data.favorites();
+        assert_eq!(
+            favorites.iter().map(|f| (f.name.as_str(), f.folder_path.as_str())).collect::<Vec<_>>(),
+            vec![("alpha", ""), ("Check routes", "Ops / Network")]
+        );
+        assert!(data.get(&script).unwrap().favorite);
+        // updating without a flag keeps the mark; an explicit flag changes it
+        data.save_script(Some(&script), Some(&ops), "Routes", "ip r", false, 2, None).unwrap();
+        assert!(data.get(&script).unwrap().favorite);
+        data.save_script(Some(&script), Some(&ops), "Routes", "ip r", false, 3, Some(false)).unwrap();
+        assert!(!data.get(&script).unwrap().favorite);
+        // overwriting by name follows the same rule
+        data.save_script(None, None, "ALPHA", "echo b", true, 4, None).unwrap();
+        assert!(data.get(&top).unwrap().favorite);
+        data.set_favorite(&top, false).unwrap();
+        assert!(data.favorites().is_empty());
+        assert_eq!(data.set_favorite("nope", true), Err(ScriptError::NotFound));
+        // folders cannot be favorites
+        assert_eq!(data.set_favorite(&ops, true), Err(ScriptError::NotFound));
+        // deleting removes the favorite with the script
+        data.set_favorite(&top, true).unwrap();
+        data.delete(&top).unwrap();
+        assert!(data.favorites().is_empty());
+    }
+
+    #[test]
+    fn old_libraries_without_the_favorite_field_still_load() {
+        let json = r#"{"version":1,"tree":[{"type":"script","id":"a","name":"n","body":"b","updated_at":1}]}"#;
+        let data: ScriptsData = serde_json::from_str(json).unwrap();
+        assert!(!data.get("a").unwrap().favorite);
     }
 
     #[test]

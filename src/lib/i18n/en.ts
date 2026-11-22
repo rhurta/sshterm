@@ -424,6 +424,12 @@ export const en = {
   "scripts.error.locked": "The scripts library is locked.",
   "scripts.error.io_error": "The scripts file could not be written.",
   "scripts.error.unknown": "Something went wrong: {detail}",
+  "console.favorites": "Favorite scripts",
+  "console.loadFavorite": "Load “{name}” into the editor",
+  "scripts.favorite": "Favorite",
+  "scripts.unfavorite": "Remove favorite",
+  "scripts.addFavorite": "Add to favorites (button under the console)",
+  "scripts.favoriteMark": "Favorite",
 } as const;
 
 export type MessageKey = keyof typeof en;

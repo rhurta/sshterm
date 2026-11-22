@@ -227,6 +227,8 @@ pub fn run() {
             script_store::scripts_get,
             script_store::scripts_search,
             script_store::scripts_save,
+            script_store::scripts_favorites,
+            script_store::scripts_set_favorite,
             script_store::scripts_create_folder,
             script_store::scripts_rename,
             script_store::scripts_move,

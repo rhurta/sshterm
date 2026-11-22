@@ -241,7 +241,7 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
 /** Scripts library (the second vault, `scripts.vault`). */
 export type ScriptSummary =
   | { type: "folder"; id: string; name: string; children: ScriptSummary[] }
-  | { type: "script"; id: string; name: string; updated_at: number; size: number };
+  | { type: "script"; id: string; name: string; updated_at: number; size: number; favorite: boolean };
 
 export interface ScriptDetail {
   id: string;
@@ -249,6 +249,15 @@ export interface ScriptDetail {
   body: string;
   /** Folder the script lives in; null = top level. */
   folder_id: string | null;
+  favorite: boolean;
+}
+
+/** A favorite script: one-click button under the command console. */
+export interface FavoriteScript {
+  id: string;
+  name: string;
+  /** Folder names from the top level joined with " / " ("" = top level). */
+  folder_path: string;
 }
 
 export interface ScriptsStatus {
