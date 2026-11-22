@@ -1167,8 +1167,10 @@ async fn wait_for_transfers(mut pending: Vec<watch::Receiver<bool>>) {
     }
 }
 
-fn emit_transfer(app: &AppHandle, progress: &SftpTransferProgress) {
-    let _ = app.emit("sftp:progress", progress.clone());
+type TransferEmitter = dyn Fn(&SftpTransferProgress) + Send + Sync;
+
+fn emit_transfer(emitter: &TransferEmitter, progress: &SftpTransferProgress) {
+    emitter(progress);
 }
 
 fn local_name(path: &std::path::Path) -> Result<String, String> {
@@ -1431,7 +1433,7 @@ async fn commit_local_file(temporary: &std::path::Path, destination: &std::path:
 
 async fn upload_file(
     sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
-    overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, app: &AppHandle,
+    overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, emitter: &TransferEmitter,
 ) -> Result<(), TransferFailure> {
     let mut source = tokio::fs::File::open(&item.source).await.map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
     let temporary = remote_temp_sibling(&item.destination, transfer_id, index, "part").map_err(|error| TransferFailure::Failed(error))?;
@@ -1454,7 +1456,7 @@ async fn upload_file(
             _ = cancel.changed() => break Err(TransferFailure::Cancelled),
         }
         progress.bytes_transferred = progress.bytes_transferred.saturating_add(count as u64);
-        emit_transfer(app, progress);
+        emit_transfer(emitter, progress);
     };
     if let Err(error) = result {
         let _ = target.close().await;
@@ -1474,7 +1476,7 @@ async fn upload_file(
 
 async fn download_file(
     sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
-    overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, app: &AppHandle,
+    overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, emitter: &TransferEmitter,
 ) -> Result<(), TransferFailure> {
     let mut source = sftp.open(item.source.clone()).await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?;
     let destination = std::path::PathBuf::from(&item.destination);
@@ -1499,7 +1501,7 @@ async fn download_file(
             _ = cancel.changed() => break Err(TransferFailure::Cancelled),
         }
         progress.bytes_transferred = progress.bytes_transferred.saturating_add(count as u64);
-        emit_transfer(app, progress);
+        emit_transfer(emitter, progress);
     };
     if let Err(error) = result {
         drop(target);
@@ -1533,7 +1535,7 @@ async fn download_file(
 
 async fn run_transfer(
     sftp: &SftpSession, items: &[TransferItem], direction: &str, transfer_id: &str, overwrite: bool,
-    cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, app: &AppHandle,
+    cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, emitter: &TransferEmitter,
 ) -> Result<(), TransferFailure> {
     for (index, item) in items.iter().enumerate() {
         if *cancel.borrow() { return Err(TransferFailure::Cancelled); }
@@ -1557,7 +1559,7 @@ async fn run_transfer(
             }
             _ => return Err(TransferFailure::Failed("sftp_transfer_bad_direction: Unsupported transfer direction.".into())),
         }
-        emit_transfer(app, progress);
+        emit_transfer(emitter, progress);
     }
     Ok(())
 }
@@ -1592,21 +1594,25 @@ pub async fn sftp_transfer_start(
     state.transfers.lock().await.insert(transfer_id.clone(), SftpTransferControl {
         session_id: session_id.clone(), cancel: cancel_tx, done: done_rx,
     });
-    emit_transfer(&app, &progress);
+    let event_app = app.clone();
+    let emitter = move |update: &SftpTransferProgress| {
+        let _ = event_app.emit("sftp:progress", update.clone());
+    };
+    emit_transfer(&emitter, &progress);
     let transfer_registry = state.transfers.clone();
     let worker_session = session.clone();
     let worker_id = transfer_id.clone();
     tokio::spawn(async move {
         let result = {
             let client = worker_session.lock().await;
-            run_transfer(client.session(), &items, &direction, &worker_id, overwrite, &mut cancel_rx, &mut progress, &app).await
+            run_transfer(client.session(), &items, &direction, &worker_id, overwrite, &mut cancel_rx, &mut progress, &emitter).await
         };
         match result {
             Ok(()) => progress.status = SftpTransferStatus::Completed,
             Err(TransferFailure::Cancelled) => progress.status = SftpTransferStatus::Cancelled,
             Err(TransferFailure::Failed(error)) => { progress.status = SftpTransferStatus::Failed; progress.error = Some(error); }
         }
-        emit_transfer(&app, &progress);
+        emit_transfer(&emitter, &progress);
         let _ = done_tx.send(true);
         transfer_registry.lock().await.remove(&worker_id);
     });
