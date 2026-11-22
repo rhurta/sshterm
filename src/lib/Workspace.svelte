@@ -921,6 +921,7 @@
                 <div class="pane-tabs" class:drop-tabs={tabDrop?.paneId === pane.sessionId && tabDrop.zone === "tabs"} role="tablist" aria-label={t("workspace.paneTabs")}>
                   {#each pane.sessionIds as sessionId (sessionId)}
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
+                    {@const sftpTab = sftpTabs.find((item) => item.id === sessionId)}
                     {#if tab}
                       <!-- svelte-ignore a11y_no_static_element_interactions (drag is a mouse shortcut; Ctrl+Alt+Shift+Arrows is the keyboard path) -->
                       <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
@@ -953,6 +954,18 @@
                           disabled={!tab.connected} onclick={() => toggleSessionProtection(sessionId)}
                         >{tab.protected ? "🔒" : "🔓"}</button>
                         <button class="pane-tab-close" aria-label={`Close ${tab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
+                      </div>
+                    {:else if sftpTab}
+                      <!-- SFTP browsers use the same tab drag/drop contract as SSH sessions. -->
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId}>
+                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
+                          aria-label={`${sftpTab.name}${activeId === sessionId ? ", active pane" : ""}`}
+                          title={sftpTab.name} onclick={() => activateSession(sessionId)}>
+                          <span class="pane-tab-name">{sftpTab.name}</span>
+                          <span class="pane-tab-indicator jump">{t("workspace.sftpTab")}</span>
+                          {#if activeId === sessionId}<span class="pane-focus-dot" aria-hidden="true"></span>{/if}
+                        </button>
+                        <button class="pane-tab-close" aria-label={`Close ${sftpTab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
                       </div>
                     {/if}
                   {/each}
@@ -999,6 +1012,15 @@
                 active={paneActiveIds[sessionPane[tab.sessionId]] === tab.sessionId}
                 focused={activeId === tab.sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
                 onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} {settings} {theme} {terminalOpacity} />
+            {/each}
+          </div>
+          <!-- SFTP browser roots are re-parented into their active pane without
+               unmounting, so moving a tab preserves its sessions and transfers. -->
+          <div class="sftp-parking" aria-hidden="true">
+            {#each sftpTabs as tab (tab.id)}
+              <SftpBrowser embedded visible={paneActiveIds[sessionPane[tab.id]] === tab.id}
+                container={paneEls[sessionPane[tab.id]] ?? null}
+                connectionId={tab.connectionId} onclose={() => closeTab(tab.id)} />
             {/each}
           </div>
         </div>
@@ -1221,6 +1243,7 @@
   .pane-terminals { position: relative; flex: 1; min-height: 0; overflow: hidden; }
   /* Off-screen but laid out, so xterm can measure characters while parked. */
   .terminal-parking { position: fixed; left: -10000px; top: 0; width: 800px; height: 400px; overflow: hidden; visibility: hidden; pointer-events: none; }
+  .sftp-parking { position: fixed; left: -10000px; top: 0; width: 800px; height: 400px; overflow: hidden; visibility: hidden; pointer-events: none; }
   .pane-tab[draggable="true"] { cursor: grab; }
   .pane-tab.dragging { opacity: 0.45; }
   .pane-tabs.drop-tabs { outline:2px solid var(--accent); outline-offset:-2px; background:var(--surface-raised); }
