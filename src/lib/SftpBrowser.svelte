@@ -10,6 +10,9 @@
     embedded = false,
     visible = true,
     container = null,
+    focused = false,
+    workspaceItemId = "",
+    onactivate,
     onclose,
   }: {
     connectionId?: string | null;
@@ -17,6 +20,9 @@
     visible?: boolean;
     /** Pane body this browser is attached to; re-parenting preserves its SFTP sessions. */
     container?: HTMLElement | null;
+    focused?: boolean;
+    workspaceItemId?: string;
+    onactivate?: (id: string) => void;
     onclose: () => void;
   } = $props();
 
@@ -823,8 +829,7 @@
   }
 
   function onBrowserKeydown(event: KeyboardEvent) {
-    if (!visible) return;
-    if (!visible) return;
+    if (!visible || !focused) return;
     if (event.key === "Tab") {
       const activeDialog = browserDialog?.querySelector<HTMLElement>(".sftp-small-dialog") ?? browserDialog;
       const focusable = Array.from(
@@ -892,7 +897,7 @@
   }
 
   $effect(() => {
-    if (visible) void tick().then(() => searchInput?.focus());
+    if (visible && focused) void tick().then(() => searchInput?.focus());
   });
 
   // Keep this browser mounted while its workspace tab moves between panes.
@@ -902,7 +907,7 @@
     const node = root;
     if (!target || !node || node.parentElement === target) return;
     target.appendChild(node);
-    untrack(() => { if (visible) void tick().then(() => searchInput?.focus()); });
+    untrack(() => { if (visible && focused) void tick().then(() => searchInput?.focus()); });
   });
 
   onMount(() => {
@@ -923,7 +928,7 @@
 
 <svelte:window onkeydown={onBrowserKeydown} />
 
-<div bind:this={root} class="sftp-backdrop" class:embedded class:hidden={!visible}>
+<div bind:this={root} class="sftp-backdrop" class:embedded class:hidden={!visible} onpointerdown={() => onactivate?.(workspaceItemId)} onfocusin={() => onactivate?.(workspaceItemId)}>
   <section bind:this={browserDialog} class="sftp-browser" role="dialog" aria-modal={embedded ? "false" : "true"} aria-labelledby="sftp-title">
     <header class="sftp-header">
       <div class="sftp-heading">
