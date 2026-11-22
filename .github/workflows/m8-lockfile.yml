@@ -35,8 +35,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src-tauri/Cargo.lock
-          git commit -m "chore(m8a): update Cargo.lock for native SFTP"
-          git push
+          git commit -m "chore(m8): update Cargo.lock"
+
+          # Other frontend/docs commits can advance the branch while Cargo
+          # resolves dependencies. Rebase this generated lockfile commit before
+          # pushing so the automation does not lose its update to a race.
+          git fetch origin "$GITHUB_REF_NAME"
+          git rebase "origin/$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF"
 
       - name: Trigger Windows validation with the generated lockfile
         env:
