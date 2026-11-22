@@ -4,6 +4,7 @@ mod config;
 mod crash;
 mod logger;
 mod highlight;
+mod local_browser;
 mod paths;
 mod session;
 mod store;
@@ -218,6 +219,7 @@ pub fn run() {
             tunnels::tunnel_start,
             tunnels::tunnel_stop,
             tunnels::tunnel_stop_all,
+            local_browser::local_list_directory,
             sftp::sftp_open,
             sftp::sftp_list,
             sftp::sftp_mkdir,
