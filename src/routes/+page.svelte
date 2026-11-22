@@ -3,7 +3,7 @@
   import LockScreen from "$lib/LockScreen.svelte";
   import Workspace from "$lib/Workspace.svelte";
   import TitleBar from "$lib/TitleBar.svelte";
-  import { initLocale, t } from "$lib/i18n/index.svelte";
+  import { initLocale } from "$lib/i18n/index.svelte";
   import { startSessionBus } from "$lib/sessionBus";
   import type { AppTheme } from "$lib/theme";
   import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings, type WindowBackdrop } from "$lib/types";
