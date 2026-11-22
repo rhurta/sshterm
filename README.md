@@ -22,7 +22,7 @@ One executable plus data files next to it — no installer, no registry, no `%AP
 | M5 | Jump hosts (`-J` chain, per-hop passwords) | ✅ Complete |
 | M6 | Tiling, command console, broadcast and refined workspace panels | ✅ Complete; documented in [workspace panel guide](docs/workspace-panels.md) |
 | M7 | Local, reverse and dynamic SOCKS forwarding, independent lifecycle and manager UI | ✅ Implemented; Windows CI passed |
-| M8 | Native SFTP (`russh` + `russh-sftp`) | ✅ Implemented; core Windows workflow accepted; hardening follow-ups tracked; [implementation plan](docs/M8-implementation-plan.md) |
+| M8 | Native SFTP (`russh` + `russh-sftp`) | ✅ Implemented; mixed SSH/SFTP panes manually accepted on Windows; hardening follow-ups tracked; [implementation plan](docs/M8-implementation-plan.md) |
 | M9 | Polish (per-connection colors, host-key UI, auto-reconnect) | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine replaces phase 1 | 📋 Planned |
 
@@ -37,7 +37,7 @@ M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.
 - Appearance: seven themes (dark, light, Nord and the four Catppuccin flavors), an optional background image or see-through window (Transparent or Mica on Windows 11) with adjustable interface and terminal opacity, fixed-size proportional dialogs, a searchable settings dialog, and a show/hide eye on password fields. See [`docs/appearance.md`](docs/appearance.md). The window opens with one empty pane.
 - Scripts library: the command console has Save script… and Load script… buttons. Scripts are stored in folders in a second encrypted file, `scripts.vault`, opened with the same master password. Scripts marked as favorites get a one-click button below the console. See [`docs/scripts.md`](docs/scripts.md).
 - Keyboard shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Alt+Arrows focus the neighboring pane (Ctrl+Alt+, / Ctrl+Alt+. cycle panes, for keyboards where Windows takes the arrows) and Ctrl+Alt+Shift+Arrows move the active tab there; Ctrl+Enter requests a send.
-- Tabs move between panes without reconnecting or resetting the terminal: drag a tab onto another pane's tab strip (or between tabs to reorder), onto a pane's center to move it there, or onto a pane edge to split and move it into the new pane. See [`docs/tab-moves.md`](docs/tab-moves.md).
+- SSH and SFTP workspace tabs share the same pane hierarchy. Tabs move between panes without reconnecting: drag onto another pane's tab strip (or between tabs to reorder), onto a pane's center to move there, or onto an edge to split and move into the new pane. Each SFTP tab represents one connection and has no nested tab strip; moving it preserves the live SFTP session and transfer queue. See [`docs/tab-moves.md`](docs/tab-moves.md).
 - Connections can be dragged from the tree onto a pane or onto its edges (which split it); a new empty pane opens the connection list straight away; an empty pane can be focused (click or Ctrl+Alt+Arrows) so the next connection opened from the tree lands in it. See [`docs/pane-targets.md`](docs/pane-targets.md).
 - Automated coverage includes pure split-tree and broadcast-target resolution tests plus Rust config tests. Component-level UI automation and live multi-host dispatch integration tests remain follow-up work.
 
