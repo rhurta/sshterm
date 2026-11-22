@@ -426,6 +426,7 @@ export const es: Record<MessageKey, string> = {
   "scripts.error.unknown": "Algo salió mal: {detail}",
   "console.favorites": "Scripts favoritos",
   "console.loadFavorite": "Cargar “{name}” en el editor",
+  "console.resizeTargets": "Redimensionar lista de conexiones abiertas",
   "scripts.favorite": "Favorito",
   "scripts.unfavorite": "Quitar favorito",
   "scripts.addFavorite": "Añadir a favoritos (botón bajo la consola)",

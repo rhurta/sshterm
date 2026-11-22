@@ -426,6 +426,7 @@ export const en = {
   "scripts.error.unknown": "Something went wrong: {detail}",
   "console.favorites": "Favorite scripts",
   "console.loadFavorite": "Load “{name}” into the editor",
+  "console.resizeTargets": "Resize open connections list",
   "scripts.favorite": "Favorite",
   "scripts.unfavorite": "Remove favorite",
   "scripts.addFavorite": "Add to favorites (button under the console)",

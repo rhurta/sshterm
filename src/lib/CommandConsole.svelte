@@ -38,6 +38,30 @@
   let statusError = $state(false);
   let editor: HTMLTextAreaElement;
 
+  // Target panel resize state
+  let targetPanelWidth = $state(10.5 * 16); // default ~10.5rem in px (assuming 16px base)
+  let targetResize: { startX: number; startWidth: number } | null = null;
+  const MIN_TARGET_WIDTH = 8 * 16; // 8rem
+  const MAX_TARGET_WIDTH = 24 * 16; // 24rem
+
+  function startTargetResize(event: PointerEvent) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    targetResize = { startX: event.clientX, startWidth: targetPanelWidth };
+  }
+
+  function moveTargetResize(event: PointerEvent) {
+    if (!targetResize) return;
+    const delta = event.clientX - targetResize.startX;
+    targetPanelWidth = Math.max(MIN_TARGET_WIDTH, Math.min(MAX_TARGET_WIDTH, targetResize.startWidth + delta));
+  }
+
+  function endTargetResize() {
+    if (!targetResize) return;
+    targetResize = null;
+  }
+
   let lineCount = $derived(draft.length ? draft.split(/\r\n|\r|\n/).length : 0);
   let hasMultipleLines = $derived(lineCount > 1);
   let targetResolution = $derived(resolveBroadcastTargets(
@@ -244,6 +268,8 @@
   }
 </script>
 
+<svelte:window onpointermove={(event) => { moveTargetResize(event); }} onpointerup={endTargetResize} onpointercancel={endTargetResize} />
+
 <section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label={t("console.commandConsole")}>
   <div class="console-heading workspace-panel-header">
     <strong class="panel-title">{t("console.commandConsole")}</strong>
@@ -262,7 +288,7 @@
     {/if}
   </div>
 
-  <div class="console-layout">
+  <div class="console-layout" style={`--target-width: ${targetPanelWidth}px;`}>
     <aside class="target-panel" aria-label={t("console.commandTargets")}>
       <div class="session-picker-heading">
         <span>{t("console.openConnections")}</span>
@@ -324,6 +350,9 @@
         </label>
       {/if}
     </aside>
+
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
+    <div class="target-resizer" role="separator" aria-orientation="vertical" aria-label={t("console.resizeTargets")} aria-valuemin={MIN_TARGET_WIDTH} aria-valuemax={MAX_TARGET_WIDTH} aria-valuenow={targetPanelWidth} tabindex="0" onpointerdown={startTargetResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); targetPanelWidth = Math.max(MIN_TARGET_WIDTH, Math.min(MAX_TARGET_WIDTH, targetPanelWidth + (event.key === "ArrowLeft" ? -48 : 48))); } }} title={t("console.resizeTargets")}></div>
 
     <div class="editor-panel">
       <div class="target-summary" aria-live="polite">
@@ -432,8 +461,8 @@
     box-sizing: border-box;
     padding: 8px 12px 10px;
     display: grid;
-    grid-template-columns: minmax(10.5rem, 0.34fr) minmax(0, 1fr);
-    gap: 0.65rem;
+    grid-template-columns: var(--target-width, 168px) 6px minmax(0, 1fr);
+    gap: 0 0.65rem;
     flex: 1 1 auto;
     min-height: 0;
   }
@@ -445,6 +474,17 @@
     min-height: 0;
     padding-right: 0.65rem;
     border-right: 1px solid var(--border);
+  }
+  .target-resizer {
+    flex: 0 0 6px;
+    cursor: col-resize;
+    background: var(--border);
+    touch-action: none;
+    outline: none;
+  }
+  .target-resizer:hover,
+  .target-resizer:focus-visible {
+    background: var(--accent);
   }
   .session-picker-heading {
     display: flex;
@@ -587,8 +627,9 @@
     .console-heading { gap: 8px; }
     .confirmation-banner { min-width: 0; padding: 2px 6px; }
     .confirmation-banner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .console-layout { grid-template-columns: minmax(8.5rem, 0.42fr) minmax(0, 1fr); gap: 0.4rem; }
+    .console-layout { grid-template-columns: var(--target-width, 136px) 4px minmax(0, 1fr); gap: 0 0.4rem; }
     .target-panel { padding-right: 0.4rem; }
+    .target-resizer { flex: 0 0 4px; }
     .session-row { gap: 0.25rem; padding-inline: 0.25rem; }
   }
 </style>
