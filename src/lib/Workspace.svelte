@@ -50,7 +50,7 @@
   let workspaceTabIds = $derived([...tabs.map((tab) => tab.sessionId), ...sftpTabs.map((tab) => tab.id)]);
   let activeId = $state<string | null>(null);
   let activeTerminalId = $derived(tabs.some((tab) => tab.sessionId === activeId) ? activeId : null);
-  let lastSftpRequest = 0;
+  let lastSftpRequest = sftpRequest;
   let layoutPreset = $state<LayoutPreset>("single");
   // The workspace starts with one empty pane (a fresh connection opens in it).
   let layoutTree = $state<SplitNode | null>({ type: "leaf", sessionId: crypto.randomUUID(), sessionIds: [] });
