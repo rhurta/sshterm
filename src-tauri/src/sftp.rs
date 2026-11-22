@@ -1763,7 +1763,7 @@ mod lifecycle_tests {
 
         let local_source = workspace.path().join("upload-tree");
         tokio::fs::create_dir_all(local_source.join("nested/deeper")).await.expect("create local tree");
-        tokio::fs::write(local_source.join("empty.bin"), []).await.expect("create empty file");
+        tokio::fs::write(local_source.join("empty.bin"), b"").await.expect("create empty file");
         tokio::fs::write(local_source.join("hello world.txt"), b"first upload").await.expect("create text file");
         tokio::fs::write(local_source.join("nested/deeper/資料 final.txt"), b"unicode path").await.expect("create unicode file");
         let large_payload = (0..900_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
