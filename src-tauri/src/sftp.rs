@@ -1698,6 +1698,177 @@ mod lifecycle_tests {
         assert_eq!(items.len(), 1);
     }
 
+
+    fn integration_connection(id: &str, user: &str, port: u16, key_path: &str) -> Connection {
+        let mut connection = Connection::default();
+        connection.id = id.to_string();
+        connection.name = id.to_string();
+        connection.host = "127.0.0.1".to_string();
+        connection.port = port;
+        connection.user = user.to_string();
+        connection.auth = Auth::Key { path: key_path.to_string(), passphrase: None };
+        connection.keepalive_secs = 0;
+        connection.sftp = Some(crate::vault::SftpOptions {
+            port: None,
+            start_dir: format!("/home/{user}"),
+        });
+        connection
+    }
+
+    fn transfer_progress(session_id: &str, transfer_id: &str, direction: &str, items: &[TransferItem]) -> SftpTransferProgress {
+        let files = items.iter().filter(|item| item.kind == TransferKind::File).count() as u64;
+        let bytes = items.iter().filter(|item| item.kind == TransferKind::File)
+            .fold(0u64, |sum, item| sum.saturating_add(item.size));
+        SftpTransferProgress {
+            transfer_id: transfer_id.to_string(),
+            session_id: session_id.to_string(),
+            direction: direction.to_string(),
+            status: SftpTransferStatus::Running,
+            current_file: String::new(),
+            files_completed: 0,
+            files_total: files,
+            bytes_transferred: 0,
+            bytes_total: bytes,
+            error: None,
+        }
+    }
+
+    async fn read_remote_file(sftp: &SftpSession, path: &str) -> Vec<u8> {
+        let mut file = sftp.open(path.to_string()).await.expect("open remote test file");
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents).await.expect("read remote test file");
+        file.close().await.expect("close remote test file");
+        contents
+    }
+
+    // The Linux integration workflow starts two isolated sshd instances:
+    // one target and one jump host with PermitOpen restricted to the target.
+    #[tokio::test]
+    #[ignore = "requires the local OpenSSH integration workflow"]
+    async fn sftp_local_openssh_direct_jump_and_transfer_smoke() {
+        let user = std::env::var("SSHTERM_SFTP_TEST_USER").expect("SSHTERM_SFTP_TEST_USER");
+        let key = std::env::var("SSHTERM_SFTP_TEST_KEY").expect("SSHTERM_SFTP_TEST_KEY");
+        let target_port: u16 = std::env::var("SSHTERM_SFTP_TEST_PORT").expect("SSHTERM_SFTP_TEST_PORT")
+            .parse().expect("valid target port");
+        let hop_port: u16 = std::env::var("SSHTERM_SFTP_TEST_HOP_PORT").expect("SSHTERM_SFTP_TEST_HOP_PORT")
+            .parse().expect("valid jump port");
+
+        let workspace = tempfile::tempdir().expect("create integration workspace");
+        let known_hosts = workspace.path().join("known_hosts");
+        let client = integration_connection("direct-target", &user, target_port, &key);
+        let direct = connect(&client, &[], &known_hosts).await.expect("connect direct SFTP");
+
+        let remote_base = format!("/home/{user}/sshterm-m8-{}", new_session_id());
+        direct.session().create_dir(remote_base.clone()).await.expect("create remote test directory");
+
+        let local_source = workspace.path().join("upload-tree");
+        tokio::fs::create_dir_all(local_source.join("nested/deeper")).await.expect("create local tree");
+        tokio::fs::write(local_source.join("empty.bin"), []).await.expect("create empty file");
+        tokio::fs::write(local_source.join("hello world.txt"), b"first upload").await.expect("create text file");
+        tokio::fs::write(local_source.join("nested/deeper/資料 final.txt"), b"unicode path").await.expect("create unicode file");
+        let large_payload = (0..900_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
+        tokio::fs::write(local_source.join("nested/large.bin"), &large_payload).await.expect("create large file");
+
+        let (upload_items, upload_conflicts) = build_upload_plan(
+            direct.session(),
+            &[local_source.to_string_lossy().into_owned()],
+            &remote_base,
+        ).await.expect("build recursive upload plan");
+        assert!(upload_conflicts.is_empty(), "new remote tree must not have conflicts");
+        let upload_id = new_session_id();
+        let mut upload_progress = transfer_progress(&client.id, &upload_id, "upload", &upload_items);
+        let (_upload_cancel, mut upload_cancel_rx) = watch::channel(false);
+        let no_emit = |_progress: &SftpTransferProgress| {};
+        run_transfer(
+            direct.session(), &upload_items, "upload", &upload_id, false,
+            &mut upload_cancel_rx, &mut upload_progress, &no_emit,
+        ).await.expect("upload files and folders");
+        assert_eq!(upload_progress.files_completed, 4);
+
+        let remote_tree = remote_child(&remote_base, "upload-tree");
+        assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "empty.bin")).await, Vec::<u8>::new());
+        assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "hello world.txt")).await, b"first upload");
+        assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "nested/deeper/資料 final.txt")).await, b"unicode path");
+        assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "nested/large.bin")).await, large_payload);
+
+        let download_root = workspace.path().join("download");
+        tokio::fs::create_dir_all(&download_root).await.expect("create local download folder");
+        let (download_items, download_conflicts) = build_download_plan(
+            direct.session(), &[remote_tree.clone()], &download_root.to_string_lossy(),
+        ).await.expect("build recursive download plan");
+        assert!(download_conflicts.is_empty());
+        let download_id = new_session_id();
+        let mut download_progress = transfer_progress(&client.id, &download_id, "download", &download_items);
+        let (_download_cancel, mut download_cancel_rx) = watch::channel(false);
+        run_transfer(
+            direct.session(), &download_items, "download", &download_id, false,
+            &mut download_cancel_rx, &mut download_progress, &no_emit,
+        ).await.expect("download files and folders");
+        assert_eq!(tokio::fs::read(download_root.join("upload-tree/nested/large.bin")).await.unwrap(), large_payload);
+        assert_eq!(tokio::fs::read(download_root.join("upload-tree/nested/deeper/資料 final.txt")).await.unwrap(), b"unicode path");
+
+        // Existing destinations are surfaced before a job starts; confirmed overwrite
+        // keeps the old file until the replacement has streamed to its temp sibling.
+        let replacement_path = local_source.join("hello world.txt");
+        tokio::fs::write(&replacement_path, b"replacement bytes").await.expect("replace local test source");
+        let (replacement_items, replacement_conflicts) = build_upload_plan(
+            direct.session(), &[replacement_path.to_string_lossy().into_owned()], &remote_tree,
+        ).await.expect("build overwrite plan");
+        assert_eq!(replacement_conflicts, vec![remote_child(&remote_tree, "hello world.txt")]);
+        let replacement_id = new_session_id();
+        let mut replacement_progress = transfer_progress(&client.id, &replacement_id, "upload", &replacement_items);
+        let (_replacement_cancel, mut replacement_cancel_rx) = watch::channel(false);
+        run_transfer(
+            direct.session(), &replacement_items, "upload", &replacement_id, true,
+            &mut replacement_cancel_rx, &mut replacement_progress, &no_emit,
+        ).await.expect("commit confirmed overwrite");
+        assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "hello world.txt")).await, b"replacement bytes");
+
+        // Cancel after the first chunk and prove neither the final file nor its
+        // temporary sibling is left behind.
+        let cancel_source = workspace.path().join("cancel.bin");
+        tokio::fs::write(&cancel_source, vec![0x5a; TRANSFER_CHUNK_SIZE * 8]).await.expect("create cancellable file");
+        let (cancel_items, cancel_conflicts) = build_upload_plan(
+            direct.session(), &[cancel_source.to_string_lossy().into_owned()], &remote_base,
+        ).await.expect("build cancellation plan");
+        assert!(cancel_conflicts.is_empty());
+        let cancel_id = new_session_id();
+        let mut cancel_progress = transfer_progress(&client.id, &cancel_id, "upload", &cancel_items);
+        let (cancel_tx, mut cancel_rx) = watch::channel(false);
+        let cancel_on_first_chunk = move |update: &SftpTransferProgress| {
+            if update.bytes_transferred > 0 { let _ = cancel_tx.send(true); }
+        };
+        let cancelled = run_transfer(
+            direct.session(), &cancel_items, "upload", &cancel_id, false,
+            &mut cancel_rx, &mut cancel_progress, &cancel_on_first_chunk,
+        ).await;
+        assert!(matches!(cancelled, Err(TransferFailure::Cancelled)));
+        assert!(remote_target_exists(direct.session(), &remote_child(&remote_base, "cancel.bin")).await.unwrap().is_none());
+        let remote_entries = direct.session().read_dir(remote_base.clone()).await.expect("list remote work folder");
+        assert!(!remote_entries.iter().any(|entry| entry.file_name().to_string().contains(&format!(".sshterm-{cancel_id}-"))));
+
+        // The same target and transfer logic must work through a direct-tcpip jump.
+        let hop = integration_connection("jump-host", &user, hop_port, &key);
+        let through_jump = connect(&client, &[hop], &known_hosts).await.expect("connect through SFTP jump host");
+        let jump_source = workspace.path().join("through-jump.txt");
+        tokio::fs::write(&jump_source, b"multi-hop transfer").await.unwrap();
+        let (jump_items, jump_conflicts) = build_upload_plan(
+            through_jump.session(), &[jump_source.to_string_lossy().into_owned()], &remote_base,
+        ).await.expect("build multi-hop upload plan");
+        assert!(jump_conflicts.is_empty());
+        let jump_id = new_session_id();
+        let mut jump_progress = transfer_progress(&client.id, &jump_id, "upload", &jump_items);
+        let (_jump_cancel, mut jump_cancel_rx) = watch::channel(false);
+        run_transfer(
+            through_jump.session(), &jump_items, "upload", &jump_id, false,
+            &mut jump_cancel_rx, &mut jump_progress, &no_emit,
+        ).await.expect("upload through jump host");
+        assert_eq!(read_remote_file(through_jump.session(), &remote_child(&remote_base, "through-jump.txt")).await, b"multi-hop transfer");
+
+        through_jump.close().await.expect("close jump SFTP");
+        direct.close().await.expect("close direct SFTP");
+    }
+
     #[test]
     fn remote_parent_handles_root_and_nested_paths() {
         assert_eq!(remote_parent("/"), None);
