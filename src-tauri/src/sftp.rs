@@ -1173,14 +1173,41 @@ fn emit_transfer(app: &AppHandle, progress: &SftpTransferProgress) {
 
 fn local_name(path: &std::path::Path) -> Result<String, String> {
     let name = path.file_name().ok_or_else(|| "sftp_transfer_bad_local_path: Missing file name.".to_string())?;
-    let name = name.to_string_lossy().into_owned();
+    let name = name.to_str().ok_or_else(|| "sftp_transfer_bad_local_path: The local file name is not valid Unicode.".to_string())?.to_string();
     validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
     Ok(name)
+}
+
+/// Remote names must also be safe local path components on Windows. A malicious
+/// SFTP server must not be able to turn a download name into a drive/path prefix
+/// or an alternate data stream.
+fn validate_local_component(name: &str) -> Result<(), String> {
+    let invalid = name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.ends_with(' ')
+        || name.ends_with('.')
+        || name.chars().any(|character| {
+            character.is_control() || matches!(character, '<' | '>' | ':' | '"' | '/' | '\\\\' | '|' | '?' | '*')
+        });
+    let stem = name.split('.').next().unwrap_or_default().trim_end_matches([' ', '.']).to_ascii_uppercase();
+    let numbered_device = |prefix: &str| {
+        stem.strip_prefix(prefix).is_some_and(|suffix| {
+            suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9')
+        })
+    };
+    let reserved_device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$")
+        || numbered_device("COM") || numbered_device("LPT");
+    if invalid || reserved_device {
+        return Err(format!("sftp_transfer_local_name_unsupported: Remote name cannot be represented safely as a Windows file name: {name}"));
+    }
+    Ok(())
 }
 
 fn remote_name(path: &str) -> Result<String, String> {
     let name = path.trim_end_matches('/').rsplit('/').next().unwrap_or_default().to_string();
     validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+    validate_local_component(&name)?;
     Ok(name)
 }
 
@@ -1201,9 +1228,16 @@ async fn local_target_metadata(path: &std::path::Path) -> Result<Option<std::fs:
     }
 }
 
-fn push_transfer_item(items: &mut Vec<TransferItem>, item: TransferItem) -> Result<(), String> {
+fn push_transfer_item(
+    items: &mut Vec<TransferItem>,
+    destinations: &mut HashSet<String>,
+    item: TransferItem,
+) -> Result<(), String> {
     if items.len() >= MAX_TRANSFER_ENTRIES {
         return Err(format!("sftp_transfer_too_many_entries: A transfer is limited to {MAX_TRANSFER_ENTRIES} entries."));
+    }
+    if !destinations.insert(item.destination.clone()) {
+        return Err(format!("sftp_transfer_duplicate_destination: Multiple selected items map to the same destination: {}", item.destination));
     }
     items.push(item);
     Ok(())
@@ -1223,6 +1257,7 @@ async fn build_upload_plan(
     if !destination_meta.is_dir() { return Err("sftp_transfer_destination_not_directory: Choose a remote directory for uploads.".into()); }
 
     let mut items = Vec::new();
+    let mut destinations = HashSet::new();
     let mut stack: Vec<(std::path::PathBuf, String)> = Vec::new();
     for source in local_sources {
         let path = std::path::PathBuf::from(source);
@@ -1231,10 +1266,10 @@ async fn build_upload_plan(
         if metadata.file_type().is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Local symbolic links are not followed: {source}")); }
         let target = remote_child(&destination, &local_name(&path)?);
         if metadata.is_dir() {
-            push_transfer_item(&mut items, TransferItem { source: source.clone(), destination: target.clone(), kind: TransferKind::Directory, size: 0 })?;
+            push_transfer_item(&mut items, &mut destinations, TransferItem { source: source.clone(), destination: target.clone(), kind: TransferKind::Directory, size: 0 })?;
             stack.push((path, target));
         } else if metadata.is_file() {
-            push_transfer_item(&mut items, TransferItem { source: source.clone(), destination: target, kind: TransferKind::File, size: metadata.len() })?;
+            push_transfer_item(&mut items, &mut destinations, TransferItem { source: source.clone(), destination: target, kind: TransferKind::File, size: metadata.len() })?;
         } else {
             return Err(format!("sftp_transfer_type_unsupported: Unsupported local item: {source}"));
         }
@@ -1250,10 +1285,10 @@ async fn build_upload_plan(
             if metadata.file_type().is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Local symbolic links are not followed: {}", path.display())); }
             let target = remote_child(&remote_directory, &local_name(&path)?);
             if metadata.is_dir() {
-                push_transfer_item(&mut items, TransferItem { source: path.to_string_lossy().into_owned(), destination: target.clone(), kind: TransferKind::Directory, size: 0 })?;
+                push_transfer_item(&mut items, &mut destinations, TransferItem { source: path.to_string_lossy().into_owned(), destination: target.clone(), kind: TransferKind::Directory, size: 0 })?;
                 stack.push((path, target));
             } else if metadata.is_file() {
-                push_transfer_item(&mut items, TransferItem { source: path.to_string_lossy().into_owned(), destination: target, kind: TransferKind::File, size: metadata.len() })?;
+                push_transfer_item(&mut items, &mut destinations, TransferItem { source: path.to_string_lossy().into_owned(), destination: target, kind: TransferKind::File, size: metadata.len() })?;
             } else {
                 return Err(format!("sftp_transfer_type_unsupported: Unsupported local item: {}", path.display()));
             }
@@ -1288,6 +1323,7 @@ async fn build_download_plan(
     }
 
     let mut items = Vec::new();
+    let mut destinations = HashSet::new();
     let mut stack: Vec<(String, std::path::PathBuf)> = Vec::new();
     let mut seen = HashSet::new();
     for source in remote_sources {
@@ -1298,10 +1334,10 @@ async fn build_download_plan(
         if metadata.is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Remote symbolic links are not followed: {source}")); }
         let target = local_root.join(remote_name(source)?);
         if metadata.is_dir() {
-            push_transfer_item(&mut items, TransferItem { source: source.clone(), destination: target.to_string_lossy().into_owned(), kind: TransferKind::Directory, size: 0 })?;
+            push_transfer_item(&mut items, &mut destinations, TransferItem { source: source.clone(), destination: target.to_string_lossy().into_owned(), kind: TransferKind::Directory, size: 0 })?;
             stack.push((source.clone(), target));
         } else if metadata.is_regular() {
-            push_transfer_item(&mut items, TransferItem { source: source.clone(), destination: target.to_string_lossy().into_owned(), kind: TransferKind::File, size: metadata.size.unwrap_or(0) })?;
+            push_transfer_item(&mut items, &mut destinations, TransferItem { source: source.clone(), destination: target.to_string_lossy().into_owned(), kind: TransferKind::File, size: metadata.size.unwrap_or(0) })?;
         } else {
             return Err(format!("sftp_transfer_type_unsupported: Unsupported remote item: {source}"));
         }
@@ -1313,15 +1349,16 @@ async fn build_download_plan(
             let name = entry.file_name().to_string();
             if name == "." || name == ".." { continue; }
             validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
+            validate_local_component(&name)?;
             let remote_path = remote_child(&remote_directory, &name);
             let metadata = entry.metadata();
             let local_path = local_directory.join(&name);
             if metadata.is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Remote symbolic links are not followed: {remote_path}")); }
             if metadata.is_dir() {
-                push_transfer_item(&mut items, TransferItem { source: remote_path.clone(), destination: local_path.to_string_lossy().into_owned(), kind: TransferKind::Directory, size: 0 })?;
+                push_transfer_item(&mut items, &mut destinations, TransferItem { source: remote_path.clone(), destination: local_path.to_string_lossy().into_owned(), kind: TransferKind::Directory, size: 0 })?;
                 stack.push((remote_path, local_path));
             } else if metadata.is_regular() {
-                push_transfer_item(&mut items, TransferItem { source: remote_path, destination: local_path.to_string_lossy().into_owned(), kind: TransferKind::File, size: metadata.size.unwrap_or(0) })?;
+                push_transfer_item(&mut items, &mut destinations, TransferItem { source: remote_path, destination: local_path.to_string_lossy().into_owned(), kind: TransferKind::File, size: metadata.size.unwrap_or(0) })?;
             } else {
                 return Err(format!("sftp_transfer_type_unsupported: Unsupported remote item: {remote_path}"));
             }
@@ -1630,6 +1667,29 @@ mod lifecycle_tests {
         for invalid in ["", ".", "..", "../escape", "a/b", "a\\b", "bad\nname"] {
             assert!(matches!(validate_remote_name(invalid), Err(SftpError { code: "sftp_bad_name", .. })));
         }
+    }
+
+    #[test]
+    fn downloaded_names_are_safe_windows_path_components() {
+        for valid in ["report final.txt", "資料", "archive.tar.gz"] {
+            assert!(validate_local_component(valid).is_ok(), "{valid}");
+        }
+        for invalid in ["", ".", "..", "CON", "nul.txt", "COM1.log", "LPT9", "C:drive", "stream:name", "trailing.", "trailing ", "a\\b", "a/b", "bad?name"] {
+            assert!(validate_local_component(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn duplicate_transfer_destinations_are_rejected_before_copying() {
+        let item = TransferItem {
+            source: "one".into(), destination: "/target/report.txt".into(), kind: TransferKind::File, size: 1,
+        };
+        let mut items = Vec::new();
+        let mut destinations = HashSet::new();
+        push_transfer_item(&mut items, &mut destinations, item.clone()).unwrap();
+        let result = push_transfer_item(&mut items, &mut destinations, item);
+        assert!(result.unwrap_err().contains("sftp_transfer_duplicate_destination"));
+        assert_eq!(items.len(), 1);
     }
 
     #[test]
