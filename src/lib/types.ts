@@ -237,3 +237,21 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   terminal_opacity: 85,
   window_backdrop: "off",
 };
+
+/** Scripts library (the second vault, `scripts.vault`). */
+export type ScriptSummary =
+  | { type: "folder"; id: string; name: string; children: ScriptSummary[] }
+  | { type: "script"; id: string; name: string; updated_at: number; size: number };
+
+export interface ScriptDetail {
+  id: string;
+  name: string;
+  body: string;
+  /** Folder the script lives in; null = top level. */
+  folder_id: string | null;
+}
+
+export interface ScriptsStatus {
+  state: "ready" | "needs_password" | "failed" | "closed";
+  detail: string | null;
+}

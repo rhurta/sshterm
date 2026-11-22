@@ -11,6 +11,22 @@ pub fn app_dir() -> PathBuf {
 pub fn vault_path() -> PathBuf {
     app_dir().join("sshterm.vault")
 }
+/// Scripts library file: `config.toml` `scripts_vault`, absolute or relative to the
+/// exe folder; `scripts.vault` next to the exe by default.
+pub fn scripts_vault_path() -> PathBuf {
+    let configured = crate::config::Config::load(&config_path()).scripts_vault;
+    resolve_scripts_vault(&configured, &app_dir())
+}
+
+fn resolve_scripts_vault(configured: &str, base: &std::path::Path) -> PathBuf {
+    let configured = configured.trim();
+    if configured.is_empty() {
+        return base.join("scripts.vault");
+    }
+    let path = PathBuf::from(configured);
+    if path.is_absolute() { path } else { base.join(path) }
+}
+
 pub fn config_path() -> PathBuf {
     app_dir().join("config.toml")
 }
@@ -56,4 +72,20 @@ pub fn ssh_program() -> Result<PathBuf, &'static str> {
 /// variable in `main`). This avoids creating any auxiliary file on disk.
 pub fn askpass_program() -> PathBuf {
     std::env::current_exe().unwrap_or_else(|_| app_dir().join("sshterm.exe"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn scripts_vault_path_defaults_and_resolves_relative_paths() {
+        let base = Path::new("base");
+        assert_eq!(resolve_scripts_vault("", base), base.join("scripts.vault"));
+        assert_eq!(resolve_scripts_vault("  ", base), base.join("scripts.vault"));
+        assert_eq!(resolve_scripts_vault("lib/team.vault", base), base.join("lib/team.vault"));
+        let absolute = std::env::temp_dir().join("shared.vault");
+        assert_eq!(resolve_scripts_vault(absolute.to_str().unwrap(), base), absolute);
+    }
 }

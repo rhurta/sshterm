@@ -144,6 +144,7 @@ Resize handles: hit area at least 4 px (a 1 px visible line is fine), `col-resiz
 - Below the terminals, right of the toolbar. Top-edge drag handle, 100-400 px, collapsible.
 - Left section: "Send to" selector (active session, all, selected panes) and the list of open connections with checkboxes; width resizable by a draggable divider. Right section: multi-line textarea and a Send button (`--accent`).
 - Ctrl+Enter sends. Sending to more than one session shows a visible "broadcast to N sessions" indicator and asks for confirmation the first time per run.
+- **Scripts:** Save script… (disabled while the editor is empty) and Load script… sit next to Clear. They open the same fixed-size dialog (`ScriptsDialog.svelte`) in two modes: a folder tree with a search field, and a preview (load) or name field (save). Loading fills the editor and never sends. Save mode focuses the name field; load mode focuses the search. Library rules in `docs/scripts.md`.
 
 ### F. Dialogs and overlays
 - **Fixed, proportional size.** Large dialogs (connection properties, settings) have a constant size that does not depend on their content: width `clamp(380px, 46vw, 820px)`, height `clamp(360px, 72-76vh, 820px)`, never larger than 96 % of the window. Only the body scrolls; the title, tabs/search and action buttons stay in place. Switching sections or filtering must never resize the dialog.

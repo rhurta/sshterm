@@ -56,6 +56,9 @@ jobs:
       - name: Test theme palettes
         run: npm run test:theme
 
+      - name: Test scripts library tree helpers
+        run: npm run test:scripts-tree
+
       - name: Build frontend
         run: npm run build
 

@@ -190,6 +190,8 @@ pub struct Config {
     pub app_behavior: AppBehaviorSettings,
     /// Background image and transparency; stored outside the encrypted vault.
     pub appearance: AppearanceSettings,
+    /// Scripts library file (absolute, or relative to the exe folder). Empty = `scripts.vault`.
+    pub scripts_vault: String,
 }
 
 impl Default for Config {
@@ -204,6 +206,7 @@ impl Default for Config {
             workspace_panels: WorkspacePanelSettings::default(),
             app_behavior: AppBehaviorSettings::default(),
             appearance: AppearanceSettings::default(),
+            scripts_vault: String::new(),
         }
     }
 }
@@ -314,6 +317,15 @@ mod tests {
             fs::write(&path, format!("[appearance]\nwindow_backdrop = \"{name}\"\n")).unwrap();
             assert_eq!(Config::load(&path).appearance.window_backdrop, expected);
         }
+    }
+
+    #[test]
+    fn scripts_vault_path_setting_roundtrips() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        assert!(Config::load(&path).scripts_vault.is_empty());
+        Config { scripts_vault: "team/scripts.vault".into(), ..Default::default() }.save(&path).unwrap();
+        assert_eq!(Config::load(&path).scripts_vault, "team/scripts.vault");
     }
 
     #[test]

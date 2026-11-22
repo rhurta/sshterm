@@ -193,3 +193,37 @@ fn file_does_not_contain_plaintext() {
     assert!(!hay.contains("secret-host-name"));
     assert!(!hay.contains("topsecret"));
 }
+
+#[test]
+fn scripts_vault_roundtrips_and_is_independent_of_the_connections_vault() {
+    use super::scripts::ScriptsData;
+    use super::ScriptsVault;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scripts.vault");
+    let mut library = ScriptsVault::create_with(&path, "pw", FAST).unwrap();
+    let id = library.data.save_script(None, None, "Hello", "echo hi", false, 7).unwrap();
+    library.save().unwrap();
+    drop(library);
+
+    let reopened = ScriptsVault::unlock(&path, "pw").unwrap();
+    assert_eq!(reopened.data.get(&id).unwrap().body, "echo hi");
+    assert!(matches!(ScriptsVault::unlock(&path, "other"), Err(VaultError::WrongPasswordOrCorrupt)));
+    // A scripts file is not a connections vault and vice versa only by payload shape,
+    // but the password check is shared: a new library starts empty.
+    let empty = ScriptsVault::create_with(&dir.path().join("b.vault"), "pw", FAST).unwrap();
+    assert_eq!(empty.data, ScriptsData::default());
+}
+
+#[test]
+fn scripts_vault_password_change_reencrypts_the_library() {
+    use super::ScriptsVault;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scripts.vault");
+    let mut library = ScriptsVault::create_with(&path, "old", FAST).unwrap();
+    library.data.create_folder(None, "Ops").unwrap();
+    library.save().unwrap();
+    library.change_password("new").unwrap();
+    drop(library);
+    assert!(ScriptsVault::unlock(&path, "old").is_err());
+    assert_eq!(ScriptsVault::unlock(&path, "new").unwrap().data.tree.len(), 1);
+}

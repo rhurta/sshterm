@@ -7,6 +7,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::config::{self, Config};
 use crate::paths;
 use crate::store;
+use crate::script_store::{self, ScriptsLibrary, ScriptsState};
 use crate::vault::{Vault, VaultError};
 
 /// Shared application state: the open vault, or nothing if locked.
@@ -37,12 +38,21 @@ pub fn vault_status(state: State<'_, VaultState>) -> &'static str {
 /// Argon2 uses 64 MiB and takes a fraction of a second: it runs on a separate
 /// thread (`spawn_blocking`) so the window does not freeze.
 #[tauri::command]
-pub async fn vault_create(state: State<'_, VaultState>, password: String) -> Result<(), String> {
+pub async fn vault_create(
+    state: State<'_, VaultState>,
+    scripts: State<'_, ScriptsState>,
+    password: String,
+) -> Result<(), String> {
     let path = paths::vault_path();
-    let mut vault = tauri::async_runtime::spawn_blocking(move || Vault::create(&path, &password))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(code)?;
+    let (created, library) = tauri::async_runtime::spawn_blocking(move || {
+        let created = Vault::create(&path, &password);
+        let library = if created.is_ok() { script_store::open_with_master(&password) } else { ScriptsLibrary::Closed };
+        (created, library)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let mut vault = created.map_err(code)?;
+    *scripts.0.lock().unwrap_or_else(|e| e.into_inner()) = library;
     // M4: a new vault already has a typed payload, but run the same
     // migration path as unlock so both are always in a consistent shape.
     if store::migrate(&mut vault) {
@@ -53,12 +63,22 @@ pub async fn vault_create(state: State<'_, VaultState>, password: String) -> Res
 }
 
 #[tauri::command]
-pub async fn vault_unlock(state: State<'_, VaultState>, password: String) -> Result<(), String> {
+pub async fn vault_unlock(
+    state: State<'_, VaultState>,
+    scripts: State<'_, ScriptsState>,
+    password: String,
+) -> Result<(), String> {
     let path = paths::vault_path();
-    let mut vault = tauri::async_runtime::spawn_blocking(move || Vault::unlock(&path, &password))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(code)?;
+    // The scripts library opens with the same password in the same background task.
+    let (unlocked, library) = tauri::async_runtime::spawn_blocking(move || {
+        let unlocked = Vault::unlock(&path, &password);
+        let library = if unlocked.is_ok() { script_store::open_with_master(&password) } else { ScriptsLibrary::Closed };
+        (unlocked, library)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let mut vault = unlocked.map_err(code)?;
+    *scripts.0.lock().unwrap_or_else(|e| e.into_inner()) = library;
     // M4: M1-M3 vaults have a flat connection list and a plain `password`
     // field. Wrap them in one folder and move the password into `auth` before
     // the UI sees the data. Payload version and file format stay unchanged.
@@ -82,6 +102,7 @@ pub async fn vault_lock(app: AppHandle) -> Result<(), String> {
             crate::tunnels::stop_all_for_vault_lock(&tunnel_state);
         }
         *vault = None;
+        script_store::close(&state_app.state::<ScriptsState>());
     })
     .await
     .map_err(|error| error.to_string())
@@ -90,6 +111,7 @@ pub async fn vault_lock(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn vault_change_password(
     state: State<'_, VaultState>,
+    scripts: State<'_, ScriptsState>,
     current: String,
     new_password: String,
 ) -> Result<(), String> {
@@ -102,6 +124,7 @@ pub async fn vault_change_password(
 
     // 2) take the vault out of state, change the password, and put it back
     let mut vault = lock(&state).take().ok_or_else(|| "locked".to_string())?;
+    let new_password_for_scripts = new_password.clone();
     let (vault, result) = tauri::async_runtime::spawn_blocking(move || {
         let r = vault.change_password(&new_password);
         (vault, r)
@@ -109,7 +132,10 @@ pub async fn vault_change_password(
     .await
     .map_err(|e| e.to_string())?;
     *lock(&state) = Some(vault);
-    result.map_err(code)
+    result.map_err(code)?;
+    // Keep the scripts library on the same password (when it was opened with it).
+    script_store::change_master_password(&scripts, &new_password_for_scripts);
+    Ok(())
 }
 
 /// Language saved in config.toml ("en" if nothing is saved).

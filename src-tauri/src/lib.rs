@@ -5,6 +5,7 @@ mod crash;
 mod logger;
 mod highlight;
 mod paths;
+mod script_store;
 mod session;
 mod store;
 mod transport;
@@ -200,6 +201,7 @@ pub fn run() {
             Ok(())
         })
         .manage(commands::VaultState::default())
+        .manage(script_store::ScriptsState::default())
         .manage(session::SessionState::default())
         .manage(tunnels::TunnelState::default())
         .invoke_handler(tauri::generate_handler![
@@ -219,6 +221,16 @@ pub fn run() {
             commands::config_set_theme,
             commands::config_get_appearance_settings,
             window_backdrop_active,
+            script_store::scripts_status,
+            script_store::scripts_unlock,
+            script_store::scripts_tree,
+            script_store::scripts_get,
+            script_store::scripts_search,
+            script_store::scripts_save,
+            script_store::scripts_create_folder,
+            script_store::scripts_rename,
+            script_store::scripts_move,
+            script_store::scripts_delete,
             commands::config_set_appearance_settings,
             commands::appearance_background_data,
             commands::config_get_terminal_settings,

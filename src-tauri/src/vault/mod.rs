@@ -5,6 +5,7 @@
 mod crypto;
 mod error;
 mod model;
+pub mod scripts;
 
 #[cfg(test)]
 mod tests;
@@ -14,31 +15,40 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use zeroize::Zeroizing;
 
 use crypto::{derive_key, encode_header, open, parse_header, random_bytes, seal, KEY_LEN, SALT_LEN};
 pub use crypto::KdfParams;
 pub use error::VaultError;
 pub use model::{Auth, Connection, TreeNode, Tunnel, VaultData, DEFAULT_FOLDER_ID};
+pub use scripts::ScriptsData;
 
-/// Unlocked vault. While it exists, the key is in memory; on drop (locking)
-/// the key is cleared (`Zeroizing`).
-pub struct Vault {
+/// Unlocked encrypted file with a typed payload. While it exists, the key is in
+/// memory; on drop (locking) the key is cleared (`Zeroizing`). The connections
+/// vault and the scripts library are two instances of this type.
+pub struct SealedFile<D> {
     path: PathBuf,
     key: Zeroizing<[u8; KEY_LEN]>,
     salt: [u8; SALT_LEN],
     params: KdfParams,
-    pub data: VaultData,
+    pub data: D,
 }
 
+/// The connections vault (`sshterm.vault`).
+pub type Vault = SealedFile<VaultData>;
+/// The scripts library (`scripts.vault`).
+pub type ScriptsVault = SealedFile<ScriptsData>;
+
 // Manual Debug: never print the key or the data.
-impl fmt::Debug for Vault {
+impl<D> fmt::Debug for SealedFile<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Vault").field("path", &self.path).finish_non_exhaustive()
     }
 }
 
-impl Vault {
+impl<D: Serialize + DeserializeOwned + Default> SealedFile<D> {
     /// Creates a new, empty vault. Fails if one already exists.
     pub fn create(path: &Path, password: &str) -> Result<Self, VaultError> {
         Self::create_with(path, password, KdfParams::default())
@@ -53,7 +63,7 @@ impl Vault {
         }
         let salt = random_bytes::<SALT_LEN>();
         let key = derive_key(password, &salt, &params)?;
-        let vault = Vault { path: path.to_path_buf(), key, salt, params, data: VaultData::default() };
+        let vault = SealedFile { path: path.to_path_buf(), key, salt, params, data: D::default() };
         vault.save()?;
         Ok(vault)
     }
@@ -66,8 +76,8 @@ impl Vault {
         let header = parse_header(&bytes)?;
         let key = derive_key(password, &header.salt, &header.params)?;
         let plain = open(&key, &bytes)?;
-        let data: VaultData = serde_json::from_slice(&plain)?;
-        Ok(Vault { path: path.to_path_buf(), key, salt: header.salt, params: header.params, data })
+        let data: D = serde_json::from_slice(&plain)?;
+        Ok(SealedFile { path: path.to_path_buf(), key, salt: header.salt, params: header.params, data })
     }
 
     /// Saves the current data (fresh nonce, atomic write).
@@ -92,8 +102,8 @@ impl Vault {
     }
 }
 
-fn serialize(
-    data: &VaultData,
+fn serialize<D: Serialize>(
+    data: &D,
     key: &[u8; KEY_LEN],
     salt: &[u8; SALT_LEN],
     params: &KdfParams,

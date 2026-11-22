@@ -13,7 +13,8 @@
     "tauri": "tauri",
     "test:split-tree": "node --experimental-strip-types --test tests/splitTree.test.mjs",
     "test:broadcast-targets": "node --experimental-strip-types --test tests/broadcastTargets.test.mjs",
-    "test:theme": "node --experimental-strip-types --test tests/theme.test.mjs"
+    "test:theme": "node --experimental-strip-types --test tests/theme.test.mjs",
+    "test:scripts-tree": "node --experimental-strip-types --test tests/scriptsTree.test.mjs"
   },
   "license": "MIT",
   "dependencies": {

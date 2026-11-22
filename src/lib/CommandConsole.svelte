@@ -3,6 +3,8 @@
   import { tick } from "svelte";
   import { toBase64 } from "$lib/encoding";
   import { t } from "$lib/i18n/index.svelte";
+  import ScriptsDialog from "./ScriptsDialog.svelte";
+  import type { ScriptDetail } from "$lib/types";
   import { resolveBroadcastTargets, type BroadcastSession, type BroadcastTargetMode } from "$lib/broadcastTargets";
 
   let {
@@ -18,6 +20,11 @@
   } = $props();
 
   let draft = $state("");
+  // Scripts library: the dialog (save or load) and the script the text came from.
+  let scriptsDialog = $state<"save" | "load" | null>(null);
+  let loadedScript = $state<{ id: string; name: string } | null>(null);
+  let saveButton: HTMLButtonElement | undefined = $state();
+  let loadButton: HTMLButtonElement | undefined = $state();
   let targetMode = $state<BroadcastTargetMode>("active");
   let selectedSessionIds = $state<string[]>([]);
   let includeProtected = $state(false);
@@ -171,7 +178,28 @@
     }
   }
 
+  function applyLoadedScript(script: ScriptDetail, how: "replace" | "append") {
+    if (how === "append" && draft.length > 0) {
+      draft = `${draft}${draft.endsWith("\n") ? "" : "\n"}${script.body}`;
+    } else {
+      draft = script.body;
+    }
+    // The text now comes from this script, so Save can update it. Appending mixes
+    // sources, so it keeps the previous link only when there was none.
+    loadedScript = how === "replace" || !loadedScript ? { id: script.id, name: script.name } : loadedScript;
+    confirmingMultiline = false;
+    status = t("scripts.loadedStatus", { name: script.name });
+    statusError = false;
+  }
+
+  function scriptsDialogClosed() {
+    const opener = scriptsDialog === "save" ? saveButton : loadButton;
+    scriptsDialog = null;
+    void tick().then(() => (draft.length > 0 ? opener : loadButton)?.focus());
+  }
+
   function clearDraft() {
+    loadedScript = null;
     draft = "";
     confirmingMultiline = false;
     status = "";
@@ -281,6 +309,17 @@
 
       <div class="console-actions">
         <span class="status" class:error={statusError} role="status">{status}</span>
+        {#if loadedScript}
+          <span class="loaded-script" title={loadedScript.name}>{t("console.loadedScript", { name: loadedScript.name })}</span>
+        {/if}
+        <button
+          class="secondary"
+          bind:this={saveButton}
+          onclick={() => (scriptsDialog = "save")}
+          disabled={draft.trim().length === 0}
+          title={draft.trim().length === 0 ? t("console.saveScriptEmpty") : undefined}
+        >{t("console.saveScript")}</button>
+        <button class="secondary" bind:this={loadButton} onclick={() => (scriptsDialog = "load")}>{t("console.loadScript")}</button>
         <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>{t("console.clear")}</button>
         <button class="send" onclick={requestSend} disabled={targetResolution.targets.length === 0 || draft.length === 0 || sending}>
           {sending ? t("console.sending") : t("console.send")}
@@ -289,6 +328,21 @@
     </div>
   </div>
 </section>
+
+{#if scriptsDialog}
+  <ScriptsDialog
+    mode={scriptsDialog}
+    {draft}
+    loaded={loadedScript}
+    onclose={scriptsDialogClosed}
+    onload={applyLoadedScript}
+    onsaved={(script) => {
+      loadedScript = script;
+      status = t("scripts.savedStatus", { name: script.name });
+      statusError = false;
+    }}
+  />
+{/if}
 
 <style>
   .command-console {
@@ -449,6 +503,7 @@
   }
   .status, .confirmation { flex: 1; min-width: 0; color: var(--text-secondary); font-size: var(--ui-font-meta); }
   .status.error { color: var(--danger); }
+  .loaded-script { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--ui-font-meta); }
   button {
     flex: 0 0 auto;
     padding: 0.3rem 0.65rem;
