@@ -377,6 +377,7 @@ export const en = {
   "sftp.transferQueue": "Transfer queue",
   "sftp.transferPreparing": "Preparing transfer…",
   "sftp.transferProgress": "Transfer progress",
+  "sftp.cancelTransfer": "Cancel transfer",
   "sftp.transferStarted": "Transfer started",
   "sftp.transferCompleted": "Transferred {count} file(s)",
   "sftp.transferCancelled": "Transfer cancelled; incomplete temporary files were removed",

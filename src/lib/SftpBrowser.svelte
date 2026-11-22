@@ -797,7 +797,7 @@
               {#if job.error}<small class="transfer-error">{job.error}</small>{/if}
             </div>
             <progress max="100" value={transferPercent(job)} aria-label={t("sftp.transferProgress")}></progress>
-            <span class="transfer-status">{t("sftp.transferStatus." + job.status)}</span>
+            <span class="transfer-status">{job.status === "running" ? t("sftp.transferStatus.running") : job.status === "completed" ? t("sftp.transferStatus.completed") : job.status === "cancelled" ? t("sftp.transferStatus.cancelled") : t("sftp.transferStatus.failed")}</span>
             {#if job.status === "running"}
               <button class="tool-button danger-tool" title={t("sftp.cancelTransfer")} aria-label={t("sftp.cancelTransfer")} onclick={() => void cancelTransfer(job.transfer_id)}>×</button>
             {/if}

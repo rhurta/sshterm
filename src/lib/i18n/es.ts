@@ -377,6 +377,7 @@ export const es: Record<MessageKey, string> = {
   "sftp.transferQueue": "Cola de transferencias",
   "sftp.transferPreparing": "Preparando transferencia…",
   "sftp.transferProgress": "Progreso de la transferencia",
+  "sftp.cancelTransfer": "Cancelar transferencia",
   "sftp.transferStarted": "Transferencia iniciada",
   "sftp.transferCompleted": "{count} archivo(s) transferido(s)",
   "sftp.transferCancelled": "Transferencia cancelada; se eliminaron los archivos temporales incompletos",
