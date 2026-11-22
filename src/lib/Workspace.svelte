@@ -379,6 +379,12 @@
     await openPicker();
   }
 
+  function updateSftpTabName(id: string, connectionName: string) {
+    sftpTabs = sftpTabs.map((tab) => tab.id === id
+      ? { ...tab, name: `${t("sftp.title")} · ${connectionName}` }
+      : tab);
+  }
+
   async function openSftpInPane(connectionId: string | null, paneOverride?: string) {
     let name = t("sftp.title");
     if (connectionId) {
@@ -1021,7 +1027,9 @@
               <SftpBrowser embedded visible={paneActiveIds[sessionPane[tab.id]] === tab.id}
                 focused={activeId === tab.id} workspaceItemId={tab.id} onactivate={activateSession}
                 container={paneEls[sessionPane[tab.id]] ?? null}
-                connectionId={tab.connectionId} onclose={() => closeTab(tab.id)} />
+                connectionId={tab.connectionId}
+                onconnectionchange={(connectionName) => updateSftpTabName(tab.id, connectionName)}
+                onclose={() => closeTab(tab.id)} />
             {/each}
           </div>
         </div>
