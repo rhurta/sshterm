@@ -40,6 +40,8 @@ russh-sftp = "=3.0.1"
 # Parse OpenSSH @revoked known_hosts entries before applying Russh TOFU checks.
 hmac = "0.13"
 sha1 = "0.11"
+# M8c: native local open/save/folder selection for the SFTP browser.
+tauri-plugin-dialog = "2"
 # serde and serde_json come from the template; serde needs features = ["derive"]
 
 [target.'cfg(windows)'.dependencies]
