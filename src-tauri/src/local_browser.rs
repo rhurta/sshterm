@@ -182,7 +182,7 @@ pub async fn local_delete_many(paths: Vec<String>) -> Result<LocalDeleteResult, 
     }
     tokio::task::spawn_blocking(move || delete_local_entries(paths))
         .await
-        .map_err(|error| format!("local_delete_join: {error}"))?
+        .map_err(|error| format!("local_delete_join: {error}"))
 }
 
 fn default_path() -> PathBuf {
