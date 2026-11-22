@@ -1101,6 +1101,21 @@ pub async fn sftp_delete(
     delete_remote_entry(client.session(), &remote_path).await
 }
 
+async fn delete_remote_entries(session: &SftpSession, remote_paths: Vec<String>) -> SftpDeleteResult {
+    let mut result = SftpDeleteResult { deleted: Vec::new(), failed: Vec::new() };
+    let mut seen = HashSet::new();
+    for path in remote_paths {
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        match delete_remote_entry(session, &path).await {
+            Ok(()) => result.deleted.push(path),
+            Err(detail) => result.failed.push(SftpDeleteFailure { path, detail }),
+        }
+    }
+    result
+}
+
 #[tauri::command]
 pub async fn sftp_delete_many(
     state: State<'_, SftpState>,
@@ -1114,18 +1129,7 @@ pub async fn sftp_delete_many(
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
     let client = session.lock().await;
-    let mut result = SftpDeleteResult { deleted: Vec::new(), failed: Vec::new() };
-    let mut seen = HashSet::new();
-    for path in remote_paths {
-        if !seen.insert(path.clone()) {
-            continue;
-        }
-        match delete_remote_entry(client.session(), &path).await {
-            Ok(()) => result.deleted.push(path),
-            Err(detail) => result.failed.push(SftpDeleteFailure { path, detail }),
-        }
-    }
-    Ok(result)
+    Ok(delete_remote_entries(client.session(), remote_paths).await)
 }
 
 #[tauri::command]
@@ -1864,6 +1868,38 @@ mod lifecycle_tests {
             &mut replacement_cancel_rx, &mut replacement_progress, &no_emit,
         ).await.expect("commit confirmed overwrite");
         assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "hello world.txt")).await, b"replacement bytes");
+
+        // Batch deletion removes all requested files and empty folders, but
+        // reports a non-empty directory separately and never recurses into it.
+        let batch_a = workspace.path().join("batch-delete-a.txt");
+        let batch_b = workspace.path().join("batch-delete-b.txt");
+        tokio::fs::write(&batch_a, b"batch a").await.unwrap();
+        tokio::fs::write(&batch_b, b"batch b").await.unwrap();
+        let batch_paths = vec![batch_a.to_string_lossy().into_owned(), batch_b.to_string_lossy().into_owned()];
+        let (batch_items, batch_conflicts) = build_upload_plan(direct.session(), &batch_paths, &remote_base)
+            .await.expect("build batch-delete source plan");
+        assert!(batch_conflicts.is_empty());
+        let batch_id = new_session_id();
+        let mut batch_progress = transfer_progress(&client.id, &batch_id, "upload", &batch_items);
+        let (_batch_cancel, mut batch_cancel_rx) = watch::channel(false);
+        run_transfer(
+            direct.session(), &batch_items, "upload", &batch_id, false,
+            &mut batch_cancel_rx, &mut batch_progress, &no_emit,
+        ).await.expect("upload batch-delete files");
+        let empty_delete_dir = remote_child(&remote_base, "empty-delete-dir");
+        direct.session().create_dir(empty_delete_dir.clone()).await.expect("create empty folder for batch delete");
+        let batch_delete = delete_remote_entries(direct.session(), vec![
+            remote_child(&remote_base, "batch-delete-a.txt"),
+            remote_child(&remote_base, "batch-delete-b.txt"),
+            empty_delete_dir.clone(),
+            remote_tree.clone(),
+            remote_child(&remote_base, "batch-delete-a.txt"),
+        ]).await;
+        assert_eq!(batch_delete.deleted.len(), 3, "duplicate paths should be ignored");
+        assert_eq!(batch_delete.failed.len(), 1);
+        assert_eq!(batch_delete.failed[0].path, remote_tree);
+        assert!(remote_target_exists(direct.session(), &empty_delete_dir).await.unwrap().is_none());
+        assert!(remote_target_exists(direct.session(), &remote_base).await.unwrap().is_some());
 
         // Cancel after the first chunk and prove neither the final file nor its
         // temporary sibling is left behind.
