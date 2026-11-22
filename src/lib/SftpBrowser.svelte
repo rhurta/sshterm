@@ -36,6 +36,7 @@
   let pathInput: HTMLInputElement | undefined = $state();
   let nameInput: HTMLInputElement | undefined = $state();
   let rowList: HTMLDivElement | undefined = $state();
+  let browserDialog: HTMLElement | undefined = $state();
 
   const activeSession = $derived(sessions.find((item) => item.session_id === activeId) ?? null);
   const activeDirectory = $derived(activeSession ? directories[activeSession.session_id] ?? null : null);
@@ -408,6 +409,27 @@
   }
 
   function onBrowserKeydown(event: KeyboardEvent) {
+    if (event.key === "Tab") {
+      const activeDialog = browserDialog?.querySelector<HTMLElement>(".sftp-small-dialog") ?? browserDialog;
+      const focusable = Array.from(
+        activeDialog?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.offsetParent !== null);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) {
+        event.preventDefault();
+        activeDialog?.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+      return;
+    }
     if (pickerOpen || nameMode || deleteTarget) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -466,7 +488,7 @@
 <svelte:window onkeydown={onBrowserKeydown} />
 
 <div class="sftp-backdrop">
-  <section class="sftp-browser" role="dialog" aria-modal="true" aria-labelledby="sftp-title">
+  <section bind:this={browserDialog} class="sftp-browser" role="dialog" aria-modal="true" aria-labelledby="sftp-title">
     <header class="sftp-header">
       <div class="sftp-heading">
         <span class="sftp-mark" aria-hidden="true">
