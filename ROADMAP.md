@@ -368,7 +368,7 @@ See [docs/M8-implementation-plan.md](docs/M8-implementation-plan.md) for archite
 
 - **M8a — Protocol/security spike (implementation complete):** pinned `russh` + `russh-sftp`, direct and multi-hop authentication, portable known-host verification and SFTP subsystem setup are implemented. Windows OpenSSH integration checks remain outstanding; the SFTP UI is intentionally gated on those checks.
 - **M8b — Backend lifecycle (implementation complete):** managed SFTP connections, typed open/list/close commands, remote listing/navigation, and close on vault lock and app exit. Windows integration acceptance remains pending.
-- **M8c — Browser UI (in progress):** backend-safe create-directory, same-directory rename and non-recursive delete commands are ready; build the connection entry points and browser UI next.
+- **M8c — Browser UI (implementation in progress):** dedicated multi-session browser, connection entry points, path navigation/listing/filtering, safe create/rename/delete and local file/folder dialogs implemented; Windows visual/keyboard acceptance pending.
 - **M8d — Transfers:** multi-select, recursive folder upload/download, streaming progress, overwrite confirmation, cancellation and partial-file cleanup.
 - **M8e — Hardening:** Windows portable build, local OpenSSH integration tests, large-file/Unicode/permission/network-failure coverage and regression checks for M7.
 - The SFTP port override is optional and inherits the saved connection's SSH port when unset. Jump hosts retain their own saved ports.
