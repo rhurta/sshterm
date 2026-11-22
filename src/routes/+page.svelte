@@ -138,15 +138,15 @@
       onlock={lock}
     />
     {#if ready && unlocked}
-      <nav class="workspace-tabs" role="tablist" aria-label="Workspace tabs">
+      <nav class="workspace-tabs" role="tablist" aria-label={t("workspace.tabs")}>
         {#each workspaceTabs as tab (tab.id)}
           <div class="workspace-tab" class:active={activeWorkspaceTabId === tab.id}>
             <button role="tab" aria-selected={activeWorkspaceTabId === tab.id}
               onclick={() => (activeWorkspaceTabId = tab.id)}>
-              {tab.kind === "terminal" ? "Terminal" : "SFTP"}
+              {tab.kind === "terminal" ? t("workspace.terminalTab") : t("workspace.sftpTab")}
             </button>
             {#if tab.kind === "sftp"}
-              <button class="workspace-tab-close" aria-label="Close SFTP tab" title="Close"
+              <button class="workspace-tab-close" aria-label={t("workspace.closeTab")} title={t("workspace.closeTab")}
                 onclick={() => closeWorkspaceTab(tab.id)}>×</button>
             {/if}
           </div>
