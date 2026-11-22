@@ -41,6 +41,7 @@
   let pickerSearch = $state("");
   let nameMode = $state<"mkdir" | "rename" | null>(null);
   let namePane = $state<"local" | "remote">("remote");
+  let nameTargetPath = $state("");
   let nameValue = $state("");
   let deleteTarget = $state<{ pane: "local" | "remote"; entries: Array<SftpEntry | LocalFileEntry> } | null>(null);
   let selectedRemotePaths = $state<Record<string, string[]>>({});
@@ -315,6 +316,8 @@
 
   function openEntry(entry: SftpEntry) {
     chooseEntry(entry);
+    selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [entry.path] };
+    remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: entry.path };
     if (entry.kind === "directory") void navigate(entry.path);
   }
 
@@ -330,16 +333,18 @@
         ? entry
         : selectedLocalEntry;
       if (mode === "rename" && !selected) return;
-      if (mode === "rename" && entry) localSelectedPaths = [entry.path];
+      if (mode === "rename" && selected) localSelectedPaths = [selected.path];
+      nameTargetPath = mode === "rename" ? selected?.path ?? "" : "";
       nameValue = mode === "rename" ? selected?.name ?? "" : "";
     } else {
       if (!activeSession || listing) return;
-      const selected = entry && "permissions" in entry ? entry : selectedEntry;
+      const selected = entry && "permissions" in entry ? entry : (selectedRemoteEntries.length === 1 ? selectedRemoteEntries[0] : selectedEntry);
       if (mode === "rename" && !selected) return;
       if (mode === "rename" && selected) {
         selectedPaths = { ...selectedPaths, [activeId]: selected.path };
         selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [selected.path] };
       }
+      nameTargetPath = mode === "rename" ? selected?.path ?? "" : "";
       nameValue = mode === "rename" ? selected?.name ?? "" : "";
     }
     nameMode = mode;
@@ -362,8 +367,8 @@
         if (nameMode === "mkdir") {
           await invoke("local_create_directory", { parentPath: currentPath, name: value });
           statusMessage = t("sftp.localFolderCreated", { name: value });
-        } else if (selectedLocalEntry) {
-          await invoke("local_rename_entry", { path: selectedLocalEntry.path, newName: value });
+        } else if (nameTargetPath) {
+          await invoke("local_rename_entry", { path: nameTargetPath, newName: value });
           statusMessage = t("sftp.localRenamed", { name: value });
         } else {
           return;
@@ -376,8 +381,8 @@
         if (nameMode === "mkdir") {
           await invoke("sftp_mkdir", { sessionId: activeId, remotePath: currentPath, name: value });
           statusMessage = t("sftp.folderCreated", { name: value });
-        } else if (selectedEntry) {
-          await invoke("sftp_rename", { sessionId: activeId, remotePath: selectedEntry.path, newName: value });
+        } else if (nameTargetPath) {
+          await invoke("sftp_rename", { sessionId: activeId, remotePath: nameTargetPath, newName: value });
           statusMessage = t("sftp.renamed", { name: value });
         } else {
           return;
@@ -584,6 +589,12 @@
     } else if (event.key === " ") {
       event.preventDefault();
       if (entry.kind !== "symlink" && entry.kind !== "other") toggleLocalSelection(entry.path, !localSelectedPaths.includes(entry.path));
+    } else if (event.key === "F2") {
+      event.preventDefault();
+      if (entry.kind !== "symlink" && entry.kind !== "other") void showNameDialog("rename", "local", entry);
+    } else if (event.key === "Delete") {
+      event.preventDefault();
+      requestDelete("local", entry);
     } else if (event.key === "Backspace") {
       event.preventDefault();
       openLocalParent();
@@ -612,6 +623,7 @@
   function toggleRemoteSelection(path: string, checked: boolean) {
     const selected = selectedRemotePaths[activeId] ?? [];
     selectedRemotePaths = { ...selectedRemotePaths, [activeId]: checked ? [...new Set([...selected, path])] : selected.filter((item) => item !== path) };
+    selectedPaths = { ...selectedPaths, [activeId]: path };
     remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: path };
   }
 
@@ -790,11 +802,10 @@
     } else if (event.key === "F2") {
       event.preventDefault();
       chooseEntry(entry);
-      void showNameDialog("rename");
+      void showNameDialog("rename", "remote", entry);
     } else if (event.key === "Delete") {
       event.preventDefault();
-      chooseEntry(entry);
-      deleteTarget = entry;
+      requestDelete("remote", entry);
     } else if (event.key === "Backspace") {
       event.preventDefault();
       openParent();
@@ -937,37 +948,6 @@
       </nav>
     {/if}
 
-    <div class="sftp-toolbar">
-      <div class="toolbar-group">
-        <button class="tool-button" title={t("sftp.parent")} aria-label={t("sftp.parent")} onclick={openParent} disabled={!activeDirectory?.parent_path || busy || listing}>
-          <svg viewBox="0 0 24 24"><path d="M19 12H5m7-7-7 7 7 7"/></svg>
-        </button>
-        <button class="tool-button" title={t("sftp.refresh")} aria-label={t("sftp.refresh")} onclick={() => void refreshDirectory()} disabled={!activeSession || busy || listing}>
-          <svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 12-2L20 12M4 12l2.4 5a7 7 0 0 0 12-2"/></svg>
-        </button>
-        <button class="tool-button text-tool" title={t("sftp.newFolder")} onclick={() => void showNameDialog("mkdir")} disabled={!activeSession || busy}>
-          <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/><path d="M12 11v5m-2.5-2.5h5"/></svg>
-          <span>{t("sftp.newFolder")}</span>
-        </button>
-        <button class="tool-button text-tool" title={t("sftp.rename")} onclick={() => void showNameDialog("rename")} disabled={!selectedEntry || busy}>
-          <svg viewBox="0 0 24 24"><path d="m4 16-.8 4 4-.8L19.5 7a2.1 2.1 0 0 0-3-3z"/><path d="m14.5 6.5 3 3"/></svg>
-          <span>{t("sftp.rename")}</span>
-        </button>
-        <button class="tool-button text-tool danger-tool" title={t("sftp.delete")} onclick={() => { if (selectedEntry) deleteTarget = selectedEntry; }} disabled={!selectedEntry || busy}>
-          <svg viewBox="0 0 24 24"><path d="M4 7h16m-10 4v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
-          <span>{t("sftp.delete")}</span>
-        </button>
-        <button class="tool-button text-tool" title={t("sftp.download")} onclick={() => void startTransfer("download")} disabled={!activeSession || !selectedRemoteEntries.length || !localDirectory || busy || localListing}>
-          <svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg>
-          <span>{t("sftp.download") + (selectedRemoteEntries.length ? " (" + selectedRemoteEntries.length + ")" : "")}</span>
-        </button>
-        <button class="tool-button text-tool" title={t("sftp.upload")} onclick={() => void startTransfer("upload")} disabled={!activeSession || !localSelectedPaths.length || !activeDirectory || busy}>
-          <svg viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M4 17v4h16v-4"/></svg>
-          <span>{t("sftp.upload") + (localSelectedPaths.length ? " (" + localSelectedPaths.length + ")" : "")}</span>
-        </button>
-      </div>
-    </div>
-
     {#if activeSession?.agent_binding === "legacy_unbound"}
       <div class="sftp-warning" role="note">{t("sftp.agentUnboundWarning")}</div>
     {/if}
@@ -981,7 +961,7 @@
 
     <div class="sftp-content">
       <div class="sftp-dual-panes">
-        <section class="file-pane local-pane" aria-label={t("sftp.localPane")}>
+        <section class="file-pane local-pane" class:active-pane={activePane === "local"} aria-label={t("sftp.localPane")} onpointerdown={() => (activePane = "local")} onfocusin={() => (activePane = "local")}>
           <header class="pane-heading">
             <div class="pane-heading-title">
               <strong>{t("sftp.localPane")}</strong>
@@ -1000,6 +980,20 @@
               </select>
             </div>
           </header>
+          <div class="pane-actions" aria-label={t("sftp.localOperations")}>
+            <button class="tool-button text-tool" title={t("sftp.newFolder")} onclick={() => void showNameDialog("mkdir", "local")} disabled={!localDirectory || localListing || busy}>
+              <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/><path d="M12 11v5m-2.5-2.5h5"/></svg><span>{t("sftp.newFolder")}</span>
+            </button>
+            <button class="tool-button text-tool" title={t("sftp.rename")} onclick={() => void showNameDialog("rename", "local")} disabled={!selectedLocalEntry || busy || localListing}>
+              <svg viewBox="0 0 24 24"><path d="m4 16-.8 4 4-.8L19.5 7a2.1 2.1 0 0 0-3-3z"/><path d="m14.5 6.5 3 3"/></svg><span>{t("sftp.rename")}</span>
+            </button>
+            <button class="tool-button text-tool danger-tool" title={t("sftp.delete")} onclick={() => requestDelete("local")} disabled={!selectedLocalEntries.length || busy || localListing}>
+              <svg viewBox="0 0 24 24"><path d="M4 7h16m-10 4v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><span>{t("sftp.delete")}{selectedLocalEntries.length ? " (" + selectedLocalEntries.length + ")" : ""}</span>
+            </button>
+            <button class="tool-button text-tool" title={t("sftp.upload")} onclick={() => void startTransfer("upload")} disabled={!activeSession || !localSelectedPaths.length || !activeDirectory || busy}>
+              <svg viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M4 17v4h16v-4"/></svg><span>{t("sftp.upload")}{localSelectedPaths.length ? " (" + localSelectedPaths.length + ")" : ""}</span>
+            </button>
+          </div>
           <form class="pane-path-form" onsubmit={(event) => { event.preventDefault(); void navigateLocalFromInput(); }}>
             <input bind:this={localPathInput} bind:value={localPathValue} aria-label={t("sftp.localPath")} placeholder={t("sftp.localPathPlaceholder")} disabled={localListing} spellcheck="false" />
             <button type="submit" title={t("sftp.go")} aria-label={t("sftp.go")} disabled={localListing}>{t("sftp.go")}</button>
@@ -1050,13 +1044,35 @@
           </footer>
         </section>
 
-        <section class="file-pane remote-pane" aria-label={t("sftp.remotePane")}>
+        <section class="file-pane remote-pane" class:active-pane={activePane === "remote"} aria-label={t("sftp.remotePane")} onpointerdown={() => (activePane = "remote")} onfocusin={() => (activePane = "remote")}>
           <header class="pane-heading">
             <div class="pane-heading-title">
               <strong>{t("sftp.remotePane")}</strong>
               <span>{activeSession ? activeSession.user + "@" + activeSession.host + ":" + activeSession.port : t("sftp.selectConnection")}</span>
             </div>
+            <div class="pane-heading-actions">
+              <button class="tool-button" title={t("sftp.parent")} aria-label={t("sftp.parent")} onclick={openParent} disabled={!activeDirectory?.parent_path || busy || listing}>
+                <svg viewBox="0 0 24 24"><path d="M19 12H5m7-7-7 7 7 7"/></svg>
+              </button>
+              <button class="tool-button" title={t("sftp.refresh")} aria-label={t("sftp.refresh")} onclick={() => void refreshDirectory()} disabled={!activeSession || busy || listing}>
+                <svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 12-2L20 12M4 12l2.4 5a7 7 0 0 0 12-2"/></svg>
+              </button>
+            </div>
           </header>
+          <div class="pane-actions" aria-label={t("sftp.remoteOperations")}>
+            <button class="tool-button text-tool" title={t("sftp.newFolder")} onclick={() => void showNameDialog("mkdir", "remote")} disabled={!activeSession || busy || listing}>
+              <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z"/><path d="M12 11v5m-2.5-2.5h5"/></svg><span>{t("sftp.newFolder")}</span>
+            </button>
+            <button class="tool-button text-tool" title={t("sftp.rename")} onclick={() => void showNameDialog("rename", "remote")} disabled={selectedRemoteEntries.length !== 1 || busy || listing}>
+              <svg viewBox="0 0 24 24"><path d="m4 16-.8 4 4-.8L19.5 7a2.1 2.1 0 0 0-3-3z"/><path d="m14.5 6.5 3 3"/></svg><span>{t("sftp.rename")}</span>
+            </button>
+            <button class="tool-button text-tool danger-tool" title={t("sftp.delete")} onclick={() => requestDelete("remote")} disabled={!selectedRemoteEntries.length || busy || listing}>
+              <svg viewBox="0 0 24 24"><path d="M4 7h16m-10 4v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><span>{t("sftp.delete")}{selectedRemoteEntries.length ? " (" + selectedRemoteEntries.length + ")" : ""}</span>
+            </button>
+            <button class="tool-button text-tool" title={t("sftp.download")} onclick={() => void startTransfer("download")} disabled={!activeSession || !selectedRemoteEntries.length || !localDirectory || busy || localListing}>
+              <svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg><span>{t("sftp.download")}{selectedRemoteEntries.length ? " (" + selectedRemoteEntries.length + ")" : ""}</span>
+            </button>
+          </div>
           <form class="pane-path-form" onsubmit={(event) => { event.preventDefault(); void navigateFromInput(); }}>
             <input bind:this={pathInput} bind:value={pathValue} aria-label={t("sftp.path")} placeholder={t("sftp.pathPlaceholder")} disabled={!activeSession || busy} spellcheck="false" />
             <button type="submit" title={t("sftp.go")} aria-label={t("sftp.go")} disabled={!activeSession || busy}>{t("sftp.go")}</button>
@@ -1195,7 +1211,7 @@
       <div class="sftp-nested-backdrop">
         <form class="sftp-small-dialog" role="dialog" aria-modal="true" aria-labelledby="sftp-name-title" onsubmit={(event) => { event.preventDefault(); void saveName(); }}>
           <header class="small-dialog-head">
-            <h3 id="sftp-name-title">{nameMode === "mkdir" ? t("sftp.newFolderTitle") : t("sftp.renameTitle")}</h3>
+            <h3 id="sftp-name-title">{namePane === "local" ? (nameMode === "mkdir" ? t("sftp.localNewFolderTitle") : t("sftp.localRenameTitle")) : (nameMode === "mkdir" ? t("sftp.newFolderTitle") : t("sftp.renameTitle"))}</h3>
           </header>
           <input bind:this={nameInput} bind:value={nameValue} class="picker-search" placeholder={t("sftp.namePlaceholder")} aria-label={t("sftp.namePlaceholder")} onkeydown={(event) => { if (event.key === "Escape") { event.preventDefault(); nameMode = null; } }} />
           <div class="small-dialog-actions">
@@ -1225,14 +1241,22 @@
     {#if deleteTarget}
       <div class="sftp-nested-backdrop">
         <section class="sftp-small-dialog" role="alertdialog" aria-modal="true" aria-labelledby="sftp-delete-title">
-          <header class="small-dialog-head"><h3 id="sftp-delete-title">{t("sftp.deleteTitle")}</h3></header>
-          <p class="confirm-copy">{t("sftp.deleteConfirm", { name: deleteTarget.name })}</p>
-          {#if deleteTarget.kind === "directory"}
+          <header class="small-dialog-head"><h3 id="sftp-delete-title">{deleteTarget.pane === "local" ? t("sftp.localDeleteTitle") : t("sftp.deleteTitle")}</h3></header>
+          {#if deleteTarget.entries.length === 1}
+            <p class="confirm-copy">{t(deleteTarget.pane === "local" ? "sftp.localDeleteConfirm" : "sftp.deleteConfirm", { name: deleteTarget.entries[0]?.name ?? "" })}</p>
+          {:else}
+            <p class="confirm-copy">{t("sftp.deleteConfirmMultiple", { count: deleteTarget.entries.length, location: t(deleteTarget.pane === "local" ? "sftp.localPane" : "sftp.remotePane") })}</p>
+          {/if}
+          <div class="overwrite-list">
+            {#each deleteTarget.entries.slice(0, 8) as entry (entry.path)}<span title={entry.path}>{entry.name}</span>{/each}
+            {#if deleteTarget.entries.length > 8}<small>{t("sftp.overwriteMore", { count: deleteTarget.entries.length - 8 })}</small>{/if}
+          </div>
+          {#if deleteTarget.entries.some((entry) => entry.kind === "directory")}
             <p class="confirm-hint">{t("sftp.emptyDirectoryOnly")}</p>
           {/if}
           <div class="small-dialog-actions">
             <button bind:this={deleteCancelButton} class="secondary-button" onclick={() => void dismissDelete()}>{t("editor.cancel")}</button>
-            <button class="danger-button" onclick={() => void confirmDelete()} disabled={busy}>{t("sftp.delete")}</button>
+            <button class="danger-button" onclick={() => void confirmDelete()} disabled={busy}>{t("sftp.delete")}{deleteTarget.entries.length > 1 ? " (" + deleteTarget.entries.length + ")" : ""}</button>
           </div>
         </section>
       </div>
@@ -1322,13 +1346,19 @@
   .local-tool { color: var(--text-secondary); }
   .sftp-content { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; background: var(--app-bg); }
   .sftp-dual-panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1 1 auto; min-height: 0; min-width: 0; }
-  .file-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--app-bg); }
-  .local-pane { border-right: 1px solid var(--border-strong); }
+  .file-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--app-bg); border: 1px solid transparent; }
+  .file-pane.active-pane { border-color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .file-pane.active-pane .pane-heading { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+  .file-pane.active-pane .pane-heading-title strong { color: var(--accent); }
+  .local-pane { border-right-color: var(--border-strong); }
   .pane-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 34px; padding: 3px 8px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .pane-heading-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
   .pane-heading-title strong { color: var(--text); font-size: var(--ui-font-control); font-weight: 650; }
   .pane-heading-title span { min-width: 0; overflow: hidden; color: var(--muted); font-size: var(--ui-font-meta); text-overflow: ellipsis; white-space: nowrap; }
   .pane-heading-actions { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+  .pane-actions { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 4px; min-height: 36px; padding: 3px 7px; background: var(--surface-raised); border-bottom: 1px solid var(--border); }
+  .pane-actions .tool-button { min-width: 0; height: 27px; padding: 0 6px; font-size: var(--ui-font-meta); }
+  .pane-actions .tool-button svg { width: 15px; height: 15px; }
   .local-root-select { max-width: 116px; height: 27px; padding: 0 5px; color: var(--text-secondary); background: var(--surface-deep); border: 1px solid var(--border); border-radius: 4px; font: inherit; font-size: var(--ui-font-meta); }
   .pane-path-form { display: flex; flex: 0 0 auto; gap: 4px; min-width: 0; padding: 5px 8px; border-bottom: 1px solid var(--border); background: var(--surface-raised); }
   .pane-path-form input, .picker-search, .sftp-filter input { min-width: 0; width: 100%; height: 28px; padding: 0 8px; color: var(--text); background: var(--surface-deep); border: 1px solid var(--border); border-radius: 4px; font: inherit; font-size: var(--ui-font-control); box-sizing: border-box; }
