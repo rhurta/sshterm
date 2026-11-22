@@ -22,7 +22,7 @@ use zeroize::Zeroizing;
 use crypto::{derive_key, encode_header, open, parse_header, random_bytes, seal, KEY_LEN, SALT_LEN};
 pub use crypto::KdfParams;
 pub use error::VaultError;
-pub use model::{Auth, Connection, TreeNode, Tunnel, VaultData, DEFAULT_FOLDER_ID};
+pub use model::{Auth, Connection, SftpOptions, TreeNode, Tunnel, VaultData, DEFAULT_FOLDER_ID};
 pub use scripts::ScriptsData;
 
 /// Unlocked encrypted file with a typed payload. While it exists, the key is in

@@ -165,7 +165,7 @@
   let colorFg = $state(initial.colors?.fg ?? "");
   let colorBg = $state(initial.colors?.bg ?? "");
   let sftpEnabled = $state(initial.sftp != null);
-  let sftpPort = $state(initial.sftp?.port ?? 22);
+  let sftpPort = $state<number | undefined>(initial.sftp?.port ?? undefined);
   let sftpStartDir = $state(initial.sftp?.start_dir ?? "");
   let validation = $state("");
   let saving = $state(false);
@@ -212,8 +212,8 @@
       section = "jumps";
       return;
     }
-    const sftpPortValue = Number(sftpPort);
-    if (sftpEnabled && (!Number.isInteger(sftpPortValue) || sftpPortValue < 1 || sftpPortValue > 65535)) {
+    const sftpPortValue = sftpPort === undefined ? null : Number(sftpPort);
+    if (sftpEnabled && sftpPortValue !== null && (!Number.isInteger(sftpPortValue) || sftpPortValue < 1 || sftpPortValue > 65535)) {
       validation = t("editor.validationSftpPort");
       section = "advanced";
       return;
@@ -338,7 +338,8 @@
       {#if sftpEnabled}
         <label>
           {t("editor.sftpPort")}
-          <input type="number" min="1" max="65535" bind:value={sftpPort} />
+          <input type="number" min="1" max="65535" placeholder={t("editor.sftpPortInherited")} bind:value={sftpPort} />
+          <span class="hint">{t("editor.sftpPortHint")}</span>
         </label>
         <label>
           {t("editor.sftpStartDir")}

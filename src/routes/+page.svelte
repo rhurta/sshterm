@@ -1,9 +1,10 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import LockScreen from "$lib/LockScreen.svelte";
+  import SftpBrowser from "$lib/SftpBrowser.svelte";
   import Workspace from "$lib/Workspace.svelte";
   import TitleBar from "$lib/TitleBar.svelte";
-  import { initLocale } from "$lib/i18n/index.svelte";
+  import { initLocale, t } from "$lib/i18n/index.svelte";
   import { startSessionBus } from "$lib/sessionBus";
   import type { AppTheme } from "$lib/theme";
   import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings, type WindowBackdrop } from "$lib/types";
@@ -16,12 +17,15 @@
   let unlocked = $state(false);
   let settingsOpen = $state(false);
   let tunnelPanelOpen = $state(false);
+  type WorkspaceTab = { id: string; kind: "terminal" } | { id: string; kind: "sftp"; connectionId: string | null };
+  let workspaceTabs = $state<WorkspaceTab[]>([{ id: "terminal", kind: "terminal" }]);
+  let activeWorkspaceTabId = $state("terminal");
   let dir = $state("");
   let theme = $state<AppTheme>(DEFAULT_THEME);
   let appearance = $state<AppearanceSettings>({ ...DEFAULT_APPEARANCE_SETTINGS });
   // Background image as a data URL ("" = none). Opacity only applies while one is set.
   let backgroundData = $state("");
-  // Backdrop the window was actually created with (a saved change applies after a restart).
+  // Backdrop active on the native window (saved changes apply after a restart).
   let backdropActive = $state<WindowBackdrop>("off");
   const seeThrough = $derived(backdropActive !== "off");
 
@@ -87,13 +91,28 @@
   const panelAlpha = $derived(hasBackdrop ? appearance.panel_opacity : 100);
   const terminalOpacity = $derived(hasBackdrop ? appearance.terminal_opacity : 100);
 
+  function openSftpBrowser(connectionId: string | null) {
+    const id = crypto.randomUUID();
+    workspaceTabs = [...workspaceTabs, { id, kind: "sftp", connectionId }];
+    activeWorkspaceTabId = id;
+  }
+
+  function closeWorkspaceTab(id: string) {
+    if (id === "terminal") return;
+    workspaceTabs = workspaceTabs.filter((tab) => tab.id !== id);
+    if (activeWorkspaceTabId === id) activeWorkspaceTabId = "terminal";
+  }
+
   async function lock() {
     // Without this, ssh.exe processes would be left open after unmounting
     // the Workspace.
     await invoke("session_close_all");
     await invoke("vault_lock");
     unlocked = false;
+    workspaceTabs = [{ id: "terminal", kind: "terminal" }];
+    activeWorkspaceTabId = "terminal";
   }
+
 </script>
 
 <div
@@ -113,22 +132,49 @@
       onchange={changeTheme}
       onsettings={() => (settingsOpen = true)}
       ontunnels={() => (tunnelPanelOpen = true)}
+      onsftp={() => openSftpBrowser(null)}
       onlock={lock}
     />
+    {#if ready && unlocked}
+      <div class="workspace-tabs" role="group" aria-label={t("workspace.tabs")}>
+        {#each workspaceTabs as tab (tab.id)}
+          <div class="workspace-tab" class:active={activeWorkspaceTabId === tab.id}>
+            <button aria-pressed={activeWorkspaceTabId === tab.id}
+              onclick={() => (activeWorkspaceTabId = tab.id)}>
+              {tab.kind === "terminal" ? t("workspace.terminalTab") : t("workspace.sftpTab")}
+            </button>
+            {#if tab.kind === "sftp"}
+              <button class="workspace-tab-close" aria-label={t("workspace.closeTab")} title={t("workspace.closeTab")}
+                onclick={() => closeWorkspaceTab(tab.id)}>×</button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
     {#if ready}
       <div class="screen">
         {#if unlocked}
-          <Workspace
-            {dir}
-            {theme}
-            {appearance}
-            {terminalOpacity}
-            windowBackdropActive={backdropActive}
-            onthemechange={changeTheme}
-            onappearancechange={changeAppearance}
-            bind:settingsOpen
-            bind:tunnelPanelOpen
-          />
+          <div class="workspace-host" class:inactive={activeWorkspaceTabId !== "terminal"}>
+            <Workspace
+              {dir}
+              {theme}
+              {appearance}
+              {terminalOpacity}
+              windowBackdropActive={backdropActive}
+              onthemechange={changeTheme}
+              onappearancechange={changeAppearance}
+              onsftpopen={openSftpBrowser}
+              bind:settingsOpen
+              bind:tunnelPanelOpen
+            />
+          </div>
+          {#each workspaceTabs as tab (tab.id)}
+            {#if tab.kind === "sftp"}
+              <SftpBrowser embedded visible={activeWorkspaceTabId === tab.id}
+                connectionId={tab.connectionId}
+                onclose={() => closeWorkspaceTab(tab.id)} />
+            {/if}
+          {/each}
         {:else}
           <LockScreen onunlocked={() => (unlocked = true)} />
         {/if}
@@ -324,14 +370,9 @@
     --success-soft: color-mix(in srgb, var(--success) 14%, var(--c-app-bg));
     --success-border: color-mix(in srgb, var(--success) 42%, var(--c-app-bg));
   }
-  /* Transparent window: no solid base, so the desktop (or Mica) shows through the
-     translucent surfaces. A background image still covers it. */
-  .window-shell[data-see-through="true"] {
-    background: transparent;
-  }
-  .window-shell[data-see-through="true"] .bg-layer {
-    background-color: transparent;
-  }
+  /* Transparent window: let the desktop/Mica show through translucent UI surfaces. */
+  .window-shell[data-see-through="true"] { background: transparent; }
+  .window-shell[data-see-through="true"] .bg-layer { background-color: transparent; }
   .bg-layer {
     position: absolute;
     inset: 0;
@@ -382,11 +423,63 @@
     display: flex;
     flex-direction: column;
   }
+  .workspace-tabs {
+    display: flex;
+    flex: 0 0 34px;
+    align-items: stretch;
+    gap: 3px;
+    padding: 3px 8px 0;
+    overflow-x: auto;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .workspace-tab {
+    display: flex;
+    align-items: center;
+    min-width: 96px;
+    max-width: 220px;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: 5px 5px 0 0;
+    background: var(--surface-hover);
+  }
+  .workspace-tab.active { background: var(--surface-raised); border-top: 2px solid var(--accent); }
+  .workspace-tab > button:first-child {
+    min-width: 0;
+    flex: 1;
+    height: 28px;
+    padding: 0 10px;
+    overflow: hidden;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--ui-font-dense);
+  }
+  .workspace-tab.active > button:first-child { color: var(--text); }
+  .workspace-tab-close {
+    width: 24px;
+    height: 24px;
+    margin-right: 3px;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .workspace-tab-close:hover { color: var(--danger); background: var(--surface-hover); }
+  .workspace-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
   .screen {
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
+  .workspace-host { position: absolute; inset: 0; visibility: visible; }
+  .workspace-host.inactive { visibility: hidden; pointer-events: none; }
   :global(html, body) {
     width: 100%;
     height: 100%;

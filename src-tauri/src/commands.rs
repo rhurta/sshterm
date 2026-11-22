@@ -92,6 +92,11 @@ pub async fn vault_unlock(
 /// Locking = dropping the vault. The key is cleared from memory on drop.
 #[tauri::command]
 pub async fn vault_lock(app: AppHandle) -> Result<(), String> {
+    // SFTP credentials live only in the encrypted vault. Close native SFTP
+    // sessions before dropping it, regardless of the tunnel-lock preference.
+    let sftp_state = app.state::<crate::sftp::SftpState>();
+    let _ = crate::sftp::close_all(&sftp_state).await;
+
     tauri::async_runtime::spawn_blocking(move || {
         let state_app = app.clone();
         let state = state_app.state::<VaultState>();

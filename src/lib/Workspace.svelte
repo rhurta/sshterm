@@ -24,6 +24,7 @@
     windowBackdropActive = "off",
     onthemechange,
     onappearancechange,
+    onsftpopen,
     settingsOpen = $bindable(false),
     tunnelPanelOpen = $bindable(false),
   }: {
@@ -36,6 +37,7 @@
     windowBackdropActive?: WindowBackdrop;
     onthemechange: (theme: AppTheme) => void;
     onappearancechange: (next: AppearanceSettings) => Promise<string | null>;
+    onsftpopen: (connectionId: string | null) => void;
     settingsOpen?: boolean;
     tunnelPanelOpen?: boolean;
   } = $props();
@@ -845,7 +847,7 @@
   {/if}
 
   <div class="body">
-    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onopensftp={(connection) => onsftpopen(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
     {#if propertiesVisible}
       <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? 8 : -8))); } }}></div>

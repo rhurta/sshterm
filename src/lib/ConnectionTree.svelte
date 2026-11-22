@@ -15,6 +15,7 @@
     selectedId,
     autoRename,
     onopen,
+    onsftp,
     onselect,
     ontoggle,
     onrename,
@@ -35,6 +36,7 @@
     selectedId: string | null;
     autoRename: string | null;
     onopen: (c: ConnectionSummary) => void;
+    onsftp: (c: ConnectionSummary) => void;
     onselect: (node: TreeNode) => void;
     ontoggle: (id: string) => void;
     onrename: (node: TreeNode, name: string) => void;
@@ -350,6 +352,7 @@
     {#if entry.node.type === "connection" && summary(entry.node)}
       {@const c = summary(entry.node)!}
       <button onclick={() => { onopen(c); menu = null; }}>{t("tree.open")}</button>
+      <button onclick={() => { onsftp(c); menu = null; }}>{t("tree.openSftp")}</button>
       <button onclick={() => { onedit(c); menu = null; }}>{t("tree.edit")}</button>
       <button onclick={() => { onduplicate(c); menu = null; }}>{t("tree.duplicate")}</button>
     {/if}

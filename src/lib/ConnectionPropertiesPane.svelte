@@ -115,7 +115,7 @@
     values.push([
       t("properties.sftp"),
       current.sftp
-        ? t("properties.sftpPort") + ": " + current.sftp.port + "; " + t("properties.sftpStartDir") + ": " + (current.sftp.start_dir || t("properties.default"))
+        ? t("properties.sftpPort") + ": " + (current.sftp.port ?? t("properties.inheritSshPort")) + "; " + t("properties.sftpStartDir") + ": " + (current.sftp.start_dir || t("properties.default"))
         : t("properties.default"),
     ]);
     values.push([t("properties.highlight"), current.highlight.join(", ") || t("properties.inherited")]);
