@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { t } from "$lib/i18n/index.svelte";
@@ -9,14 +9,26 @@
     connectionId = null,
     embedded = false,
     visible = true,
+    container = null,
+    focused = false,
+    workspaceItemId = "",
+    onactivate,
+    onconnectionchange,
     onclose,
   }: {
     connectionId?: string | null;
     embedded?: boolean;
     visible?: boolean;
+    /** Pane body this browser is attached to; re-parenting preserves its SFTP sessions. */
+    container?: HTMLElement | null;
+    focused?: boolean;
+    workspaceItemId?: string;
+    onactivate?: (id: string) => void;
+    onconnectionchange?: (connectionName: string) => void;
     onclose: () => void;
   } = $props();
 
+  let root = $state<HTMLDivElement | null>(null);
   let connections = $state<ConnectionSummary[]>([]);
   let sessions = $state<SftpSessionInfo[]>([]);
   let activeId = $state("");
@@ -164,6 +176,7 @@
       const opened = await invoke<SftpSessionInfo>("sftp_open", { connectionId: id });
       sessions = [...sessions, opened];
       activeId = opened.session_id;
+      onconnectionchange?.(opened.connection_name);
       search = "";
       pathValue = opened.current_path;
       selectedPaths = { ...selectedPaths, [opened.session_id]: "" };
@@ -216,44 +229,6 @@
 
   function openParent() {
     if (activeDirectory?.parent_path) void navigate(activeDirectory.parent_path);
-  }
-
-  async function closeSession(sessionId: string) {
-    const closing = sessions.find((item) => item.session_id === sessionId);
-    if (!closing) return;
-    const remaining = sessions.filter((item) => item.session_id !== sessionId);
-    sessions = remaining;
-    const nextId = remaining.at(-1)?.session_id ?? "";
-    if (activeId === sessionId) {
-      activeId = nextId;
-      search = "";
-      pathValue = directories[nextId]?.current_path ?? "";
-      selectedPaths = { ...selectedPaths, [nextId]: "" };
-    }
-    const nextDirectories = { ...directories };
-    delete nextDirectories[sessionId];
-    directories = nextDirectories;
-    const nextSelected = { ...selectedPaths };
-    delete nextSelected[sessionId];
-    selectedPaths = nextSelected;
-    const nextRemoteSelected = { ...selectedRemotePaths };
-    delete nextRemoteSelected[sessionId];
-    selectedRemotePaths = nextRemoteSelected;
-    const nextRemoteAnchors = { ...remoteSelectionAnchors };
-    delete nextRemoteAnchors[sessionId];
-    remoteSelectionAnchors = nextRemoteAnchors;
-    try {
-      await invoke("sftp_close", { sessionId });
-    } catch (error) {
-      // Vault lock or app shutdown may already have closed the runtime session.
-      console.debug("SFTP session was already closed", message(error));
-    }
-    if (activeId) {
-      await tick();
-      searchInput?.focus();
-    } else {
-      await openConnectionPicker();
-    }
   }
 
   async function closeBrowser() {
@@ -819,8 +794,8 @@
   }
 
   function onBrowserKeydown(event: KeyboardEvent) {
-    if (!visible) return;
-    if (event.key === "Tab") {
+    if (!visible || !focused || !root?.contains(document.activeElement)) return;
+    if (event.key === "Tab" && (!embedded || pickerOpen || nameMode || overwriteConfirm || deleteTarget)) {
       const activeDialog = browserDialog?.querySelector<HTMLElement>(".sftp-small-dialog") ?? browserDialog;
       const focusable = Array.from(
         activeDialog?.querySelectorAll<HTMLElement>(
@@ -887,7 +862,17 @@
   }
 
   $effect(() => {
-    if (visible) void tick().then(() => searchInput?.focus());
+    if (visible && focused) void tick().then(() => searchInput?.focus());
+  });
+
+  // Keep this browser mounted while its workspace tab moves between panes.
+  // Re-parenting the root preserves active SFTP sessions and transfer state.
+  $effect(() => {
+    const target = container;
+    const node = root;
+    if (!target || !node || node.parentElement === target) return;
+    target.appendChild(node);
+    untrack(() => { if (visible && focused) void tick().then(() => searchInput?.focus()); });
   });
 
   onMount(() => {
@@ -908,8 +893,8 @@
 
 <svelte:window onkeydown={onBrowserKeydown} />
 
-<div class="sftp-backdrop" class:embedded class:hidden={!visible}>
-  <section bind:this={browserDialog} class="sftp-browser" role="dialog" aria-modal="true" aria-labelledby="sftp-title">
+<div bind:this={root} class="sftp-backdrop" class:embedded class:hidden={!visible}>
+  <section bind:this={browserDialog} class="sftp-browser" role="dialog" aria-modal={embedded ? "false" : "true"} aria-labelledby="sftp-title" onpointerdown={() => onactivate?.(workspaceItemId)} onfocusin={() => onactivate?.(workspaceItemId)}>
     <header class="sftp-header">
       <div class="sftp-heading">
         <span class="sftp-mark" aria-hidden="true">
@@ -929,30 +914,7 @@
           </span>
         </div>
       </div>
-      <div class="sftp-header-actions">
-        <button class="icon-button" title={t("sftp.newSession")} aria-label={t("sftp.newSession")} onclick={openConnectionPicker} disabled={busy}>
-          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
-        <button class="icon-button close-button" title={t("workspace.close")} aria-label={t("workspace.close")} onclick={() => void closeBrowser()}>
-          <svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
-        </button>
-      </div>
     </header>
-
-    {#if sessions.length > 0}
-      <nav class="sftp-tabs" aria-label={t("sftp.sessions")}>
-        {#each sessions as session (session.session_id)}
-          <div class="sftp-tab" class:active={session.session_id === activeId}>
-            <button class="sftp-tab-label" title={session.connection_name} onclick={() => { activeId = session.session_id; search = ""; pathValue = directories[session.session_id]?.current_path ?? session.current_path; selectedPaths = { ...selectedPaths, [session.session_id]: "" }; }}>
-              <span class="tab-state" aria-hidden="true"></span>
-              <span>{session.connection_name}</span>
-            </button>
-            <button class="tab-close" title={t("sftp.closeSession")} aria-label={t("sftp.closeSession") + " " + session.connection_name} onclick={() => void closeSession(session.session_id)}>×</button>
-          </div>
-        {/each}
-        <button class="tab-add" title={t("sftp.newSession")} aria-label={t("sftp.newSession")} onclick={openConnectionPicker}>+</button>
-      </nav>
-    {/if}
 
     {#if activeSession?.agent_binding === "legacy_unbound"}
       <div class="sftp-warning" role="note">{t("sftp.agentUnboundWarning")}</div>
@@ -1315,8 +1277,7 @@
   .sftp-title-block { min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
   .sftp-title-block h2 { margin: 0; font-size: var(--ui-font-title); font-weight: 600; }
   .sftp-subtitle { max-width: 70vw; overflow: hidden; color: var(--muted); font-size: var(--ui-font-meta); text-overflow: ellipsis; white-space: nowrap; }
-  .sftp-header-actions { display: flex; gap: 4px; }
-  .icon-button, .tool-button, .tab-close, .tab-add, .dismiss-error {
+  .icon-button, .tool-button, .dismiss-error {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1331,18 +1292,8 @@
     font: inherit;
   }
   .icon-button svg, .tool-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
-  .icon-button:hover, .tool-button:hover, .tab-close:hover, .tab-add:hover { color: var(--accent); background: var(--surface-hover); border-color: var(--border); }
+  .icon-button:hover, .tool-button:hover { color: var(--accent); background: var(--surface-hover); border-color: var(--border); }
   .icon-button:disabled, .tool-button:disabled { opacity: .42; cursor: not-allowed; }
-  .close-button:hover { color: var(--danger); }
-  .sftp-tabs { display: flex; align-items: stretch; gap: 3px; min-height: 34px; padding: 3px 8px 0; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; }
-  .sftp-tab { display: flex; align-items: center; max-width: 220px; min-width: 100px; border: 1px solid var(--border); border-bottom: 0; border-radius: 5px 5px 0 0; background: var(--surface-hover); }
-  .sftp-tab.active { background: var(--surface-raised); border-top: 2px solid var(--accent); }
-  .sftp-tab-label { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; padding: 0 7px; color: var(--text-secondary); background: transparent; border: 0; cursor: pointer; font: inherit; font-size: var(--ui-font-dense); }
-  .sftp-tab.active .sftp-tab-label { color: var(--text); }
-  .sftp-tab-label span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tab-state { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--success); }
-  .tab-close { flex: 0 0 24px; width: 24px; min-width: 24px; height: 24px; margin-right: 2px; }
-  .tab-add { align-self: center; width: 28px; margin-left: 2px; color: var(--accent); font-size: 18px; }
   .sftp-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-height: 40px; padding: 4px 10px; border-bottom: 1px solid var(--border); }
   .toolbar-group { display: flex; flex-wrap: wrap; gap: 3px; }
   .toolbar-spacer { flex: 1 1 auto; }

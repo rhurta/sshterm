@@ -59,3 +59,23 @@ inputs). Manual checklist for Windows:
 4. Drop on each pane edge; move the last tab out of a pane; change layout presets
    with several tabs open (terminals are no longer recreated).
 5. Close a moved tab and check the log file and the backend session are closed.
+
+## SFTP workspace tabs
+
+SFTP browsers participate in the same pane tab strip and use the same drag/drop and
+keyboard move commands as SSH terminal tabs. A pane can therefore contain SSH and
+SFTP tabs together, and separate panes can show different active tab types.
+
+Each top-level SFTP workspace tab owns exactly one SFTP connection. There is no
+second, nested SFTP session tab strip: opening another connection creates another
+SFTP tab in the shared pane hierarchy. The workspace tab is labelled with the
+connection name once the connection is selected.
+
+An SFTP browser stays mounted while its tab moves. Its root element is re-parented
+to the destination pane instead of recreating the component, so the remote SFTP
+session, local/remote directory state, selections and transfer queue survive a
+move. Switching to another tab hides the browser but does not close its session.
+Closing the top-level SFTP tab (or vault lock/app shutdown) closes that session.
+
+SFTP keyboard shortcuts are handled only by the currently focused workspace tab;
+other visible SFTP panes do not process the same global key event.

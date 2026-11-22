@@ -7,6 +7,7 @@
   import ConnectionPropertiesPane from "./ConnectionPropertiesPane.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import SftpBrowser from "./SftpBrowser.svelte";
   import CommandConsole from "./CommandConsole.svelte";
   import HighlightRulesPanel from "./HighlightRulesPanel.svelte";
   import TunnelManager from "./TunnelManager.svelte";
@@ -24,7 +25,7 @@
     windowBackdropActive = "off",
     onthemechange,
     onappearancechange,
-    onsftpopen,
+    sftpRequest = 0,
     settingsOpen = $bindable(false),
     tunnelPanelOpen = $bindable(false),
   }: {
@@ -37,13 +38,19 @@
     windowBackdropActive?: WindowBackdrop;
     onthemechange: (theme: AppTheme) => void;
     onappearancechange: (next: AppearanceSettings) => Promise<string | null>;
-    onsftpopen: (connectionId: string | null) => void;
+    /** Increment to open a new SFTP browser tab in the focused pane. */
+    sftpRequest?: number;
     settingsOpen?: boolean;
     tunnelPanelOpen?: boolean;
   } = $props();
 
   let tabs = $state<Tab[]>([]);
+  type SftpWorkspaceTab = { id: string; connectionId: string | null; name: string };
+  let sftpTabs = $state<SftpWorkspaceTab[]>([]);
+  let workspaceTabIds = $derived([...tabs.map((tab) => tab.sessionId), ...sftpTabs.map((tab) => tab.id)]);
   let activeId = $state<string | null>(null);
+  let activeTerminalId = $derived(tabs.some((tab) => tab.sessionId === activeId) ? activeId : null);
+  let lastSftpRequest = sftpRequest;
   let layoutPreset = $state<LayoutPreset>("single");
   // The workspace starts with one empty pane (a fresh connection opens in it).
   let layoutTree = $state<SplitNode | null>({ type: "leaf", sessionId: crypto.randomUUID(), sessionIds: [] });
@@ -372,6 +379,45 @@
     await openPicker();
   }
 
+  function updateSftpTabName(id: string, connectionName: string) {
+    sftpTabs = sftpTabs.map((tab) => tab.id === id
+      ? { ...tab, name: `${t("sftp.title")} · ${connectionName}` }
+      : tab);
+  }
+
+  async function openSftpInPane(connectionId: string | null, paneOverride?: string) {
+    let name = t("sftp.title");
+    if (connectionId) {
+      try {
+        const connections = await invoke<ConnectionSummary[]>("conn_list");
+        const connection = connections.find((item) => item.id === connectionId);
+        if (connection) name = `${t("sftp.title")} · ${connection.name}`;
+      } catch { /* SftpBrowser reports its own connection-list errors. */ }
+    }
+    const id = crypto.randomUUID();
+    sftpTabs = [...sftpTabs, { id, connectionId, name }];
+    const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
+    if (!layoutTree || !targetPaneId) {
+      layoutTree = { type: "leaf", sessionId: id, sessionIds: [id] };
+      paneActiveIds = { ...paneActiveIds, [id]: id };
+    } else {
+      layoutTree = addSessionToPane(layoutTree, targetPaneId, id);
+      paneActiveIds = { ...paneActiveIds, [targetPaneId]: id };
+    }
+    pendingPaneId = null;
+    activeId = id;
+    focusedPaneId = paneOfSession(layoutTree, id);
+    picker = false;
+  }
+
+  $effect(() => {
+    const request = sftpRequest;
+    if (request > lastSftpRequest) {
+      lastSftpRequest = request;
+      void openSftpInPane(null);
+    }
+  });
+
   function splitFocusedPane(axis: SplitAxis) {
     const target = currentPaneId();
     if (!layoutTree || !target) return;
@@ -642,7 +688,7 @@
         "4": "grid",
       };
       const preset = presets[key];
-      if (preset && tabs.length > 0) {
+      if (preset && workspaceTabIds.length > 0) {
         e.preventDefault();
         chooseLayout(preset);
         return;
@@ -704,10 +750,10 @@
   }
 
   function chooseLayout(preset: LayoutPreset) {
-    if (tabs.length === 0) return; // presets arrange open tabs; split buttons make empty panes
+    if (workspaceTabIds.length === 0) return; // presets arrange open tabs; split buttons make empty panes
     layoutPreset = preset;
     pendingPaneId = null;
-    layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), preset, activeId);
+    layoutTree = createLayoutTree(workspaceTabIds, preset, activeId);
     const nextActive: Record<string, string> = {};
     for (const pane of getLayoutGeometry(layoutTree).leaves) {
       nextActive[pane.sessionId] = pane.sessionIds.includes(activeId ?? "") ? activeId! : pane.sessionIds[0];
@@ -732,6 +778,7 @@
   function dropTab(sessionId: string) {
     const oldPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(sessionId));
     tabs = tabs.filter((tab) => tab.sessionId !== sessionId);
+    sftpTabs = sftpTabs.filter((tab) => tab.id !== sessionId);
     layoutTree = removeSession(layoutTree, sessionId, true);
     if (oldPane && paneActiveIds[oldPane.sessionId] === sessionId) {
       const remaining = oldPane.sessionIds.filter((id) => id !== sessionId);
@@ -741,7 +788,7 @@
         paneActiveIds = rest;
       }
     }
-    if (activeId === sessionId) activeId = tabs[tabs.length - 1]?.sessionId ?? null;
+    if (activeId === sessionId) activeId = workspaceTabIds.find((id) => id !== sessionId) ?? null;
   }
 
 
@@ -829,6 +876,11 @@
   }
 
   async function closeTab(sessionId: string) {
+    if (sftpTabs.some((tab) => tab.id === sessionId)) {
+      // Unmounting SftpBrowser closes its managed SFTP sessions.
+      dropTab(sessionId);
+      return;
+    }
     try {
       await invoke("session_close", { id: sessionId });
     } catch {
@@ -847,7 +899,7 @@
   {/if}
 
   <div class="body">
-    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onopensftp={(connection) => onsftpopen(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
     {#if propertiesVisible}
       <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? 8 : -8))); } }}></div>
@@ -875,6 +927,7 @@
                 <div class="pane-tabs" class:drop-tabs={tabDrop?.paneId === pane.sessionId && tabDrop.zone === "tabs"} role="tablist" aria-label={t("workspace.paneTabs")}>
                   {#each pane.sessionIds as sessionId (sessionId)}
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
+                    {@const sftpTab = sftpTabs.find((item) => item.id === sessionId)}
                     {#if tab}
                       <!-- svelte-ignore a11y_no_static_element_interactions (drag is a mouse shortcut; Ctrl+Alt+Shift+Arrows is the keyboard path) -->
                       <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
@@ -907,6 +960,18 @@
                           disabled={!tab.connected} onclick={() => toggleSessionProtection(sessionId)}
                         >{tab.protected ? "🔒" : "🔓"}</button>
                         <button class="pane-tab-close" aria-label={`Close ${tab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
+                      </div>
+                    {:else if sftpTab}
+                      <!-- SFTP browsers use the same tab drag/drop contract as SSH sessions. -->
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId}>
+                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
+                          aria-label={`${sftpTab.name}${activeId === sessionId ? ", active pane" : ""}`}
+                          title={sftpTab.name} onclick={() => activateSession(sessionId)}>
+                          <span class="pane-tab-name">{sftpTab.name}</span>
+                          <span class="pane-tab-indicator jump">{t("workspace.sftpTab")}</span>
+                          {#if activeId === sessionId}<span class="pane-focus-dot" aria-hidden="true"></span>{/if}
+                        </button>
+                        <button class="pane-tab-close" aria-label={`Close ${sftpTab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
                       </div>
                     {/if}
                   {/each}
@@ -955,13 +1020,25 @@
                 onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} {settings} {theme} {terminalOpacity} />
             {/each}
           </div>
+          <!-- SFTP browser roots are re-parented into their active pane without
+               unmounting, so moving a tab preserves its sessions and transfers. -->
+          <div class="sftp-parking" aria-hidden="true">
+            {#each sftpTabs as tab (tab.id)}
+              <SftpBrowser embedded visible={paneActiveIds[sessionPane[tab.id]] === tab.id}
+                focused={activeId === tab.id} workspaceItemId={tab.id} onactivate={activateSession}
+                container={paneEls[sessionPane[tab.id]] ?? null}
+                connectionId={tab.connectionId}
+                onconnectionchange={(connectionName) => updateSftpTabName(tab.id, connectionName)}
+                onclose={() => closeTab(tab.id)} />
+            {/each}
+          </div>
         </div>
       {#if consoleVisible}
         {#if tabs.length > 0}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
           <div class="console-resizer" role="separator" aria-orientation="horizontal" aria-label={t("workspace.resizeConsole")} aria-valuemin="110" aria-valuemax={maxConsoleHeight()} aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize} onkeydown={adjustConsoleHeight} onkeyup={saveConsoleResizeAfterKeyboard} title={t("workspace.resizeConsole")}></div>
         {/if}
-        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeId} height={consoleHeight} />
+        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeTerminalId} height={consoleHeight} />
       {/if}
     </main>
   </div>
@@ -1175,6 +1252,7 @@
   .pane-terminals { position: relative; flex: 1; min-height: 0; overflow: hidden; }
   /* Off-screen but laid out, so xterm can measure characters while parked. */
   .terminal-parking { position: fixed; left: -10000px; top: 0; width: 800px; height: 400px; overflow: hidden; visibility: hidden; pointer-events: none; }
+  .sftp-parking { position: fixed; left: -10000px; top: 0; width: 800px; height: 400px; overflow: hidden; visibility: hidden; pointer-events: none; }
   .pane-tab[draggable="true"] { cursor: grab; }
   .pane-tab.dragging { opacity: 0.45; }
   .pane-tabs.drop-tabs { outline:2px solid var(--accent); outline-offset:-2px; background:var(--surface-raised); }

@@ -1,10 +1,9 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import LockScreen from "$lib/LockScreen.svelte";
-  import SftpBrowser from "$lib/SftpBrowser.svelte";
   import Workspace from "$lib/Workspace.svelte";
   import TitleBar from "$lib/TitleBar.svelte";
-  import { initLocale, t } from "$lib/i18n/index.svelte";
+  import { initLocale } from "$lib/i18n/index.svelte";
   import { startSessionBus } from "$lib/sessionBus";
   import type { AppTheme } from "$lib/theme";
   import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings, type WindowBackdrop } from "$lib/types";
@@ -17,9 +16,7 @@
   let unlocked = $state(false);
   let settingsOpen = $state(false);
   let tunnelPanelOpen = $state(false);
-  type WorkspaceTab = { id: string; kind: "terminal" } | { id: string; kind: "sftp"; connectionId: string | null };
-  let workspaceTabs = $state<WorkspaceTab[]>([{ id: "terminal", kind: "terminal" }]);
-  let activeWorkspaceTabId = $state("terminal");
+  let sftpRequest = $state(0);
   let dir = $state("");
   let theme = $state<AppTheme>(DEFAULT_THEME);
   let appearance = $state<AppearanceSettings>({ ...DEFAULT_APPEARANCE_SETTINGS });
@@ -91,26 +88,12 @@
   const panelAlpha = $derived(hasBackdrop ? appearance.panel_opacity : 100);
   const terminalOpacity = $derived(hasBackdrop ? appearance.terminal_opacity : 100);
 
-  function openSftpBrowser(connectionId: string | null) {
-    const id = crypto.randomUUID();
-    workspaceTabs = [...workspaceTabs, { id, kind: "sftp", connectionId }];
-    activeWorkspaceTabId = id;
-  }
-
-  function closeWorkspaceTab(id: string) {
-    if (id === "terminal") return;
-    workspaceTabs = workspaceTabs.filter((tab) => tab.id !== id);
-    if (activeWorkspaceTabId === id) activeWorkspaceTabId = "terminal";
-  }
-
   async function lock() {
     // Without this, ssh.exe processes would be left open after unmounting
     // the Workspace.
     await invoke("session_close_all");
     await invoke("vault_lock");
     unlocked = false;
-    workspaceTabs = [{ id: "terminal", kind: "terminal" }];
-    activeWorkspaceTabId = "terminal";
   }
 
 </script>
@@ -132,29 +115,13 @@
       onchange={changeTheme}
       onsettings={() => (settingsOpen = true)}
       ontunnels={() => (tunnelPanelOpen = true)}
-      onsftp={() => openSftpBrowser(null)}
+      onsftp={() => (sftpRequest += 1)}
       onlock={lock}
     />
-    {#if ready && unlocked}
-      <div class="workspace-tabs" role="group" aria-label={t("workspace.tabs")}>
-        {#each workspaceTabs as tab (tab.id)}
-          <div class="workspace-tab" class:active={activeWorkspaceTabId === tab.id}>
-            <button aria-pressed={activeWorkspaceTabId === tab.id}
-              onclick={() => (activeWorkspaceTabId = tab.id)}>
-              {tab.kind === "terminal" ? t("workspace.terminalTab") : t("workspace.sftpTab")}
-            </button>
-            {#if tab.kind === "sftp"}
-              <button class="workspace-tab-close" aria-label={t("workspace.closeTab")} title={t("workspace.closeTab")}
-                onclick={() => closeWorkspaceTab(tab.id)}>×</button>
-            {/if}
-          </div>
-        {/each}
-      </div>
-    {/if}
     {#if ready}
       <div class="screen">
         {#if unlocked}
-          <div class="workspace-host" class:inactive={activeWorkspaceTabId !== "terminal"}>
+          <div class="workspace-host">
             <Workspace
               {dir}
               {theme}
@@ -163,18 +130,11 @@
               windowBackdropActive={backdropActive}
               onthemechange={changeTheme}
               onappearancechange={changeAppearance}
-              onsftpopen={openSftpBrowser}
+              {sftpRequest}
               bind:settingsOpen
               bind:tunnelPanelOpen
             />
           </div>
-          {#each workspaceTabs as tab (tab.id)}
-            {#if tab.kind === "sftp"}
-              <SftpBrowser embedded visible={activeWorkspaceTabId === tab.id}
-                connectionId={tab.connectionId}
-                onclose={() => closeWorkspaceTab(tab.id)} />
-            {/if}
-          {/each}
         {:else}
           <LockScreen onunlocked={() => (unlocked = true)} />
         {/if}
