@@ -21,7 +21,7 @@ M8 is complete when a user can open an SFTP browser for a saved connection and:
 
 The implementation must not store credentials, file contents, transfer drafts or remote directory listings in plain `config.toml`. Secrets remain in the encrypted vault or transient memory.
 
-**Workspace integration:** SFTP opens in its own top-level workspace tab. The existing SSH terminal and split-tree/drag-and-drop behavior remain unchanged; mixed SSH/SFTP panes are deliberately deferred to a follow-up after M8 is merged.
+**Workspace integration:** SFTP browsers are first-class tabs in the same tiled workspace and pane tab strips as SSH terminals. A pane can contain any mix of SSH and SFTP tabs, and SFTP tabs use the existing drag/drop, reorder, split, focus and keyboard-move behavior. Each top-level SFTP workspace tab owns exactly one saved connection; opening another connection creates another tab at this same level. There is no nested SFTP session tab strip. Moving an SFTP tab re-parents its mounted browser so its connection, directory state and active transfers survive.
 
 ## 2. Architecture decisions
 
@@ -164,8 +164,9 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 
 ### M8c — Browser UI and file operations
 
-- [x] Add SFTP entry points in the title bar and saved-connection context menu; open a dedicated multi-session browser.
-- [x] Host the browser in a distinct top-level workspace tab; keep the SSH workspace mounted while switching tabs.
+- [x] Add SFTP entry points in the title bar and saved-connection context menu; open one browser for the selected connection.
+- [x] Host each browser as a first-class tab in the shared SSH/SFTP pane hierarchy; keep its SFTP session and transfer queue mounted while switching or moving between panes.
+- [x] Remove the nested SFTP session tab strip; opening another SFTP connection creates another top-level workspace tab, named after the connection.
 - [x] Implement remote path navigation, breadcrumbs, listing, refresh and in-browser filtering.
 - [x] Add context-specific local and remote create-folder, rename and delete actions inside their respective panes.
 - [x] Add safe batch-delete commands for both panes with per-entry deleted/failed results; reject symlink traversal and only remove empty directories (never recursively delete folders).
@@ -174,7 +175,7 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 - [x] Support drag-and-drop and toolbar upload/download through the existing transfer queue; use the current local pane directory as the download destination.
 - [x] Add a fixed-default, pointer-resizable transfer queue with keyboard-accessible height controls.
 - [x] Add keyboard navigation, F2 rename, Delete confirmation, focus management and nested-dialog focus traps.
-- [x] Core Windows browser and transfer workflow manually accepted by the user (22 November 2026).
+- [x] Core Windows browser and transfer workflow, including mixed SSH/SFTP pane tabs and the single-level SFTP tab hierarchy, manually accepted by the user (22 November 2026).
 - [ ] Complete the expanded visual/lifecycle matrix across all seven themes, minimum window size and vault lock while sessions/transfers are active.
 
 ### M8d — Transfer queue (implemented)
@@ -194,6 +195,8 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 - [x] Validate Windows-safe download names and duplicate destination rejection before copying.
 - [x] Cover remote batch-delete partial failures, duplicate selection and empty-folder removal in the local OpenSSH integration test.
 - [x] Core integrated browser/transfer workflow manually accepted on Windows by the user (22 November 2026).
+- [x] Windows validation and portable build for the mixed SSH/SFTP pane implementation (PR workflow [#45069307061](https://github.com/rhurta/sshterm/actions/runs/45069307061)).
+- [x] Linux local-OpenSSH SFTP integration for the mixed-pane implementation (PR workflow [#45069307123](https://github.com/rhurta/sshterm/actions/runs/45069307123)).
 - [ ] Complete expanded Windows checks across all seven themes, minimum window size and vault-lock lifecycle.
 - [ ] Add Tauri-command lifecycle/race coverage for open/list/close, vault lock and application exit.
 - [ ] Add explicit integration cases for permission-denied destinations, remote disk full, network interruption and disconnect during a transfer.
