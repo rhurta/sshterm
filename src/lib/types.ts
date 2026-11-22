@@ -262,3 +262,19 @@ export interface SftpDirectory {
   parent_path: string | null;
   entries: SftpEntry[];
 }
+
+/** Local directory metadata for the left pane of the SFTP file manager. */
+export interface LocalFileEntry {
+  name: string;
+  path: string;
+  kind: "directory" | "file" | "symlink" | "other";
+  size: number | null;
+  modified: number | null;
+}
+
+export interface LocalDirectoryListing {
+  current_path: string;
+  parent_path: string | null;
+  roots: string[];
+  entries: LocalFileEntry[];
+}
