@@ -54,7 +54,7 @@ fn local_roots() -> Vec<String> {
     {
         return (b'A'..=b'Z')
             .filter_map(|letter| {
-                let root = format!("{}:\\\\", letter as char);
+                let root = format!("{}:\\", letter as char);
                 Path::new(&root).is_dir().then_some(root)
             })
             .collect();
@@ -127,7 +127,7 @@ mod tests {
         std::fs::write(root.path().join("sample.txt"), b"contents are not returned").unwrap();
 
         let listing = list_directory(Some(root.path().to_string_lossy().into_owned())).unwrap();
-        assert_eq!(listing.current_path, std::fs::canonicalize(root.path()).unwrap().to_string_lossy());
+        assert_eq!(listing.current_path, std::fs::canonicalize(root.path()).unwrap().to_string_lossy().into_owned());
         assert!(listing.parent_path.is_some());
         let folder = listing.entries.iter().find(|entry| entry.name == "folder").unwrap();
         assert_eq!(folder.kind, "directory");
@@ -143,7 +143,7 @@ mod tests {
         let roots = local_roots();
         assert!(!roots.is_empty());
         #[cfg(windows)]
-        assert!(roots.iter().all(|root| root.ends_with("\\\\")));
+        assert!(roots.iter().all(|root| root.ends_with("\\")));
         #[cfg(not(windows))]
         assert_eq!(roots, vec!["/"]);
     }
