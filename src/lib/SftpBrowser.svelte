@@ -829,8 +829,8 @@
   }
 
   function onBrowserKeydown(event: KeyboardEvent) {
-    if (!visible || !focused) return;
-    if (event.key === "Tab") {
+    if (!visible || !focused || !root?.contains(document.activeElement)) return;
+    if (event.key === "Tab" && (!embedded || pickerOpen || nameMode || overwriteConfirm || deleteTarget)) {
       const activeDialog = browserDialog?.querySelector<HTMLElement>(".sftp-small-dialog") ?? browserDialog;
       const focusable = Array.from(
         activeDialog?.querySelectorAll<HTMLElement>(
