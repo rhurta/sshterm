@@ -386,6 +386,8 @@ export const es: Record<MessageKey, string> = {
   "sftp.upload": "Subir",
   "sftp.selectEntry": "Seleccionar {name} para descargar",
   "sftp.transferQueue": "Cola de transferencias",
+  "sftp.resizeTransferQueue": "Cambiar tamaño de la cola de transferencias",
+  "sftp.resizeTransferQueueHint": "Arrastra para cambiar el tamaño. Usa flechas arriba/abajo; Shift para pasos mayores.",
   "sftp.transferPreparing": "Preparando transferencia…",
   "sftp.transferProgress": "Progreso de la transferencia",
   "sftp.cancelTransfer": "Cancelar transferencia",

@@ -29,6 +29,7 @@
   let localSearch = $state("");
   let localSelectedPaths = $state<string[]>([]);
   let localFocusedPath = $state("");
+  let localSelectionAnchor = $state("");
   let localListing = $state(false);
   let localErrorMessage = $state("");
   let busy = $state(false);
@@ -41,6 +42,7 @@
   let nameValue = $state("");
   let deleteTarget = $state<SftpEntry | null>(null);
   let selectedRemotePaths = $state<Record<string, string[]>>({});
+  let remoteSelectionAnchors = $state<Record<string, string>>({});
   type TransferProgress = {
     transfer_id: string; session_id: string; direction: "upload" | "download";
     status: "running" | "completed" | "cancelled" | "failed"; current_file: string;
@@ -48,6 +50,10 @@
   };
   type TransferStartResult = { transfer_id: string | null; conflicts: string[] };
   let transferJobs = $state<TransferProgress[]>([]);
+  let transferQueueHeight = $state(168);
+  let resizingTransferQueue = $state(false);
+  let transferQueueResizeStartY = 0;
+  let transferQueueResizeStartHeight = 168;
   let overwriteConfirm = $state<{ sessionId: string; direction: "upload" | "download"; sources: string[]; destination: string; conflicts: string[] } | null>(null);
   let overwriteConfirmButton: HTMLButtonElement | undefined = $state();
   let searchInput: HTMLInputElement | undefined = $state();
@@ -154,6 +160,7 @@
       pathValue = opened.current_path;
       selectedPaths = { ...selectedPaths, [opened.session_id]: "" };
       selectedRemotePaths = { ...selectedRemotePaths, [opened.session_id]: [] };
+      remoteSelectionAnchors = { ...remoteSelectionAnchors, [opened.session_id]: "" };
       await listDirectory(opened.session_id, opened.current_path);
       if (opened.agent_binding === "legacy_unbound") {
         statusMessage = t("sftp.agentUnboundWarning");
@@ -190,6 +197,7 @@
     search = "";
     selectedPaths = { ...selectedPaths, [activeId]: "" };
     selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [] };
+    remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: "" };
     await listDirectory(activeId, path.trim());
   }
 
@@ -223,6 +231,9 @@
     const nextRemoteSelected = { ...selectedRemotePaths };
     delete nextRemoteSelected[sessionId];
     selectedRemotePaths = nextRemoteSelected;
+    const nextRemoteAnchors = { ...remoteSelectionAnchors };
+    delete nextRemoteAnchors[sessionId];
+    remoteSelectionAnchors = nextRemoteAnchors;
     try {
       await invoke("sftp_close", { sessionId });
     } catch (error) {
@@ -264,6 +275,33 @@
 
   function chooseEntry(entry: SftpEntry) {
     selectedPaths = { ...selectedPaths, [activeId]: entry.path };
+  }
+
+  function pathsBetween(orderedPaths: string[], anchor: string, target: string): string[] {
+    const targetIndex = orderedPaths.indexOf(target);
+    if (targetIndex < 0) return [];
+    const anchorIndex = orderedPaths.indexOf(anchor);
+    const start = anchorIndex < 0 ? targetIndex : Math.min(anchorIndex, targetIndex);
+    const end = anchorIndex < 0 ? targetIndex : Math.max(anchorIndex, targetIndex);
+    return orderedPaths.slice(start, end + 1);
+  }
+
+  function selectRemoteEntry(entry: SftpEntry, event: MouseEvent) {
+    chooseEntry(entry);
+    const selected = selectedRemotePaths[activeId] ?? [];
+    if (event.shiftKey) {
+      const anchor = remoteSelectionAnchors[activeId] || entry.path;
+      const range = pathsBetween(filteredEntries.map((item) => item.path), anchor, entry.path);
+      const keep = event.ctrlKey || event.metaKey ? selected : [];
+      selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [...new Set([...keep, ...range])] };
+      if (!remoteSelectionAnchors[activeId]) remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: entry.path };
+    } else if (event.ctrlKey || event.metaKey) {
+      selectedRemotePaths = { ...selectedRemotePaths, [activeId]: selected.includes(entry.path) ? selected.filter((path) => path !== entry.path) : [...selected, entry.path] };
+      remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: entry.path };
+    } else {
+      selectedRemotePaths = { ...selectedRemotePaths, [activeId]: [entry.path] };
+      remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: entry.path };
+    }
   }
 
   function openEntry(entry: SftpEntry) {
@@ -357,6 +395,7 @@
       localDirectory = result;
       localPathValue = result.current_path;
       localSelectedPaths = [];
+      localSelectionAnchor = "";
       localFocusedPath = result.entries.find((entry) => entry.kind !== "symlink" && entry.kind !== "other")?.path ?? "";
     } catch (error) {
       localErrorMessage = message(error);
@@ -386,15 +425,27 @@
       ? [...new Set([...localSelectedPaths, path])]
       : localSelectedPaths.filter((item) => item !== path);
     localFocusedPath = path;
+    localSelectionAnchor = path;
   }
 
   function selectLocalEntry(entry: LocalDirectoryListing["entries"][number], event: MouseEvent) {
     localFocusedPath = entry.path;
     if (entry.kind === "symlink" || entry.kind === "other") return;
-    if (event.ctrlKey || event.metaKey) {
-      toggleLocalSelection(entry.path, !localSelectedPaths.includes(entry.path));
+    if (event.shiftKey) {
+      const anchor = localSelectionAnchor || entry.path;
+      const eligiblePaths = filteredLocalEntries.filter((item) => item.kind !== "symlink" && item.kind !== "other").map((item) => item.path);
+      const range = pathsBetween(eligiblePaths, anchor, entry.path);
+      const keep = event.ctrlKey || event.metaKey ? localSelectedPaths : [];
+      localSelectedPaths = [...new Set([...keep, ...range])];
+      if (!localSelectionAnchor) localSelectionAnchor = entry.path;
+    } else if (event.ctrlKey || event.metaKey) {
+      localSelectedPaths = localSelectedPaths.includes(entry.path)
+        ? localSelectedPaths.filter((path) => path !== entry.path)
+        : [...localSelectedPaths, entry.path];
+      localSelectionAnchor = entry.path;
     } else {
       localSelectedPaths = [entry.path];
+      localSelectionAnchor = entry.path;
     }
   }
 
@@ -477,7 +528,8 @@
 
   function toggleRemoteSelection(path: string, checked: boolean) {
     const selected = selectedRemotePaths[activeId] ?? [];
-    selectedRemotePaths = { ...selectedRemotePaths, [activeId]: checked ? [...selected, path] : selected.filter((item) => item !== path) };
+    selectedRemotePaths = { ...selectedRemotePaths, [activeId]: checked ? [...new Set([...selected, path])] : selected.filter((item) => item !== path) };
+    remoteSelectionAnchors = { ...remoteSelectionAnchors, [activeId]: path };
   }
 
   function updateTransferProgress(progress: TransferProgress) {
@@ -548,6 +600,46 @@
     if (job.bytes_total > 0) return Math.min(100, Math.round(job.bytes_transferred * 100 / job.bytes_total));
     if (job.files_total > 0) return Math.min(100, Math.round(job.files_completed * 100 / job.files_total));
     return job.status === "completed" ? 100 : 0;
+  }
+
+  const MIN_TRANSFER_QUEUE_HEIGHT = 96;
+  function maxTransferQueueHeight(): number {
+    return Math.max(MIN_TRANSFER_QUEUE_HEIGHT, Math.floor((browserDialog?.clientHeight ?? 780) * 0.55));
+  }
+
+  function clampTransferQueueHeight(value: number): number {
+    return Math.max(MIN_TRANSFER_QUEUE_HEIGHT, Math.min(maxTransferQueueHeight(), value));
+  }
+
+  function startTransferQueueResize(event: PointerEvent) {
+    event.preventDefault();
+    transferQueueResizeStartY = event.clientY;
+    transferQueueResizeStartHeight = transferQueueHeight;
+    resizingTransferQueue = true;
+    if (event.currentTarget instanceof HTMLElement) event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveTransferQueueResize(event: PointerEvent) {
+    if (!resizingTransferQueue) return;
+    transferQueueHeight = clampTransferQueueHeight(transferQueueResizeStartHeight + transferQueueResizeStartY - event.clientY);
+  }
+
+  function endTransferQueueResize(event: PointerEvent) {
+    if (!resizingTransferQueue) return;
+    resizingTransferQueue = false;
+    if (event.currentTarget instanceof HTMLElement && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function onTransferQueueResizeKeydown(event: KeyboardEvent) {
+    const step = event.shiftKey ? 32 : 12;
+    if (event.key === "ArrowUp") transferQueueHeight = clampTransferQueueHeight(transferQueueHeight + step);
+    else if (event.key === "ArrowDown") transferQueueHeight = clampTransferQueueHeight(transferQueueHeight - step);
+    else if (event.key === "Home") transferQueueHeight = MIN_TRANSFER_QUEUE_HEIGHT;
+    else if (event.key === "End") transferQueueHeight = maxTransferQueueHeight();
+    else return;
+    event.preventDefault();
   }
 
   function formatSize(size: number | null): string {
@@ -912,7 +1004,7 @@
                 <div class="sftp-entry" class:selected={selectedPaths[activeId] === entry.path || (selectedRemotePaths[activeId] ?? []).includes(entry.path)}>
                   <div class="entry-name-cell">
                     <input class="entry-select" type="checkbox" checked={(selectedRemotePaths[activeId] ?? []).includes(entry.path)} aria-label={t("sftp.selectEntry", { name: entry.name })} onchange={(event) => toggleRemoteSelection(entry.path, event.currentTarget.checked)} />
-                    <button class="entry-name" class:directory-entry={entry.kind === "directory"} class:symlink-entry={entry.kind === "symlink"} tabindex={selectedPaths[activeId] === entry.path || (!selectedPaths[activeId] && index === 0) ? 0 : -1} draggable={entry.kind === "file" || entry.kind === "directory"} aria-label={entry.name + (entry.kind === "directory" ? ", " + t("sftp.directory") : "")} onclick={() => chooseEntry(entry)} ondblclick={() => openEntry(entry)} onfocus={() => chooseEntry(entry)} onkeydown={(event) => onRowKeydown(event, index, entry)} ondragstart={(event) => { event.dataTransfer?.setData("application/x-sshterm-remote-path", entry.path); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy"; }}>
+                    <button class="entry-name" class:directory-entry={entry.kind === "directory"} class:symlink-entry={entry.kind === "symlink"} tabindex={selectedPaths[activeId] === entry.path || (!selectedPaths[activeId] && index === 0) ? 0 : -1} draggable={entry.kind === "file" || entry.kind === "directory"} aria-label={entry.name + (entry.kind === "directory" ? ", " + t("sftp.directory") : "")} onclick={(event) => selectRemoteEntry(entry, event)} ondblclick={() => openEntry(entry)} onfocus={() => chooseEntry(entry)} onkeydown={(event) => onRowKeydown(event, index, entry)} ondragstart={(event) => { event.dataTransfer?.setData("application/x-sshterm-remote-path", entry.path); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy"; }}>
                       <span class="entry-icon" aria-hidden="true">
                         {#if entry.kind === "directory"}
                           <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v12H3z"/><path d="M3 6V4h7l2 2"/></svg>
@@ -945,22 +1037,42 @@
     </div>
 
     {#if activeTransferJobs.length > 0}
-      <section class="transfer-queue" aria-label={t("sftp.transferQueue")} aria-live="polite">
-        {#each activeTransferJobs as job (job.transfer_id)}
-          <div class="transfer-row">
-            <div class="transfer-details">
-              <strong>{job.direction === "upload" ? t("sftp.upload") : t("sftp.download")}</strong>
-              <span title={job.current_file || job.transfer_id}>{job.current_file || t("sftp.transferPreparing")}</span>
-              <small>{job.files_completed}/{job.files_total} · {formatSize(job.bytes_transferred)} / {formatSize(job.bytes_total)}</small>
-              {#if job.error}<small class="transfer-error">{job.error}</small>{/if}
+      <div
+        class="transfer-queue-resize"
+        class:dragging={resizingTransferQueue}
+        role="separator"
+        tabindex="0"
+        aria-orientation="horizontal"
+        aria-label={t("sftp.resizeTransferQueue")}
+        aria-valuemin={MIN_TRANSFER_QUEUE_HEIGHT}
+        aria-valuemax={maxTransferQueueHeight()}
+        aria-valuenow={transferQueueHeight}
+        title={t("sftp.resizeTransferQueueHint")}
+        onpointerdown={startTransferQueueResize}
+        onpointermove={moveTransferQueueResize}
+        onpointerup={endTransferQueueResize}
+        onpointercancel={endTransferQueueResize}
+        onkeydown={onTransferQueueResizeKeydown}
+      ><span aria-hidden="true"></span></div>
+      <section class="transfer-queue" style:height={transferQueueHeight + "px"} aria-label={t("sftp.transferQueue")} aria-live="polite">
+        <header class="transfer-queue-header">{t("sftp.transferQueue")}</header>
+        <div class="transfer-queue-list">
+          {#each activeTransferJobs as job (job.transfer_id)}
+            <div class="transfer-row">
+              <div class="transfer-details">
+                <strong>{job.direction === "upload" ? t("sftp.upload") : t("sftp.download")}</strong>
+                <span title={job.current_file || job.transfer_id}>{job.current_file || t("sftp.transferPreparing")}</span>
+                <small>{job.files_completed}/{job.files_total} · {formatSize(job.bytes_transferred)} / {formatSize(job.bytes_total)}</small>
+                {#if job.error}<small class="transfer-error">{job.error}</small>{/if}
+              </div>
+              <progress max="100" value={transferPercent(job)} aria-label={t("sftp.transferProgress")}></progress>
+              <span class="transfer-status">{job.status === "running" ? t("sftp.transferStatus.running") : job.status === "completed" ? t("sftp.transferStatus.completed") : job.status === "cancelled" ? t("sftp.transferStatus.cancelled") : t("sftp.transferStatus.failed")}</span>
+              {#if job.status === "running"}
+                <button class="tool-button danger-tool" title={t("sftp.cancelTransfer")} aria-label={t("sftp.cancelTransfer")} onclick={() => void cancelTransfer(job.transfer_id)}>×</button>
+              {/if}
             </div>
-            <progress max="100" value={transferPercent(job)} aria-label={t("sftp.transferProgress")}></progress>
-            <span class="transfer-status">{job.status === "running" ? t("sftp.transferStatus.running") : job.status === "completed" ? t("sftp.transferStatus.completed") : job.status === "cancelled" ? t("sftp.transferStatus.cancelled") : t("sftp.transferStatus.failed")}</span>
-            {#if job.status === "running"}
-              <button class="tool-button danger-tool" title={t("sftp.cancelTransfer")} aria-label={t("sftp.cancelTransfer")} onclick={() => void cancelTransfer(job.transfer_id)}>×</button>
-            {/if}
-          </div>
-        {/each}
+          {/each}
+        </div>
       </section>
     {/if}
 
@@ -1165,7 +1277,13 @@
   .sftp-filter button { width: 22px; height: 22px; margin-left: -28px; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
   .footer-status { min-width: 0; overflow: hidden; margin-left: auto; color: var(--text-secondary); font-size: var(--ui-font-meta); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
   .local-list-error { color: var(--danger); overflow-wrap: anywhere; padding: 12px; }
-  .transfer-queue { display: flex; flex-direction: column; max-height: 160px; overflow: auto; background: var(--surface); border-top: 1px solid var(--border); }
+  .transfer-queue-resize { display: flex; align-items: center; justify-content: center; flex: 0 0 9px; height: 9px; cursor: ns-resize; touch-action: none; background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .transfer-queue-resize span { width: 44px; height: 3px; border-radius: 3px; background: var(--border-strong); transition: background 120ms ease, width 120ms ease; }
+  .transfer-queue-resize:hover span, .transfer-queue-resize:focus-visible span, .transfer-queue-resize.dragging span { width: 64px; background: var(--accent); }
+  .transfer-queue-resize:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .transfer-queue { display: flex; flex: 0 0 auto; flex-direction: column; min-height: 96px; max-height: 55%; overflow: hidden; background: var(--surface); border-top: 1px solid var(--border); }
+  .transfer-queue-header { flex: 0 0 28px; display: flex; align-items: center; padding: 0 10px; color: var(--text-secondary); background: var(--surface); border-bottom: 1px solid var(--border); font-size: var(--ui-font-meta); font-weight: 650; }
+  .transfer-queue-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   .transfer-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(80px, 180px) auto 28px; align-items: center; gap: 10px; min-height: 42px; padding: 5px 10px; border-bottom: 1px solid var(--border); }
   .transfer-details { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
   .transfer-details strong { font-size: var(--ui-font-control); font-weight: 600; }
@@ -1206,7 +1324,7 @@
   .danger-button { color: var(--danger); }
   .confirm-copy, .confirm-hint { margin: 0; font-size: var(--ui-font-body); line-height: 1.5; }
   .confirm-hint { color: var(--warning); font-size: var(--ui-font-meta); }
-  .sftp-browser button:focus-visible, .sftp-browser input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sftp-browser button:focus-visible, .sftp-browser input:focus-visible, .sftp-browser [role="separator"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @media (max-width: 920px) {
     .sftp-toolbar { align-items: flex-start; }
     .sftp-list-head, .sftp-entry { grid-template-columns: minmax(90px, 1fr) 48px 82px 42px; gap: 4px; padding-inline: 5px; }

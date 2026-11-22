@@ -386,6 +386,8 @@ export const en = {
   "sftp.upload": "Upload",
   "sftp.selectEntry": "Select {name} for download",
   "sftp.transferQueue": "Transfer queue",
+  "sftp.resizeTransferQueue": "Resize transfer queue",
+  "sftp.resizeTransferQueueHint": "Drag to resize. Use Up/Down arrows; Shift for larger steps.",
   "sftp.transferPreparing": "Preparing transfer…",
   "sftp.transferProgress": "Transfer progress",
   "sftp.cancelTransfer": "Cancel transfer",
