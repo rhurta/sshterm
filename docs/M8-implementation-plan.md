@@ -1,6 +1,6 @@
 # M8 — Native SFTP implementation plan
 
-**Status:** M8 implementation complete; Windows browser/transfer acceptance remains pending  
+**Status:** Implementation complete; core Windows workflow manually accepted on 22 November 2026. Remaining unchecked items are targeted compatibility, failure-injection and lifecycle/regression hardening.  
 **Scope:** A connection-backed SFTP browser with direct and multi-hop access, file operations, and cancellable transfers.  
 **Dependency boundary:** M8 introduces the native `russh` client for SFTP only. Interactive terminals continue using Windows OpenSSH through ConPTY; the broader transport replacement remains M10.
 
@@ -21,7 +21,7 @@ M8 is complete when a user can open an SFTP browser for a saved connection and:
 
 The implementation must not store credentials, file contents, transfer drafts or remote directory listings in plain `config.toml`. Secrets remain in the encrypted vault or transient memory.
 
-**Workspace integration:** SFTP opens in its own top-level workspace tab. The existing SSH terminal and split-tree/drag-and-drop behavior remain unchanged; mixed SSH/SFTP panes are deliberately deferred to a follow-up after M8 is merged.
+**Workspace integration:** SFTP browsers are first-class tabs in the same tiled workspace and pane tab strips as SSH terminals. A pane can contain any mix of SSH and SFTP tabs, and SFTP tabs use the existing drag/drop, reorder, split, focus and keyboard-move behavior. Each top-level SFTP workspace tab owns exactly one saved connection; opening another connection creates another tab at this same level. There is no nested SFTP session tab strip. Moving an SFTP tab re-parents its mounted browser so its connection, directory state and active transfers survive.
 
 ## 2. Architecture decisions
 
@@ -130,21 +130,21 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 
 ### M8a — Protocol and security spike
 
-**Progress:** SFTP port inheritance and backward-compatible vault decoding are complete. The native protocol layer now opens authenticated Russh sessions directly or through ordered `direct-tcpip` jump hops, verifies host keys against the portable `known_hosts` file, and starts the SFTP subsystem. UI and Tauri command integration remain deferred until the protocol is validated against real Windows OpenSSH servers.
+**Progress:** The native protocol layer, integrated SFTP backend, browser UI and transfer queue are implemented. Direct and multi-hop behavior has passed the Linux local-OpenSSH integration workflow; the merged Windows x64 validation and portable executable build also pass. The user manually confirmed that the integrated Windows SFTP workflow is working as expected on 22 November 2026. Remaining unchecked items are targeted compatibility, failure-injection and lifecycle/regression hardening.
 
 - [x] Pin `russh 0.65.2` + `russh-sftp 3.0.1`, using the Ring crypto backend.
 - [x] Finalize `SftpOptions.port` inheritance and backward compatibility for saved numeric port values.
 - [x] Implement direct and multi-hop SSH authentication and SFTP subsystem setup.
 - [x] Implement portable known-host checking, accept-new learning and changed-key rejection.
-- [x] Implement direct password and private-key authentication (local OpenSSH integration pending).
-- [x] Implement SFTP subsystem setup over `Channel::into_stream()` (integration pending).
-- [x] Implement ordered multi-hop `direct-tcpip` channels and retain upstream handles (integration pending).
+- [x] Implement direct password and private-key authentication.
+- [x] Implement SFTP subsystem setup over `Channel::into_stream()`; direct and jump SFTP setup are covered by the Linux local-OpenSSH integration workflow.
+- [x] Implement ordered multi-hop `direct-tcpip` channels and retain upstream handles; exercised by the Linux local-OpenSSH integration workflow.
 - [x] Implement host-key TOFU, known-key match and changed-key rejection; unit tests added.
-- [x] Implement Windows OpenSSH agent / Pageant signer with session binding (integration pending).
+- [x] Implement Windows OpenSSH agent signer with session binding and the documented legacy-unbound compatibility path; Windows OpenSSH agent use was previously accepted. Pageant-specific interoperability remains open.
 - [ ] Verify hashed host entries and live non-default-port connections against Windows OpenSSH.
 - [ ] Verify Pageant, passphrase-protected key and distinct credentials on each hop against live servers.
 - [ ] Prove vault compatibility with an encrypted-vault fixture and older connection payloads.
-- [ ] Gate: no SFTP browser UI until direct, jump, authentication and host-key checks are working.
+- [x] Release gate: browser UI was introduced only after the direct/jump protocol and host-key implementation gates were satisfied.
 
 **Security constraint:** use Russh 0.65.1 or later. Russh 0.65.2 is the selected baseline; keep the default no-op `kex_done` handler and do not expose or act on KEX shared-secret material. Versions before 0.65.1 are affected by GHSA-9264-jvgf-6w2f / CVE-2026-128087.
 
@@ -158,13 +158,15 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 - [x] Close SFTP sessions on vault lock independently of the M7 tunnel-lock preference.
 - [x] Close SFTP sessions on application exit.
 - [x] Add remote path validation and path-navigation unit tests.
-- [ ] Complete the Windows UI acceptance pass for open/list/close, vault locking and agent/password authentication in the integrated browser.
+- [x] User manually confirmed the core integrated Windows SFTP workflow is working as expected (22 November 2026).
+- [ ] Extend Windows acceptance to explicitly cover vault locking during active sessions/transfers and the remaining authentication variants.
 - [ ] Add Tauri-command integration coverage for open/list/close and vault-lock races; the local protocol-level direct/jump coverage is in M8e.
 
 ### M8c — Browser UI and file operations
 
-- [x] Add SFTP entry points in the title bar and saved-connection context menu; open a dedicated multi-session browser.
-- [x] Host the browser in a distinct top-level workspace tab; keep the SSH workspace mounted while switching tabs.
+- [x] Add SFTP entry points in the title bar and saved-connection context menu; open one browser for the selected connection.
+- [x] Host each browser as a first-class tab in the shared SSH/SFTP pane hierarchy; keep its SFTP session and transfer queue mounted while switching or moving between panes.
+- [x] Remove the nested SFTP session tab strip; opening another SFTP connection creates another top-level workspace tab, named after the connection.
 - [x] Implement remote path navigation, breadcrumbs, listing, refresh and in-browser filtering.
 - [x] Add context-specific local and remote create-folder, rename and delete actions inside their respective panes.
 - [x] Add safe batch-delete commands for both panes with per-entry deleted/failed results; reject symlink traversal and only remove empty directories (never recursively delete folders).
@@ -173,7 +175,8 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 - [x] Support drag-and-drop and toolbar upload/download through the existing transfer queue; use the current local pane directory as the download destination.
 - [x] Add a fixed-default, pointer-resizable transfer queue with keyboard-accessible height controls.
 - [x] Add keyboard navigation, F2 rename, Delete confirmation, focus management and nested-dialog focus traps.
-- [ ] Windows UI acceptance across all seven themes, minimum window size, transfer operations and vault-lock lifecycle.
+- [x] Core Windows browser and transfer workflow, including mixed SSH/SFTP pane tabs and the single-level SFTP tab hierarchy, manually accepted by the user (22 November 2026).
+- [ ] Complete the expanded visual/lifecycle matrix across all seven themes, minimum window size and vault lock while sessions/transfers are active.
 
 ### M8d — Transfer queue (implemented)
 
@@ -187,11 +190,14 @@ Use the Tauri dialog plugin for local file/folder selection rather than exposing
 
 ### M8e — Hardening and release gate
 
-- [x] Windows x64 portable executable build, frontend checks, Rust formatting and Rust tests in GitHub Actions.
-- [x] Linux local-OpenSSH integration test for direct and multi-hop access, recursive upload/download, empty/large/Unicode/space-containing files, overwrite and cancellation cleanup.
+- [x] Windows x64 portable executable build, frontend checks, Rust formatting and Rust tests in GitHub Actions on merged `main` commit `6b14f75220d1b92d36f643404b1a91bd7997ef89` (workflow [#45046483858](https://github.com/rhurta/sshterm/actions/runs/45046483858)).
+- [x] Linux local-OpenSSH integration test for direct and multi-hop access, recursive upload/download, empty/large/Unicode/space-containing files, overwrite, cancellation cleanup and remote batch deletion on merged `main` commit `6b14f75220d1b92d36f643404b1a91bd7997ef89` (workflow [#45046483917](https://github.com/rhurta/sshterm/actions/runs/45046483917)).
 - [x] Validate Windows-safe download names and duplicate destination rejection before copying.
 - [x] Cover remote batch-delete partial failures, duplicate selection and empty-folder removal in the local OpenSSH integration test.
-- [ ] Exercise the integrated browser and transfers manually on Windows across all seven themes, minimum window size and vault-lock lifecycle.
+- [x] Core integrated browser/transfer workflow manually accepted on Windows by the user (22 November 2026).
+- [x] Windows validation and portable build for the mixed SSH/SFTP pane implementation (PR workflow [#45069307061](https://github.com/rhurta/sshterm/actions/runs/45069307061)).
+- [x] Linux local-OpenSSH SFTP integration for the mixed-pane implementation (PR workflow [#45069307123](https://github.com/rhurta/sshterm/actions/runs/45069307123)).
+- [ ] Complete expanded Windows checks across all seven themes, minimum window size and vault-lock lifecycle.
 - [ ] Add Tauri-command lifecycle/race coverage for open/list/close, vault lock and application exit.
 - [ ] Add explicit integration cases for permission-denied destinations, remote disk full, network interruption and disconnect during a transfer.
 - [ ] Re-run the M7 Windows smoke checklist against the final merged build.
