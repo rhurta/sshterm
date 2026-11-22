@@ -52,10 +52,10 @@ fn default_path() -> PathBuf {
 #[cfg(windows)]
 fn display_path(path: &Path) -> String {
     let value = path.to_string_lossy();
-    if let Some(rest) = value.strip_prefix(r"\\?\UNC\\") {
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
         return format!("\\\\{rest}");
     }
-    value.strip_prefix(r"\\?\\").unwrap_or(&value).to_string()
+    value.strip_prefix(r"\\?\").unwrap_or(&value).to_string()
 }
 
 #[cfg(not(windows))]
