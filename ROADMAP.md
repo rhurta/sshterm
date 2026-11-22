@@ -361,17 +361,20 @@ WinSSHTerm exports use one `<Node>` tag for everything, discriminated by `Type="
 
 ---
 
-## 📋 M8 — Native SFTP (design documented; implementation not started)
+## 🟡 M8 — Native SFTP (implementation complete; Windows UI acceptance pending)
 
 **Done when:** the connection-backed SFTP browser supports direct and multi-hop access, common file operations, and reliable cancellable transfers.
 
 See [docs/M8-implementation-plan.md](docs/M8-implementation-plan.md) for architecture, security gates, API direction, delivery phases and acceptance tests.
 
-- **M8a — Protocol/security spike:** compatible `russh` + `russh-sftp`, auth parity, known-host verification, direct SFTP and `direct-tcpip` jump chains.
-- **M8b — Backend lifecycle:** managed SFTP connections, typed commands, remote listing/navigation, close on vault lock and app exit.
-- **M8c — Browser UI:** open from a saved connection; navigate/list, create directory, rename/delete safely, local file dialogs and keyboard support.
-- **M8d — Transfers:** multi-select, recursive folder upload/download, streaming progress, overwrite confirmation, cancellation and partial-file cleanup.
-- **M8e — Hardening:** Windows portable build, local OpenSSH integration tests, large-file/Unicode/permission/network-failure coverage and regression checks for M7.
+- **M8a — Protocol/security:** pinned `russh` + `russh-sftp`; direct and multi-hop authentication, known-host verification, hashed/revoked-host checks and SFTP subsystem setup are implemented.
+- **M8b — Backend lifecycle:** managed sessions, typed open/list/close commands, remote listing/navigation, cleanup on vault lock and app exit. Earlier Windows acceptance confirmed password and Windows OpenSSH agent authentication.
+- **M8c — Browser UI:** multi-session browser hosted in top-level SFTP workspace tabs, with clearly highlighted local/remote panes, context-specific create/rename/delete/upload/download actions, independent navigation/filtering, multi-selection, drag-and-drop and keyboard/focus support. Both panes support safe multi-item deletion with per-entry results; symlinks are not followed and directories are never recursively removed. Manual Windows visual acceptance remains pending.
+- **M8d — Transfers:** recursive multi-select upload/download, bounded streaming, per-transfer progress, cancellation, overwrite confirmation, temporary-file cleanup and per-session local staging implemented.
+- **M8e — CI/hardening:** Windows portable build and frontend/Rust checks pass; Linux local-OpenSSH direct/jump integration passes recursive transfer, large/empty/Unicode/space-name, overwrite and cancellation checks. Permission/network-disconnect cases and final Windows UI/transfer smoke tests remain open.
+- The SFTP port override is optional and inherits the saved connection's SSH port when unset. Jump hosts retain their own saved ports.
+- M8 uses the native Russh client only for SFTP. The OpenSSH/ConPTY terminal engine and M7 OpenSSH tunnel manager remain unchanged until M10.
+- SFTP and SSH are separate top-level workspace tabs in M8; mixed terminal/SFTP split panes are deferred until after the M8 merge.
 - The SFTP port override is optional and inherits the saved connection's SSH port when unset. Jump hosts retain their own saved ports.
 - M8 uses the native Russh client only for SFTP. The OpenSSH/ConPTY terminal engine and M7 OpenSSH tunnel manager remain unchanged until M10.
 
@@ -417,7 +420,7 @@ See [docs/M8-implementation-plan.md](docs/M8-implementation-plan.md) for archite
 | M6 | Tiling + command console + broadcast | `e6fa4bc` | ✅ Complete; manually accepted |
 | M6b | Syntax highlighting | `main` | ✅ Complete; user-validated on Linux and Ericsson MME |
 | M7 | Independent tunnels, SOCKS, runtime status, manager, tray behavior and live indicator | `64f640a` | ✅ Implemented; Windows CI passed |
-| M8 | Native SFTP | — | 📋 Plan: `docs/M8-implementation-plan.md` |
+| M8 | Native SFTP | `feature/m8-sftp` | 🟡 Implementation complete; Windows UI/transfer acceptance pending |
 | M9 | Polish | `main` | 🟡 Partial; global themes implemented |
 | M10 | Native `russh` engine | — | 📋 |
 

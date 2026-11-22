@@ -96,7 +96,8 @@ export interface Colors {
 }
 
 export interface SftpOptions {
-  port: number;
+  /** Optional target SSH port override; null/omitted inherits Connection.port. */
+  port?: number | null;
   start_dir: string;
 }
 
@@ -263,4 +264,50 @@ export interface FavoriteScript {
 export interface ScriptsStatus {
   state: "ready" | "needs_password" | "failed" | "closed";
   detail: string | null;
+}
+
+
+/** Runtime-only SFTP session information; never contains credentials. */
+export interface SftpSessionInfo {
+  session_id: string;
+  connection_id: string;
+  connection_name: string;
+  host: string;
+  port: number;
+  user: string;
+  jump_names: string[];
+  current_path: string;
+  agent_binding: "not_used" | "bound" | "legacy_unbound";
+}
+
+export interface SftpEntry {
+  name: string;
+  path: string;
+  kind: "directory" | "file" | "symlink" | "other";
+  size: number | null;
+  /** Unix timestamp in seconds from the remote server. */
+  modified: number | null;
+  permissions: number | null;
+}
+
+export interface SftpDirectory {
+  current_path: string;
+  parent_path: string | null;
+  entries: SftpEntry[];
+}
+
+/** Local directory metadata for the left pane of the SFTP file manager. */
+export interface LocalFileEntry {
+  name: string;
+  path: string;
+  kind: "directory" | "file" | "symlink" | "other";
+  size: number | null;
+  modified: number | null;
+}
+
+export interface LocalDirectoryListing {
+  current_path: string;
+  parent_path: string | null;
+  roots: string[];
+  entries: LocalFileEntry[];
 }

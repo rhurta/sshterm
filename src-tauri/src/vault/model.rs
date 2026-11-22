@@ -109,13 +109,15 @@ pub enum Tunnel {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SftpOptions {
-    pub port: u16,
+    /// Optional target SSH port override. None inherits Connection::port.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
     pub start_dir: String,
 }
 
 impl Default for SftpOptions {
     fn default() -> Self {
-        Self { port: 22, start_dir: String::new() }
+        Self { port: None, start_dir: String::new() }
     }
 }
 
@@ -171,6 +173,12 @@ impl Default for Connection {
 }
 
 impl Connection {
+    /// Effective SSH port for SFTP. Jump hosts keep their own saved ports;
+    /// only the target can override its port for the SFTP connection.
+    pub fn effective_sftp_port(&self) -> u16 {
+        self.sftp.as_ref().and_then(|options| options.port).unwrap_or(self.port)
+    }
+
     /// Whether this connection is configured for password authentication.
     /// This is independent of whether a password is saved: an empty field can
     /// still mean that the user will type the password into the terminal.
@@ -275,6 +283,46 @@ mod tests {
             connections,
             ..VaultData::default()
         }
+    }
+
+    #[test]
+    fn sftp_port_override_is_optional_and_inherits_connection_port() {
+        let inherited = Connection {
+            port: 2207,
+            sftp: Some(SftpOptions::default()),
+            ..Connection::default()
+        };
+        assert_eq!(inherited.effective_sftp_port(), 2207);
+
+        let override_port = Connection {
+            port: 2207,
+            sftp: Some(SftpOptions { port: Some(2222), start_dir: String::new() }),
+            ..Connection::default()
+        };
+        assert_eq!(override_port.effective_sftp_port(), 2222);
+
+        let no_sftp = Connection { port: 2022, ..Connection::default() };
+        assert_eq!(no_sftp.effective_sftp_port(), 2022);
+    }
+
+    #[test]
+    fn sftp_port_deserializes_legacy_numeric_values_and_missing_overrides() {
+        let legacy: Connection = serde_json::from_str(
+            r#"{ "id":"legacy", "host":"legacy.example", "user":"admin", "port":2200,
+                "sftp": { "port": 2222, "start_dir": "/srv" } }"#,
+        ).unwrap();
+        assert_eq!(legacy.sftp.as_ref().unwrap().port, Some(2222));
+        assert_eq!(legacy.effective_sftp_port(), 2222);
+
+        let inherited: Connection = serde_json::from_str(
+            r#"{ "id":"new", "host":"new.example", "user":"admin", "port":2200,
+                "sftp": { "start_dir": "/srv" } }"#,
+        ).unwrap();
+        assert_eq!(inherited.sftp.as_ref().unwrap().port, None);
+        assert_eq!(inherited.effective_sftp_port(), 2200);
+
+        let serialized = serde_json::to_value(&inherited).unwrap();
+        assert!(serialized["sftp"].get("port").is_none());
     }
 
     #[test]

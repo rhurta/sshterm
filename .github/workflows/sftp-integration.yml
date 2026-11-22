@@ -1,0 +1,111 @@
+name: SFTP local OpenSSH integration
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "fix/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sftp-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-openssh:
+    name: Direct, jump and transfer integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Tauri and OpenSSH prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file libssl-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            patchelf libxdo-dev openssh-server
+
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Configure two local OpenSSH servers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_user="sftp-test"
+          test_key="$RUNNER_TEMP/sftp-test-key"
+          sudo useradd --create-home --shell /bin/bash "$test_user"
+          # useradd leaves the account password-locked; unlock it with a
+          # disposable password even though PasswordAuthentication is disabled.
+          test_password="$(openssl rand -base64 32)"
+          printf '%s:%s\n' "$test_user" "$test_password" | sudo chpasswd
+          unset test_password
+          ssh-keygen -q -t ed25519 -N '' -f "$test_key"
+          sudo install -d -m 700 -o "$test_user" -g "$test_user" "/home/$test_user/.ssh"
+          sudo install -m 600 -o "$test_user" -g "$test_user" "$test_key.pub" "/home/$test_user/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo ssh-keygen -A
+
+          for port in 2222 2223; do
+            config="$RUNNER_TEMP/sshd-$port.conf"
+            permit_open="any"
+            if [ "$port" = "2222" ]; then
+              permit_open="127.0.0.1:2223"
+            fi
+            cat > "$config" <<EOF
+          Port $port
+          ListenAddress 127.0.0.1
+          HostKey /etc/ssh/ssh_host_ed25519_key
+          PidFile /run/sshd-m8-$port.pid
+          AuthorizedKeysFile .ssh/authorized_keys
+          StrictModes yes
+          PubkeyAuthentication yes
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          AuthenticationMethods publickey
+          UsePAM no
+          AllowTcpForwarding yes
+          PermitOpen $permit_open
+          AllowUsers $test_user
+          Subsystem sftp internal-sftp
+          LogLevel VERBOSE
+          EOF
+            sudo /usr/sbin/sshd -t -f "$config"
+            sudo /usr/sbin/sshd -f "$config" -E "$RUNNER_TEMP/sshd-$port.log"
+          done
+
+          for port in 2222 2223; do
+            ready=0
+            for attempt in $(seq 1 30); do
+              if nc -z 127.0.0.1 "$port"; then ready=1; break; fi
+              sleep 1
+            done
+            test "$ready" -eq 1
+            if ! ssh -p "$port" -i "$test_key" \
+              -o BatchMode=yes -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null "$test_user@127.0.0.1" true; then
+              sudo cat "$RUNNER_TEMP/sshd-$port.log"
+              exit 1
+            fi
+          done
+
+      - name: Run direct, jump, recursive transfer and cancellation test
+        env:
+          SSHTERM_SFTP_TEST_USER: sftp-test
+          SSHTERM_SFTP_TEST_KEY: ${{ runner.temp }}/sftp-test-key
+          SSHTERM_SFTP_TEST_PORT: "2223"
+          SSHTERM_SFTP_TEST_HOP_PORT: "2222"
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked sftp_local_openssh_direct_jump_and_transfer_smoke -- --ignored --nocapture

@@ -14,6 +14,7 @@
     onchange,
     onsettings,
     ontunnels,
+    onsftp,
     onlock,
   }: {
     theme: AppTheme;
@@ -22,6 +23,7 @@
     onchange: (theme: AppTheme) => void;
     onsettings: () => void;
     ontunnels: () => void;
+    onsftp: () => void;
     onlock: () => void;
   } = $props();
 
@@ -184,6 +186,7 @@
       </button>
     {/if}
     {#if unlocked}
+      <button type="button" class="action-button" onclick={onsftp} title={t("sftp.title")} aria-label={t("sftp.title")}>{t("sftp.title")}</button>
       <button type="button" class="action-button" onclick={onsettings}>{t("settings.title")}</button>
       <button type="button" class="action-button" onclick={onlock}>{t("home.lock")}</button>
     {/if}

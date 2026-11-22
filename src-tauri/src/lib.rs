@@ -4,10 +4,12 @@ mod config;
 mod crash;
 mod logger;
 mod highlight;
+mod local_browser;
 mod paths;
 mod script_store;
 mod session;
 mod store;
+pub mod sftp;
 mod transport;
 mod tunnels;
 mod vault;
@@ -151,6 +153,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let backdrop = crate::config::Config::load(&paths::config_path()).appearance.window_backdrop;
             app.manage(ActiveBackdrop(backdrop));
@@ -204,6 +207,7 @@ pub fn run() {
         .manage(script_store::ScriptsState::default())
         .manage(session::SessionState::default())
         .manage(tunnels::TunnelState::default())
+        .manage(sftp::SftpState::default())
         .invoke_handler(tauri::generate_handler![
             app_info,
             highlight::highlight_list,
@@ -266,6 +270,20 @@ pub fn run() {
             tunnels::tunnel_start,
             tunnels::tunnel_stop,
             tunnels::tunnel_stop_all,
+            local_browser::local_list_directory,
+            local_browser::local_create_directory,
+            local_browser::local_rename_entry,
+            local_browser::local_delete_many,
+            sftp::sftp_open,
+            sftp::sftp_list,
+            sftp::sftp_mkdir,
+            sftp::sftp_rename,
+            sftp::sftp_delete,
+            sftp::sftp_delete_many,
+            sftp::sftp_transfer_start,
+            sftp::sftp_transfer_cancel,
+            sftp::sftp_close,
+            sftp::sftp_close_all,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -273,6 +291,8 @@ pub fn run() {
             if matches!(event, RunEvent::Exit) {
                 let tunnels = app_handle.state::<tunnels::TunnelState>();
                 tunnels::stop_all_for_app_exit(&tunnels);
+                let sftp = app_handle.state::<sftp::SftpState>();
+                let _ = tauri::async_runtime::block_on(sftp::close_all(&sftp));
             }
         });
 }
