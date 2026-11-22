@@ -529,7 +529,7 @@
       }
       return;
     }
-    if (pickerOpen || nameMode || deleteTarget) {
+    if (pickerOpen || nameMode || deleteTarget || overwriteConfirm) {
       if (event.key === "Escape") {
         event.preventDefault();
         if (pickerOpen) {
@@ -537,6 +537,8 @@
           else pickerOpen = false;
         } else if (nameMode) {
           nameMode = null;
+        } else if (overwriteConfirm) {
+          overwriteConfirm = null;
         } else {
           void dismissDelete();
         }
@@ -662,6 +664,14 @@
           <svg viewBox="0 0 24 24"><path d="M4 7h16m-10 4v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
           <span>{t("sftp.delete")}</span>
         </button>
+        <button class="tool-button text-tool" title={t("sftp.download")} onclick={() => void startTransfer("download")} disabled={!activeSession || !selectedRemoteEntries.length || !localDestination || busy}>
+          <svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg>
+          <span>{t("sftp.download") + (selectedRemoteEntries.length ? " (" + selectedRemoteEntries.length + ")" : "")}</span>
+        </button>
+        <button class="tool-button text-tool" title={t("sftp.upload")} onclick={() => void startTransfer("upload")} disabled={!activeSession || !localPaths.length || busy}>
+          <svg viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M4 17v4h16v-4"/></svg>
+          <span>{t("sftp.upload") + (localPaths.length ? " (" + localPaths.length + ")" : "")}</span>
+        </button>
       </div>
       <div class="toolbar-spacer"></div>
       <button class="tool-button text-tool local-tool" title={t("sftp.chooseLocalFiles")} onclick={() => void chooseLocalFiles()}>
@@ -726,7 +736,9 @@
             <div class="sftp-empty-list">{search ? t("sftp.noSearchResults") : t("sftp.emptyDirectory")}</div>
           {:else}
             {#each filteredEntries as entry, index (entry.path)}
-              <div class="sftp-entry" class:selected={selectedPaths[activeId] === entry.path}>
+              <div class="sftp-entry" class:selected={selectedPaths[activeId] === entry.path || (selectedRemotePaths[activeId] ?? []).includes(entry.path)}>
+                <div class="entry-name-cell">
+                  <input class="entry-select" type="checkbox" checked={(selectedRemotePaths[activeId] ?? []).includes(entry.path)} aria-label={t("sftp.selectEntry", { name: entry.name })} onchange={(event) => toggleRemoteSelection(entry.path, event.currentTarget.checked)} />
                 <button
                   class="entry-name"
                   class:directory-entry={entry.kind === "directory"}
@@ -749,6 +761,7 @@
                   </span>
                   <span class="entry-label" title={entry.name}>{entry.name}</span>
                 </button>
+                </div>
                 <span class="entry-meta size-meta">{entry.kind === "directory" ? "—" : formatSize(entry.size)}</span>
                 <span class="entry-meta modified-meta" title={formatModified(entry.modified)}>{formatModified(entry.modified)}</span>
                 <span class="entry-meta permission-meta">{formatPermissions(entry.permissions)}</span>
@@ -773,14 +786,29 @@
       <span class="footer-shortcuts">Enter {t("sftp.openFolderHint")} · F2 {t("sftp.rename")} · Del {t("sftp.delete")}</span>
     </footer>
 
+    {#if activeTransferJobs.length > 0}
+      <section class="transfer-queue" aria-label={t("sftp.transferQueue")} aria-live="polite">
+        {#each activeTransferJobs as job (job.transfer_id)}
+          <div class="transfer-row">
+            <div class="transfer-details">
+              <strong>{job.direction === "upload" ? t("sftp.upload") : t("sftp.download")}</strong>
+              <span title={job.current_file || job.transfer_id}>{job.current_file || t("sftp.transferPreparing")}</span>
+              <small>{job.files_completed}/{job.files_total} · {formatSize(job.bytes_transferred)} / {formatSize(job.bytes_total)}</small>
+              {#if job.error}<small class="transfer-error">{job.error}</small>{/if}
+            </div>
+            <progress max="100" value={transferPercent(job)} aria-label={t("sftp.transferProgress")}></progress>
+            <span class="transfer-status">{t("sftp.transferStatus." + job.status)}</span>
+            {#if job.status === "running"}
+              <button class="tool-button danger-tool" title={t("sftp.cancelTransfer")} aria-label={t("sftp.cancelTransfer")} onclick={() => void cancelTransfer(job.transfer_id)}>×</button>
+            {/if}
+          </div>
+        {/each}
+      </section>
+    {/if}
     {#if localPaths.length || localDestination}
       <div class="local-selection">
-        <strong>{t("sftp.localSelection")}</strong>
-        {#each localPaths as path (path)}
-          <span title={path}>{path}</span>
-        {/each}
+        {#if localPaths.length}<strong>{t("sftp.localFilesSelected", { count: localPaths.length })}</strong>{/if}
         {#if localDestination}<span title={localDestination}>{t("sftp.destination")}: {localDestination}</span>{/if}
-        <em>{t("sftp.transfersNext")}</em>
       </div>
     {/if}
 
@@ -831,6 +859,22 @@
       </div>
     {/if}
 
+    {#if overwriteConfirm}
+      <div class="sftp-nested-backdrop">
+        <section class="sftp-small-dialog" role="alertdialog" aria-modal="true" aria-labelledby="sftp-overwrite-title">
+          <header class="small-dialog-head"><h3 id="sftp-overwrite-title">{t("sftp.overwriteTitle")}</h3></header>
+          <p class="confirm-copy">{t("sftp.overwriteConfirm", { count: overwriteConfirm.conflicts.length })}</p>
+          <div class="overwrite-list">
+            {#each overwriteConfirm.conflicts.slice(0, 8) as path (path)}<span title={path}>{path}</span>{/each}
+            {#if overwriteConfirm.conflicts.length > 8}<small>{t("sftp.overwriteMore", { count: overwriteConfirm.conflicts.length - 8 })}</small>{/if}
+          </div>
+          <div class="small-dialog-actions">
+            <button class="secondary-button" onclick={() => (overwriteConfirm = null)}>{t("editor.cancel")}</button>
+            <button bind:this={overwriteConfirmButton} class="primary-button" onclick={() => void confirmOverwrite()}>{t("sftp.overwrite")}</button>
+          </div>
+        </section>
+      </div>
+    {/if}
     {#if deleteTarget}
       <div class="sftp-nested-backdrop">
         <section class="sftp-small-dialog" role="alertdialog" aria-modal="true" aria-labelledby="sftp-delete-title">
@@ -969,6 +1013,8 @@
   .dismiss-error { width: 24px; min-width: 24px; height: 24px; color: inherit; font-size: 18px; }
   .sftp-content { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; background: var(--app-bg); }
   .sftp-list-head, .sftp-entry { display: grid; grid-template-columns: minmax(220px, 1fr) 110px 190px 76px; align-items: center; gap: 8px; padding: 0 12px; }
+  .entry-name-cell { display: flex; align-items: center; min-width: 0; gap: 7px; }
+  .entry-select { width: 14px; height: 14px; flex: 0 0 14px; accent-color: var(--accent); }
   .sftp-list-head { min-height: 30px; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border); font-size: var(--ui-font-meta); font-weight: 600; }
   .sftp-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
   .sftp-entry { min-height: 30px; color: var(--text); border: 1px solid transparent; border-radius: 4px; font-size: var(--ui-font-dense); }
@@ -989,6 +1035,17 @@
   .sftp-filter button { width: 24px; height: 24px; margin-left: -30px; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
   .footer-status { color: var(--text-secondary); font-size: var(--ui-font-meta); }
   .footer-shortcuts { margin-left: auto; color: var(--muted); font-size: var(--ui-font-meta); }
+  .transfer-queue { display: flex; flex-direction: column; max-height: 160px; overflow: auto; background: var(--surface); border-top: 1px solid var(--border); }
+  .transfer-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(80px, 180px) auto 28px; align-items: center; gap: 10px; min-height: 42px; padding: 5px 10px; border-bottom: 1px solid var(--border); }
+  .transfer-details { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .transfer-details strong { font-size: var(--ui-font-control); font-weight: 600; }
+  .transfer-details span { overflow: hidden; color: var(--text-secondary); font-size: var(--ui-font-meta); text-overflow: ellipsis; white-space: nowrap; }
+  .transfer-details small, .transfer-status { color: var(--muted); font-size: var(--ui-font-meta); }
+  .transfer-details .transfer-error { color: var(--danger); }
+  .transfer-row progress { width: 100%; height: 6px; accent-color: var(--accent); }
+  .overwrite-list { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow: auto; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
+  .overwrite-list span { overflow: hidden; color: var(--text-secondary); font-size: var(--ui-font-meta); text-overflow: ellipsis; white-space: nowrap; }
+  .overwrite-list small { color: var(--muted); font-size: var(--ui-font-meta); }
   .local-selection { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 6px 10px; background: var(--surface); border-top: 1px solid var(--border); color: var(--text-secondary); font-size: var(--ui-font-meta); }
   .local-selection strong { color: var(--text); }
   .local-selection span { max-width: 280px; overflow: hidden; padding: 2px 5px; border: 1px solid var(--border); border-radius: 3px; text-overflow: ellipsis; white-space: nowrap; }
