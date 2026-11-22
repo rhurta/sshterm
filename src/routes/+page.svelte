@@ -5,7 +5,7 @@
   import SftpBrowser from "$lib/SftpBrowser.svelte";
   import Workspace from "$lib/Workspace.svelte";
   import TitleBar from "$lib/TitleBar.svelte";
-  import { initLocale } from "$lib/i18n/index.svelte";
+  import { initLocale, t } from "$lib/i18n/index.svelte";
   import { startSessionBus } from "$lib/sessionBus";
   import type { AppTheme } from "$lib/theme";
   import { DEFAULT_APPEARANCE_SETTINGS, type AppearanceSettings } from "$lib/types";
@@ -138,10 +138,10 @@
       onlock={lock}
     />
     {#if ready && unlocked}
-      <nav class="workspace-tabs" role="tablist" aria-label={t("workspace.tabs")}>
+      <div class="workspace-tabs" role="group" aria-label={t("workspace.tabs")}>
         {#each workspaceTabs as tab (tab.id)}
           <div class="workspace-tab" class:active={activeWorkspaceTabId === tab.id}>
-            <button role="tab" aria-selected={activeWorkspaceTabId === tab.id}
+            <button aria-pressed={activeWorkspaceTabId === tab.id}
               onclick={() => (activeWorkspaceTabId = tab.id)}>
               {tab.kind === "terminal" ? t("workspace.terminalTab") : t("workspace.sftpTab")}
             </button>
@@ -151,7 +151,7 @@
             {/if}
           </div>
         {/each}
-      </nav>
+      </div>
     {/if}
     {#if ready}
       <div class="screen">
