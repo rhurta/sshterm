@@ -7,6 +7,7 @@
   import ConnectionPropertiesPane from "./ConnectionPropertiesPane.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import TerminalPane from "./TerminalPane.svelte";
+  import SftpBrowser from "./SftpBrowser.svelte";
   import CommandConsole from "./CommandConsole.svelte";
   import HighlightRulesPanel from "./HighlightRulesPanel.svelte";
   import TunnelManager from "./TunnelManager.svelte";
@@ -24,7 +25,7 @@
     windowBackdropActive = "off",
     onthemechange,
     onappearancechange,
-    onsftpopen,
+    sftpRequest = 0,
     settingsOpen = $bindable(false),
     tunnelPanelOpen = $bindable(false),
   }: {
@@ -37,13 +38,19 @@
     windowBackdropActive?: WindowBackdrop;
     onthemechange: (theme: AppTheme) => void;
     onappearancechange: (next: AppearanceSettings) => Promise<string | null>;
-    onsftpopen: (connectionId: string | null) => void;
+    /** Increment to open a new SFTP browser tab in the focused pane. */
+    sftpRequest?: number;
     settingsOpen?: boolean;
     tunnelPanelOpen?: boolean;
   } = $props();
 
   let tabs = $state<Tab[]>([]);
+  type SftpWorkspaceTab = { id: string; connectionId: string | null; name: string };
+  let sftpTabs = $state<SftpWorkspaceTab[]>([]);
+  let workspaceTabIds = $derived([...tabs.map((tab) => tab.sessionId), ...sftpTabs.map((tab) => tab.id)]);
   let activeId = $state<string | null>(null);
+  let activeTerminalId = $derived(tabs.some((tab) => tab.sessionId === activeId) ? activeId : null);
+  let lastSftpRequest = 0;
   let layoutPreset = $state<LayoutPreset>("single");
   // The workspace starts with one empty pane (a fresh connection opens in it).
   let layoutTree = $state<SplitNode | null>({ type: "leaf", sessionId: crypto.randomUUID(), sessionIds: [] });
@@ -372,6 +379,39 @@
     await openPicker();
   }
 
+  async function openSftpInPane(connectionId: string | null, paneOverride?: string) {
+    let name = t("sftp.title");
+    if (connectionId) {
+      try {
+        const connections = await invoke<ConnectionSummary[]>("conn_list");
+        const connection = connections.find((item) => item.id === connectionId);
+        if (connection) name = `${t("sftp.title")} · ${connection.name}`;
+      } catch { /* SftpBrowser reports its own connection-list errors. */ }
+    }
+    const id = crypto.randomUUID();
+    sftpTabs = [...sftpTabs, { id, connectionId, name }];
+    const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
+    if (!layoutTree || !targetPaneId) {
+      layoutTree = { type: "leaf", sessionId: id, sessionIds: [id] };
+      paneActiveIds = { ...paneActiveIds, [id]: id };
+    } else {
+      layoutTree = addSessionToPane(layoutTree, targetPaneId, id);
+      paneActiveIds = { ...paneActiveIds, [targetPaneId]: id };
+    }
+    pendingPaneId = null;
+    activeId = id;
+    focusedPaneId = paneOfSession(layoutTree, id);
+    picker = false;
+  }
+
+  $effect(() => {
+    const request = sftpRequest;
+    if (request > lastSftpRequest) {
+      lastSftpRequest = request;
+      void openSftpInPane(null);
+    }
+  });
+
   function splitFocusedPane(axis: SplitAxis) {
     const target = currentPaneId();
     if (!layoutTree || !target) return;
@@ -642,7 +682,7 @@
         "4": "grid",
       };
       const preset = presets[key];
-      if (preset && tabs.length > 0) {
+      if (preset && workspaceTabIds.length > 0) {
         e.preventDefault();
         chooseLayout(preset);
         return;
@@ -704,10 +744,10 @@
   }
 
   function chooseLayout(preset: LayoutPreset) {
-    if (tabs.length === 0) return; // presets arrange open tabs; split buttons make empty panes
+    if (workspaceTabIds.length === 0) return; // presets arrange open tabs; split buttons make empty panes
     layoutPreset = preset;
     pendingPaneId = null;
-    layoutTree = createLayoutTree(tabs.map((tab) => tab.sessionId), preset, activeId);
+    layoutTree = createLayoutTree(workspaceTabIds, preset, activeId);
     const nextActive: Record<string, string> = {};
     for (const pane of getLayoutGeometry(layoutTree).leaves) {
       nextActive[pane.sessionId] = pane.sessionIds.includes(activeId ?? "") ? activeId! : pane.sessionIds[0];
@@ -732,6 +772,7 @@
   function dropTab(sessionId: string) {
     const oldPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(sessionId));
     tabs = tabs.filter((tab) => tab.sessionId !== sessionId);
+    sftpTabs = sftpTabs.filter((tab) => tab.id !== sessionId);
     layoutTree = removeSession(layoutTree, sessionId, true);
     if (oldPane && paneActiveIds[oldPane.sessionId] === sessionId) {
       const remaining = oldPane.sessionIds.filter((id) => id !== sessionId);
@@ -741,7 +782,7 @@
         paneActiveIds = rest;
       }
     }
-    if (activeId === sessionId) activeId = tabs[tabs.length - 1]?.sessionId ?? null;
+    if (activeId === sessionId) activeId = workspaceTabIds.find((id) => id !== sessionId) ?? null;
   }
 
 
@@ -829,6 +870,11 @@
   }
 
   async function closeTab(sessionId: string) {
+    if (sftpTabs.some((tab) => tab.id === sessionId)) {
+      // Unmounting SftpBrowser closes its managed SFTP sessions.
+      dropTab(sessionId);
+      return;
+    }
     try {
       await invoke("session_close", { id: sessionId });
     } catch {
@@ -847,7 +893,7 @@
   {/if}
 
   <div class="body">
-    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onopensftp={(connection) => onsftpopen(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
     {#if propertiesVisible}
       <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? 8 : -8))); } }}></div>
@@ -961,7 +1007,7 @@
           <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
           <div class="console-resizer" role="separator" aria-orientation="horizontal" aria-label={t("workspace.resizeConsole")} aria-valuemin="110" aria-valuemax={maxConsoleHeight()} aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize} onkeydown={adjustConsoleHeight} onkeyup={saveConsoleResizeAfterKeyboard} title={t("workspace.resizeConsole")}></div>
         {/if}
-        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeId} height={consoleHeight} />
+        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeTerminalId} height={consoleHeight} />
       {/if}
     </main>
   </div>
