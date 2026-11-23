@@ -1,4 +1,3 @@
-Warning: fs was declared with const; use let for reassignable variables.
 use anyhow::{Context as _, Result};
 use gpui::{
     AppContext as _, Application, Context, Edges, Entity, IntoElement, ParentElement as _,
