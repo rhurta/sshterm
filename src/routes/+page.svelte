@@ -375,6 +375,10 @@
   .window-shell :global(.workspace-panel-header .edit-button) {
     flex: 0 0 28px;
   }
+  .window-shell :global(:is(button, input, select, textarea, [role="separator"], [role="tree"], [role="dialog"], [role="alertdialog"]):focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
   .shell-content {
     position: relative;
     z-index: 1;

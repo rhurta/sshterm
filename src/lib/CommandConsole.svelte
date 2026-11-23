@@ -450,9 +450,9 @@
   .console-heading .panel-title { flex: 0 0 auto; }
   .confirmation-banner {
     display: flex; flex: 1 1 auto; align-items: center; gap: 0.5rem; min-width: 0;
-    padding: 0.28rem 0.45rem; color: var(--warning, #d6a85f);
-    background: color-mix(in srgb, var(--warning, #d6a85f) 12%, var(--surface));
-    border: 1px solid color-mix(in srgb, var(--warning, #d6a85f) 55%, var(--border));
+    padding: 0.28rem 0.45rem; color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border));
     border-radius: 4px; font-size: var(--ui-font-dense); line-height: 1.3;
   }
   .confirmation-banner span { flex: 1 1 auto; min-width: 0; }
@@ -548,17 +548,17 @@
     border-bottom: 1px solid var(--border);
   }
   .session-row:last-child { border-bottom: 0; }
-  .session-row.protected { background: color-mix(in srgb, var(--warning, #d6a85f) 6%, transparent); }
+  .session-row.protected { background: color-mix(in srgb, var(--warning) 6%, transparent); }
   .session-row.disconnected { opacity: 0.6; }
   .session-row input, .protected-opt-in input { flex: 0 0 auto; accent-color: var(--accent); }
   .session-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .session-row small { flex: 0 0 auto; color: var(--warning, #d6a85f); font-size: var(--ui-font-meta); }
+  .session-row small { flex: 0 0 auto; color: var(--warning); font-size: var(--ui-font-meta); }
   .session-row small.offline { color: var(--danger); }
-  .session-row small.protected-tag { color: var(--warning, #d6a85f); }
+  .session-row small.protected-tag { color: var(--warning); }
   .session-target-state { flex: 0 0 0.85rem; width: 0.85rem; color: var(--muted); text-align: center; font-size: var(--ui-font-dense); }
   .session-target-state.targeted { color: var(--accent); }
   .session-empty { padding: 0.35rem; color: var(--muted); }
-  .protected-opt-in { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; color: var(--warning, #d6a85f); font-size: var(--ui-font-meta); }
+  .protected-opt-in { flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem; color: var(--warning); font-size: var(--ui-font-meta); }
   .editor-panel {
     display: flex;
     flex-direction: column;
@@ -575,7 +575,7 @@
     font-size: var(--ui-font-meta);
     line-height: 1.25;
   }
-  .excluded { color: var(--warning, #d6a85f); }
+  .excluded { color: var(--warning); }
   textarea {
     width: 100%;
     min-height: 0;

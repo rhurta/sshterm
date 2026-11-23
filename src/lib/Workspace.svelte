@@ -1228,21 +1228,21 @@
     line-height: 1.35;
   }
   .pane-tab-indicator.jump { color: var(--accent); background: var(--surface-hover); }
-  .pane-tab-indicator.tunnels { color: #78bfa5; background: var(--surface-hover); }
+  .pane-tab-indicator.tunnels { color: var(--success); background: var(--surface-hover); }
   .pane-tab-indicator.disconnected { color: var(--danger); background: var(--danger-bg); font-weight: 700; }
   .pane-tab.disconnected { border-style: dashed; }
   .pane-tab.disconnected button { color: var(--text-secondary); }
   .pane-focus-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); }
   .pane-tab.active button { color: var(--text); }
   .pane-tab .pane-tab-protect { flex: 0 0 auto; padding: 0.12rem 0.22rem; color: var(--muted); background: transparent; border: 0; font-size: var(--ui-font-meta); line-height: 1; cursor: pointer; }
-  .pane-tab .pane-tab-protect.protected { color: var(--warning, #d6a85f); }
+  .pane-tab .pane-tab-protect.protected { color: var(--warning); }
   .pane-tab .pane-tab-protect:disabled { opacity: 0.35; cursor: default; }
   .pane-tab .pane-tab-close { flex: 0 0 auto; padding-inline: 0.28rem; }
   .pane-add, .pane-remove { flex: 0 0 auto; align-self: center; border: 0; background: transparent; font: inherit; cursor: pointer; padding: 0 0.35rem; }
   .pane-add { width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; color:var(--accent); font-size:18px; line-height:1; }
   .pane-add:hover { color:var(--text); background:var(--surface-hover); border-radius:4px; }
   .pane-remove { color: var(--text-secondary); }
-  .pane-remove:hover { color: var(--danger, #e06c75); }
+  .pane-remove:hover { color: var(--danger); }
   .empty-pane { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; height: 100%; align-items: center; justify-content: center; text-align: center; }
   .empty-pane p { margin: 0; max-width: 18rem; font-size: var(--ui-font-dense); color: var(--muted); }
   .empty-pane button { font: inherit; font-size: var(--ui-font-control); color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.7rem; cursor: pointer; }

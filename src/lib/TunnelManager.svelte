@@ -315,16 +315,16 @@
   .detail,.route { color:var(--muted); font-size: var(--ui-font-meta); overflow-wrap:anywhere; }
   .route { color:var(--accent); }
   .status { flex:0 0 auto; padding:.16rem .38rem; border-radius:3px; border:1px solid var(--border); color:var(--text-secondary); font-size: var(--ui-font-meta); text-transform:uppercase; letter-spacing:.03em; }
-  .status.active { color:#78bfa5; border-color:#397b65; }
+  .status.active { color:var(--success); border-color:var(--success-border); }
   .status.failed { color:var(--danger); border-color:var(--danger); background:var(--danger-bg); }
-  .status.starting,.status.stopping { color:var(--warning,#d6a85f); }
+  .status.starting,.status.stopping { color:var(--warning); }
   .actions { margin-left:auto; flex-wrap:wrap; }
   .forwards { display:flex; flex-direction:column; gap:.25rem; margin-top:.55rem; padding-top:.45rem; border-top:1px solid var(--border); }
   .forward { display:grid; grid-template-columns:7rem minmax(0,1fr) auto; gap:.3rem .55rem; align-items:center; font-size: var(--ui-font-meta); }
   .kind { color:var(--muted); }
   code { min-width:0; color:var(--text); overflow-wrap:anywhere; font-size: var(--ui-font-meta); }
   .forward-status { color:var(--muted); font-size: var(--ui-font-meta); }
-  .forward-status.active { color:#78bfa5; }
+  .forward-status.active { color:var(--success); }
   .forward-status.failed,.forward-error,.tunnel-error { color:var(--danger); }
   .forward-error { grid-column:2 / -1; overflow-wrap:anywhere; font-size: var(--ui-font-meta); }
   .tunnel-error { margin:0; padding-top:.2rem; overflow-wrap:anywhere; font-size: var(--ui-font-meta); }
