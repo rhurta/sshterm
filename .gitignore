@@ -18,3 +18,7 @@ config.toml
 highlight/
 
 gpui-prototype
+/.impeccable/*
+/.agents/skills/impeccable/*
+/.github/*
+PRODUCT.md
