@@ -1,0 +1,13 @@
+[package]
+name = "sshterm-gpui-prototype"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1"
+gpui = "=0.2.2"
+gpui-component = "=0.5.1"
+gpui-terminal = "=0.1.0"
+parking_lot = "0.12"
+portable-pty = "0.9"

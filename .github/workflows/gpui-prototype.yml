@@ -1,0 +1,37 @@
+name: GPUI connection and terminal prototype
+
+on:
+  push:
+    branches:
+      - "codex/**"
+    paths:
+      - "experiments/gpui-prototype/**"
+      - ".github/workflows/gpui-prototype.yml"
+  pull_request:
+    paths:
+      - "experiments/gpui-prototype/**"
+      - ".github/workflows/gpui-prototype.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Build Windows prototype
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: experiments/gpui-prototype -> target
+      - name: Build prototype
+        run: cargo build --release --manifest-path experiments/gpui-prototype/Cargo.toml
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: sshterm-gpui-prototype-windows
+          path: experiments/gpui-prototype/target/release/sshterm-gpui-prototype.exe
+          if-no-files-found: error
+          retention-days: 14
