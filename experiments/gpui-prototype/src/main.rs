@@ -75,7 +75,6 @@ impl PrototypeApp {
         }
 
         let terminal = Self::terminal(cx, session.reader, session.writer, session.master.clone());
-        terminal.read(cx).focus_handle().focus(window);
 
         Self {
             search,
@@ -414,7 +413,7 @@ impl Render for PrototypeApp {
                                 div()
                                     .flex_1()
                                     .p(px(8.0))
-                                    .child(self.terminal.clone()),
+                                    .child(div().size_full().child(self.terminal.clone())),
                             )
                             .when_some(error, |element, error| {
                                 element.child(
@@ -460,7 +459,16 @@ fn spawn_process(program: &str, args: &[&str]) -> Result<ProcessSession> {
 }
 
 fn main() -> Result<()> {
-    let initial_session = spawn_process("powershell.exe", &["-NoLogo"])?;
+    let initial_session = spawn_process(
+        "powershell.exe",
+        &[
+            "-NoLogo",
+            "-NoProfile",
+            "-NoExit",
+            "-Command",
+            "Write-Host 'Local PowerShell ready'",
+        ],
+    )?;
     let app = Application::new();
     app.run(move |cx| {
         gpui_component::init(cx);
@@ -476,7 +484,10 @@ fn main() -> Result<()> {
                 },
                 move |window, cx| {
                     let root = cx.new(|cx| PrototypeApp::new(window, cx, initial_session));
-                    cx.new(|cx| Root::new(root, window, cx))
+                    let terminal = root.read(cx).terminal.clone();
+                    let root = cx.new(|cx| Root::new(root, window, cx));
+                    terminal.read(cx).focus_handle().focus(window);
+                    root
                 },
             )?;
             Ok::<_, anyhow::Error>(())
