@@ -62,6 +62,8 @@ struct SshTermPrototype {
     active_tab: usize,
     split_enabled: bool,
     split_tab: Option<usize>,
+    show_tree: bool,
+    show_properties: bool,
     console_open: bool,
     command_input: Entity<InputState>,
     command_status: Option<String>,
@@ -110,6 +112,8 @@ impl SshTermPrototype {
             active_tab: 0,
             split_enabled: true,
             split_tab: None,
+            show_tree: true,
+            show_properties: true,
             console_open: true,
             command_input,
             command_status: None,
@@ -324,7 +328,7 @@ impl Render for SshTermPrototype {
                         .child(div().text_xs().text_color(cx.theme().warning).child("TERMINAL I/O PENDING")))),
             )
             .child(div().flex_1().min_h(px(0.0)).flex()
-                .child(div().w(px(300.0)).h_full().flex().flex_col().gap_2().p_3()
+                .when(self.show_tree, |row| row.child(div().w(px(300.0)).h_full().flex().flex_col().gap_2().p_3()
                     .bg(cx.theme().secondary).border_r_1().border_color(cx.theme().border)
                     .child(h_flex().items_center().justify_between()
                         .child(div().text_sm().font_semibold().child("CONNECTIONS"))
@@ -335,8 +339,8 @@ impl Render for SshTermPrototype {
                         .border_1().border_dashed().border_color(cx.theme().border).rounded_md()
                         .text_sm().text_color(cx.theme().muted_foreground).child("Drop here to move to root")
                         .on_drop(cx.listener(|this, drag: &DragPayload, _, cx| this.move_node(drag.id, DropTarget::Root, cx))))
-                    .child(div().text_xs().text_color(cx.theme().muted_foreground).child(self.status.clone())))
-                .child(div().w(px(300.0)).h_full().flex().flex_col().gap_2().p_3()
+                    .child(div().text_xs().text_color(cx.theme().muted_foreground).child(self.status.clone()))))
+                .when(self.show_properties, |row| row.child(div().w(px(300.0)).h_full().flex().flex_col().gap_2().p_3()
                     .bg(cx.theme().secondary).border_r_1().border_color(cx.theme().border)
                     .child(h_flex().h(px(40.0)).items_center().px_3().border_b_1().border_color(cx.theme().border)
                         .child(div().text_sm().font_semibold().child("Connection properties")))
@@ -348,7 +352,16 @@ impl Render for SshTermPrototype {
                     .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Port"))
                     .child(div().text_sm().child("22"))
                     .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Authentication"))
-                    .child(div().text_sm().child("Local prototype · no credentials loaded")))
+                    .child(div().text_sm().child("Local prototype · no credentials loaded"))))
+                .child(div().w(px(72.0)).h_full().flex().flex_col().items_center().gap_2().py_2()
+                    .bg(cx.theme().secondary).border_r_1().border_color(cx.theme().border)
+                    .child(Button::new("toggle-tree").small().ghost().label(if self.show_tree { "Hide tree" } else { "Show tree" })
+                        .on_click(cx.listener(|this, _, _, cx| { this.show_tree = !this.show_tree; cx.notify(); })))
+                    .child(Button::new("toggle-properties").small().ghost().label(if self.show_properties { "Hide info" } else { "Show info" })
+                        .on_click(cx.listener(|this, _, _, cx| { this.show_properties = !this.show_properties; cx.notify(); })))
+                    .child(div().flex_1())
+                    .child(Button::new("toggle-console-toolbar").small().ghost().label(if self.console_open { "Hide cmd" } else { "Show cmd" })
+                        .on_click(cx.listener(|this, _, _, cx| { this.console_open = !this.console_open; cx.notify(); }))))
                 .child(div().flex_1().h_full().min_w(px(0.0)).flex().flex_col().p_3().gap_2()
                     .child(tabs)
                     .child(div().flex_1().w_full().min_h(px(0.0)).flex().gap_2()
@@ -379,7 +392,7 @@ impl Render for SshTermPrototype {
                         }))
                     )
                     .when(self.console_open, |column| {
-                        column.child(div().h(px(142.0)).flex_shrink_0().flex().flex_col()
+                        column.child(div().w_full().h(px(142.0)).flex_shrink_0().flex().flex_col()
                             .bg(cx.theme().secondary).rounded_md()
                             .border_1().border_color(cx.theme().border)
                             .child(h_flex().h(px(34.0)).flex_shrink_0().items_center().justify_between().px_3()
