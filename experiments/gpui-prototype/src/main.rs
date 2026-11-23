@@ -273,6 +273,10 @@ impl PrototypeApp {
             .into_iter()
             .filter(|&index| !self.connections[index].local)
             .collect::<Vec<_>>();
+        let ssh_connections = ssh_indices
+            .into_iter()
+            .map(|index| self.connection_button(index, cx).into_any_element())
+            .collect::<Vec<_>>();
 
         div()
             .w(px(292.0))
@@ -310,7 +314,7 @@ impl PrototypeApp {
                     .flex_col()
                     .gap(px(4.0))
                     .child(div().px(px(4.0)).text_size(px(10.0)).text_color(rgb(MUTED)).child("SAVED SSH"))
-                    .children(ssh_indices.into_iter().map(|index| self.connection_button(index, cx))),
+                    .children(ssh_connections),
             )
             .child(div().flex_1())
             .child(
