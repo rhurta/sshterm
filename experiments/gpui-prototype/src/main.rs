@@ -381,7 +381,7 @@ impl Render for SshTermPrototype {
                             })
                         )
                     })
-                ))
+                )
     }
 }
 
