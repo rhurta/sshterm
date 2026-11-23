@@ -324,7 +324,7 @@
     align-items: center;
     height: 100%;
   }
-  .titlebar-actions { position:relative; z-index:1001; display:inline-flex; align-items:center; gap:.65rem; height:100%; flex:0 0 auto; }
+  .titlebar-actions { position:relative; z-index:1001; display:inline-flex; align-items:center; gap:var(--ui-space-2); height:100%; flex:0 0 auto; }
   .theme-select {
     max-width: 7.5rem;
     font: inherit;

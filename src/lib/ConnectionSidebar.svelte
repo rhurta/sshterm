@@ -294,8 +294,8 @@
     min-height: 0;
     overflow: hidden;
   }
-  .head { display:flex; align-items:center; gap:.35rem; padding:0 12px; flex-wrap:nowrap; }
-  .head-actions { display:flex; align-items:center; gap:3px; }
+  .head { display:flex; align-items:center; gap:var(--ui-space-2); padding:0 var(--ui-space-3); flex-wrap:nowrap; }
+  .head-actions { display:flex; align-items:center; gap:var(--ui-space-1); }
   .head .title { flex:1 1 auto; min-width:0; margin:0; }
   .head .icon-action { width:28px; height:28px; flex:0 0 28px; display:inline-flex; align-items:center; justify-content:center; padding:0; color:var(--muted); background:transparent; border:1px solid transparent; }
   .head .icon-action:hover { color:var(--accent); background:var(--surface-hover); border-color:var(--border); }

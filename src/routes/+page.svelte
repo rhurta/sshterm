@@ -147,6 +147,11 @@
   .window-shell {
     /* Shared UI typography scale; see sshterm-ui-design/SKILL.md. */
     --ui-font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --ui-space-1: 4px;
+    --ui-space-2: 8px;
+    --ui-space-3: 12px;
+    --ui-space-4: 16px;
+    --ui-space-5: 24px;
     --ui-font-display: 28px;
     --ui-font-title: 16px;
     --ui-font-section: 14px;
