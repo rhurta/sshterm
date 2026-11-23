@@ -1,9 +1,15 @@
+Warning: fs was declared with const; use let for reassignable variables.
 use anyhow::{Context as _, Result};
 use gpui::{
     AppContext as _, Application, Context, Edges, Entity, IntoElement, ParentElement as _,
     Render, Styled as _, Window, WindowOptions, div, px, rgb,
 };
-use gpui_component::{Root, button::Button, input::{Input, InputEvent, InputState}};
+use gpui::prelude::FluentBuilder;
+use gpui_component::{
+    Root,
+    button::{Button, ButtonVariants},
+    input::{Input, InputEvent, InputState},
+};
 use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
 use parking_lot::Mutex;
 use portable_pty::{
@@ -94,7 +100,7 @@ impl PrototypeApp {
         }
     }
 
-    fn input(window: &mut Window, cx: &mut Context<Self>, placeholder: &str) -> Entity<InputState> {
+    fn input(window: &mut Window, cx: &mut Context<Self>, placeholder: &'static str) -> Entity<InputState> {
         cx.new(|cx| InputState::new(window, cx).placeholder(placeholder))
     }
 
@@ -211,7 +217,6 @@ impl PrototypeApp {
         } else {
             format!("{}@{}:{}", connection.user, connection.host, connection.port)
         };
-        let button_id = format!("connection-{}", connection.id);
         let row = div()
             .flex()
             .flex_col()
@@ -241,7 +246,7 @@ impl PrototypeApp {
                     .text_color(rgb(MUTED))
                     .child(host),
             );
-        Button::new(button_id)
+        Button::new(("connection", index as u32))
             .ghost()
             .w_full()
             .child(row)
