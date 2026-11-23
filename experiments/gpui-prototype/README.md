@@ -8,6 +8,7 @@ behaviors, alongside custom split-pane and command-console layouts.
 
 - Searchable nested connection tree with keyboard navigation, expand/collapse, and drag-to-organize.
 - Selectable and closable session tabs.
+- SFTP browser tab beside the SSH tab in the same pane (layout placeholder only).
 - Split-pane toggle with an action to place the active tab in the second pane.
 - Command console layout with an active-tab target.
 - Theme selector and visible terminal-pending status.
@@ -15,6 +16,7 @@ behaviors, alongside custom split-pane and command-console layouts.
 ## Pending
 
 - Terminal input/output is not working. The panes are placeholders and do not start PowerShell or SSH.
+- The SFTP browser does not connect to a server or transfer files.
 - Command sending is not connected to a terminal session.
 - Connections are sample in-memory data, not loaded from or saved to the encrypted vault.
 

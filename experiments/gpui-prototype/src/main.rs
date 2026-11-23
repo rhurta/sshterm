@@ -103,7 +103,10 @@ impl SshTermPrototype {
         Self {
             nodes, expanded, tree_state, search, _search_subscription: search_subscription,
             search_query: String::new(),
-            tabs: vec![TerminalTab { connection_id: 10, label: "localhost".into() }],
+            tabs: vec![
+                TerminalTab { connection_id: 10, label: "localhost · SSH".into() },
+                TerminalTab { connection_id: 10, label: "localhost · SFTP".into() },
+            ],
             active_tab: 0,
             split_enabled: true,
             split_tab: None,
@@ -285,6 +288,8 @@ impl Render for SshTermPrototype {
             .map(|tab| tab.label.clone());
         let terminal_text = if self.tabs.is_empty() {
             "No session tab is open.\nSelect a connection from the tree to open one.".to_string()
+        } else if active_label.ends_with("· SFTP") {
+            "SFTP BROWSER\n\nlocalhost · connection pending\n\n/\n  home/\n  etc/\n  var/\n\nSFTP browsing is a layout prototype; no remote file session is attached.".to_string()
         } else {
             format!("sshterm GPUI Kit prototype\n\nSession: {active_label}\n\nTERMINAL I/O PENDING\nNo process is attached. This pane is a layout placeholder.")
         };
@@ -331,6 +336,19 @@ impl Render for SshTermPrototype {
                         .text_sm().text_color(cx.theme().muted_foreground).child("Drop here to move to root")
                         .on_drop(cx.listener(|this, drag: &DragPayload, _, cx| this.move_node(drag.id, DropTarget::Root, cx))))
                     .child(div().text_xs().text_color(cx.theme().muted_foreground).child(self.status.clone())))
+                .child(div().w(px(300.0)).h_full().flex().flex_col().gap_2().p_3()
+                    .bg(cx.theme().secondary).border_r_1().border_color(cx.theme().border)
+                    .child(h_flex().h(px(40.0)).items_center().px_3().border_b_1().border_color(cx.theme().border)
+                        .child(div().text_sm().font_semibold().child("Connection properties")))
+                    .child(gpui_kit::component::input::Input::new(&self.search).small().w_full())
+                    .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Selected connection"))
+                    .child(div().text_sm().child("localhost"))
+                    .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Host"))
+                    .child(div().text_sm().child("127.0.0.1"))
+                    .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Port"))
+                    .child(div().text_sm().child("22"))
+                    .child(div().text_xs().text_color(cx.theme().muted_foreground).child("Authentication"))
+                    .child(div().text_sm().child("Local prototype · no credentials loaded")))
                 .child(div().flex_1().h_full().min_w(px(0.0)).flex().flex_col().p_3().gap_2()
                     .child(tabs)
                     .child(div().flex_1().w_full().min_h(px(0.0)).flex().gap_2()
