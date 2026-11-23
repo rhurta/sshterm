@@ -5,6 +5,4 @@ edition = "2024"
 publish = false
 
 [dependencies]
-anyhow = "1"
-gpui = "=0.2.2"
-gpui-component = "=0.5.1"
+gpui-kit = "=0.9.1"
