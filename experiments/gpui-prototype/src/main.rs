@@ -1,7 +1,7 @@
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use gpui::{
-    AppContext as _, Application, Context, Edges, Entity, IntoElement, ParentElement as _,
-    Render, Styled as _, Window, WindowOptions, div, px, rgb,
+    AppContext as _, Application, Context, Entity, IntoElement, ParentElement as _, Render,
+    Styled as _, Window, WindowOptions, div, px, rgb,
 };
 use gpui::prelude::FluentBuilder;
 use gpui_component::{
@@ -9,12 +9,6 @@ use gpui_component::{
     button::{Button, ButtonVariants},
     input::{Input, InputEvent, InputState},
 };
-use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
-use parking_lot::Mutex;
-use portable_pty::{
-    Child, CommandBuilder, MasterPty, PtySize, native_pty_system,
-};
-use std::{io::{Read, Write}, sync::Arc};
 
 const APP_BG: u32 = 0x1e1e2e;
 const SURFACE: u32 = 0x181825;
@@ -24,10 +18,10 @@ const TEXT: u32 = 0xcdd6f4;
 const MUTED: u32 = 0xa6adc8;
 const ACCENT: u32 = 0x89b4fa;
 const SUCCESS: u32 = 0xa6e3a1;
-const DANGER: u32 = 0xf38ba8;
+const WARNING: u32 = 0xf9e2af;
 
 #[derive(Clone)]
-struct SavedConnection {
+struct Connection {
     id: String,
     name: String,
     host: String,
@@ -36,11 +30,10 @@ struct SavedConnection {
     local: bool,
 }
 
-struct ProcessSession {
-    reader: Box<dyn Read + Send>,
-    writer: Box<dyn Write + Send>,
-    master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
-    child: Box<dyn Child + Send + Sync>,
+#[derive(Clone)]
+struct TerminalTab {
+    connection_id: String,
+    title: String,
 }
 
 struct PrototypeApp {
@@ -49,23 +42,34 @@ struct PrototypeApp {
     host_input: Entity<InputState>,
     user_input: Entity<InputState>,
     port_input: Entity<InputState>,
-    connections: Vec<SavedConnection>,
-    terminal: Entity<TerminalView>,
-    child: Box<dyn Child + Send + Sync>,
-    selected_id: String,
-    selected_label: String,
-    error: Option<String>,
+    command_input: Entity<InputState>,
+    connections: Vec<Connection>,
+    tabs: Vec<TerminalTab>,
+    active_tab: usize,
+    split_tab: Option<usize>,
+    split_enabled: bool,
+    console_open: bool,
+    add_error: Option<String>,
+    console_feedback: Option<String>,
 }
 
 impl PrototypeApp {
-    fn new(window: &mut Window, cx: &mut Context<Self>, session: ProcessSession) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search = Self::input(window, cx, "Search connections");
         let name_input = Self::input(window, cx, "Connection name");
         let host_input = Self::input(window, cx, "Host name or IP");
         let user_input = Self::input(window, cx, "Username");
         let port_input = Self::input(window, cx, "22");
+        let command_input = Self::input(window, cx, "Type a command");
 
-        for input in [&search, &name_input, &host_input, &user_input, &port_input] {
+        for input in [
+            &search,
+            &name_input,
+            &host_input,
+            &user_input,
+            &port_input,
+            &command_input,
+        ] {
             cx.subscribe(input, |_, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     cx.notify();
@@ -74,15 +78,14 @@ impl PrototypeApp {
             .detach();
         }
 
-        let terminal = Self::terminal(cx, session.reader, session.writer, session.master.clone());
-
         Self {
             search,
             name_input,
             host_input,
             user_input,
             port_input,
-            connections: vec![SavedConnection {
+            command_input,
+            connections: vec![Connection {
                 id: "local-shell".into(),
                 name: "Local PowerShell".into(),
                 host: String::new(),
@@ -90,11 +93,16 @@ impl PrototypeApp {
                 port: 22,
                 local: true,
             }],
-            terminal,
-            child: session.child,
-            selected_id: "local-shell".into(),
-            selected_label: "Local PowerShell".into(),
-            error: None,
+            tabs: vec![TerminalTab {
+                connection_id: "local-shell".into(),
+                title: "Local PowerShell".into(),
+            }],
+            active_tab: 0,
+            split_tab: None,
+            split_enabled: true,
+            console_open: true,
+            add_error: None,
+            console_feedback: None,
         }
     }
 
@@ -102,155 +110,127 @@ impl PrototypeApp {
         cx.new(|cx| InputState::new(window, cx).placeholder(placeholder))
     }
 
-    fn terminal(
-        cx: &mut Context<Self>,
-        reader: Box<dyn Read + Send>,
-        writer: Box<dyn Write + Send>,
-        master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
-    ) -> Entity<TerminalView> {
-        let colors = ColorPalette::builder()
-            .background(0x1e, 0x1e, 0x2e)
-            .foreground(0xcd, 0xd6, 0xf4)
-            .cursor(0xf5, 0xe0, 0xdc)
-            .black(0x45, 0x47, 0x5a)
-            .red(0xf3, 0x8b, 0xa8)
-            .green(0xa6, 0xe3, 0xa1)
-            .yellow(0xf9, 0xe2, 0xaf)
-            .blue(0x89, 0xb4, 0xfa)
-            .magenta(0xf5, 0xc2, 0xe7)
-            .cyan(0x94, 0xe2, 0xd5)
-            .white(0xba, 0xc2, 0xde)
-            .bright_black(0x58, 0x5b, 0x70)
-            .bright_red(0xf3, 0x8b, 0xa8)
-            .bright_green(0xa6, 0xe3, 0xa1)
-            .bright_yellow(0xf9, 0xe2, 0xaf)
-            .bright_blue(0x89, 0xb4, 0xfa)
-            .bright_magenta(0xf5, 0xc2, 0xe7)
-            .bright_cyan(0x94, 0xe2, 0xd5)
-            .bright_white(0xa6, 0xad, 0xc8)
-            .build();
-        let config = TerminalConfig {
-            font_family: "Cascadia Mono".into(),
-            font_size: px(14.0),
-            cols: 88,
-            rows: 26,
-            scrollback: 5000,
-            line_height_multiplier: 1.05,
-            padding: Edges::all(px(12.0)),
-            colors,
-        };
-        cx.new(|cx| {
-            TerminalView::new(writer, reader, config, cx).with_resize_callback(move |cols, rows| {
-                let _ = master.lock().resize(PtySize {
-                    cols: cols as u16,
-                    rows: rows as u16,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                });
-            })
-        })
-    }
-
     fn add_connection(&mut self, _: &gpui::ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let name = self.name_input.read(cx).value().trim().to_owned();
         let host = self.host_input.read(cx).value().trim().to_owned();
         let user = self.user_input.read(cx).value().trim().to_owned();
-        let port_text = self.port_input.read(cx).value();
-        let port = port_text.trim().parse::<u16>().ok();
+        let port = self.port_input.read(cx).value().trim().parse::<u16>().ok();
 
-        if name.is_empty() || host.is_empty() || user.is_empty() || port.map(|value| value == 0).unwrap_or(true) {
-            self.error = Some("Enter a name, host, username, and port from 1 to 65535.".into());
+        if name.is_empty() || host.is_empty() || user.is_empty() || !port.is_some_and(|value| value > 0) {
+            self.add_error = Some("Enter a name, host, username, and port from 1 to 65535.".into());
             cx.notify();
             return;
         }
 
-        let connection = SavedConnection {
-            id: format!("ssh-{}", self.connections.len() + 1),
+        let port = port.unwrap_or(22);
+        self.connections.push(Connection {
+            id: format!("ssh-{}", self.connections.len()),
             name,
             host,
             user,
-            port: port.unwrap_or(22),
+            port,
             local: false,
-        };
-        self.connections.push(connection);
-        self.error = None;
+        });
+        self.add_error = None;
         cx.notify();
     }
 
-    fn select_connection(
-        &mut self,
-        index: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(connection) = self.connections.get(index).cloned() else { return };
-        let session = if connection.local {
-            spawn_process("powershell.exe", &["-NoLogo"])
+    fn open_connection(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(connection) = self.connections.get(index) else { return };
+        if let Some(existing) = self.tabs.iter().position(|tab| tab.connection_id == connection.id) {
+            self.active_tab = existing;
         } else {
-            let destination = format!("{}@{}", connection.user, connection.host);
-            spawn_process("ssh", &["-tt", "-p", &connection.port.to_string(), &destination])
-        };
-
-        match session {
-            Ok(session) => {
-                let _ = self.child.kill();
-                self.terminal = Self::terminal(cx, session.reader, session.writer, session.master);
-                self.child = session.child;
-                self.selected_id = connection.id;
-                self.selected_label = connection.name;
-                self.error = None;
-                self.terminal.read(cx).focus_handle().focus(window);
-            }
-            Err(error) => self.error = Some(format!("Could not start session: {error:#}")),
+            self.tabs.push(TerminalTab {
+                connection_id: connection.id.clone(),
+                title: connection.name.clone(),
+            });
+            self.active_tab = self.tabs.len() - 1;
         }
+        self.console_feedback = None;
+        cx.notify();
+    }
+
+    fn activate_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index < self.tabs.len() {
+            self.active_tab = index;
+            cx.notify();
+        }
+    }
+
+    fn new_tab(&mut self, cx: &mut Context<Self>) {
+        let Some(current) = self.tabs.get(self.active_tab).cloned() else { return };
+        let number = self.tabs.len() + 1;
+        self.tabs.push(TerminalTab {
+            connection_id: current.connection_id,
+            title: format!("{} ({number})", current.title),
+        });
+        self.active_tab = self.tabs.len() - 1;
+        cx.notify();
+    }
+
+    fn send_command(&mut self, _: &gpui::ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        let command = self.command_input.read(cx).value().trim().to_owned();
+        self.console_feedback = if command.is_empty() {
+            Some("Enter a command first.".into())
+        } else {
+            Some("Command sending is pending while terminal I/O is being fixed.".into())
+        };
         cx.notify();
     }
 
     fn connection_button(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let connection = &self.connections[index];
-        let active = connection.id == self.selected_id;
-        let name = connection.name.clone();
-        let host = if connection.local {
+        let active_id = &self.tabs[self.active_tab].connection_id;
+        let active = connection.id == *active_id;
+        let title = connection.name.clone();
+        let detail = if connection.local {
             "Local shell".to_owned()
         } else {
             format!("{}@{}:{}", connection.user, connection.host, connection.port)
         };
         let row = div()
             .flex()
-            .flex_col()
-            .gap(px(3.0))
+            .items_center()
+            .gap(px(8.0))
             .px(px(10.0))
-            .py(px(8.0))
+            .py(px(7.0))
             .rounded(px(5.0))
+            .bg(if active { rgb(RAISED) } else { rgb(SURFACE) })
+            .child(div().w(px(7.0)).h(px(7.0)).rounded(px(4.0)).bg(if active { rgb(ACCENT) } else { rgb(MUTED) }))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .child(div().text_size(px(12.0)).text_color(rgb(TEXT)).child(title))
+                    .child(div().text_size(px(11.0)).text_color(rgb(MUTED)).child(detail)),
+            );
+
+        Button::new(("connection", index as u32))
+            .ghost()
+            .w_full()
+            .child(row)
+            .on_click(cx.listener(move |this, _, _, cx| this.open_connection(index, cx)))
+    }
+
+    fn tab_button(&self, index: usize, cx: &mut Context<Self>) -> impl IntoElement {
+        let tab = &self.tabs[index];
+        let title = tab.title.clone();
+        let active = index == self.active_tab;
+        Button::new(("terminal-tab", index as u32))
+            .ghost()
+            .h(px(34.0))
+            .px(px(10.0))
             .bg(if active { rgb(RAISED) } else { rgb(SURFACE) })
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        div()
-                            .w(px(7.0))
-                            .h(px(7.0))
-                            .rounded(px(4.0))
-                            .bg(if active { rgb(SUCCESS) } else { rgb(MUTED) }),
-                    )
-                    .child(div().text_size(px(12.0)).text_color(rgb(TEXT)).child(name)),
+                    .gap(px(7.0))
+                    .child(div().w(px(6.0)).h(px(6.0)).rounded(px(3.0)).bg(if active { rgb(WARNING) } else { rgb(MUTED) }))
+                    .child(div().text_size(px(12.0)).text_color(if active { rgb(TEXT) } else { rgb(MUTED) }).child(title)),
             )
-            .child(
-                div()
-                    .pl(px(15.0))
-                    .text_size(px(11.0))
-                    .text_color(rgb(MUTED))
-                    .child(host),
-            );
-        Button::new(("connection", index as u32))
-            .ghost()
-            .w_full()
-            .child(row)
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.select_connection(index, window, cx)
-            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.activate_tab(index, cx)))
     }
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -259,41 +239,40 @@ impl PrototypeApp {
             .connections
             .iter()
             .enumerate()
-            .filter(|(_, connection)| {
+            .filter(|(_, item)| {
                 query.is_empty()
-                    || connection.name.to_lowercase().contains(&query)
-                    || connection.host.to_lowercase().contains(&query)
-                    || connection.user.to_lowercase().contains(&query)
+                    || item.name.to_lowercase().contains(&query)
+                    || item.host.to_lowercase().contains(&query)
+                    || item.user.to_lowercase().contains(&query)
             })
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
-        let local_index = visible.iter().copied().find(|&index| self.connections[index].local);
-        let ssh_indices = visible
-            .into_iter()
-            .filter(|&index| !self.connections[index].local)
-            .collect::<Vec<_>>();
-        let ssh_connections = ssh_indices
+        let local = visible.iter().copied().find(|&index| self.connections[index].local);
+        let saved = visible.into_iter().filter(|&index| !self.connections[index].local).collect::<Vec<_>>();
+        let has_saved = !saved.is_empty();
+        let saved_rows = saved
             .into_iter()
             .map(|index| self.connection_button(index, cx).into_any_element())
             .collect::<Vec<_>>();
 
         div()
-            .w(px(292.0))
+            .w(px(278.0))
             .flex_shrink_0()
             .flex()
             .flex_col()
-            .gap(px(12.0))
-            .p(px(14.0))
+            .gap(px(10.0))
+            .p(px(12.0))
             .bg(rgb(SURFACE))
             .border_r_1()
             .border_color(rgb(BORDER))
             .child(
                 div()
+                    .h(px(28.0))
                     .flex()
                     .items_center()
                     .justify_between()
                     .child(div().text_size(px(14.0)).font_weight(gpui::FontWeight::SEMIBOLD).child("Connections"))
-                    .child(div().text_size(px(11.0)).text_color(rgb(MUTED)).child(format!("{} SSH", self.connections.len() - 1))),
+                    .child(div().text_size(px(11.0)).text_color(rgb(MUTED)).child(format!("{}", self.connections.len()))),
             )
             .child(Input::new(&self.search).w_full())
             .child(
@@ -301,27 +280,37 @@ impl PrototypeApp {
                     .flex()
                     .flex_col()
                     .gap(px(4.0))
-                    .child(div().px(px(4.0)).text_size(px(10.0)).text_color(rgb(MUTED)).child("LOCAL"))
-                    .when_some(local_index, |element, index| element.child(self.connection_button(index, cx)))
-                    .when(local_index.is_none(), |element| {
-                        element.child(div().px(px(4.0)).text_size(px(11.0)).text_color(rgb(MUTED)).child("No matching connection"))
-                    }),
+                    .child(div().px(px(5.0)).text_size(px(10.0)).text_color(rgb(MUTED)).child("LOCAL"))
+                    .when_some(local, |element, index| element.child(self.connection_button(index, cx))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(7.0))
+                    .px(px(5.0))
+                    .pt(px(5.0))
+                    .child(div().text_size(px(11.0)).text_color(rgb(MUTED)).child("▾"))
+                    .child(div().text_size(px(10.0)).text_color(rgb(MUTED)).child("SAVED SSH")),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.0))
-                    .child(div().px(px(4.0)).text_size(px(10.0)).text_color(rgb(MUTED)).child("SAVED SSH"))
-                    .children(ssh_connections),
+                    .gap(px(3.0))
+                    .pl(px(8.0))
+                    .children(saved_rows)
+                    .when(!has_saved, |element| {
+                        element.child(div().pl(px(14.0)).text_size(px(11.0)).text_color(rgb(MUTED)).child("No matching connections"))
+                    }),
             )
             .child(div().flex_1())
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(7.0))
-                    .p(px(10.0))
+                    .gap(px(6.0))
+                    .p(px(9.0))
                     .rounded(px(6.0))
                     .border_1()
                     .border_color(rgb(BORDER))
@@ -342,13 +331,132 @@ impl PrototypeApp {
                             .on_click(cx.listener(Self::add_connection)),
                     ),
             )
+            .when_some(self.add_error.clone(), |element, message| {
+                element.child(div().text_size(px(11.0)).text_color(rgb(WARNING)).child(message))
+            })
+    }
+
+    fn terminal_pane(&self, title: String, active: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        let label = if active { "ACTIVE TAB" } else { "SPLIT PANE" };
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w(px(0.0))
+            .bg(rgb(APP_BG))
+            .child(
+                div()
+                    .h(px(32.0))
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px(px(11.0))
+                    .bg(rgb(SURFACE))
+                    .border_b_1()
+                    .border_color(rgb(BORDER))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(7.0))
+                            .child(div().w(px(6.0)).h(px(6.0)).rounded(px(3.0)).bg(if active { rgb(WARNING) } else { rgb(MUTED) }))
+                            .child(div().text_size(px(11.0)).text_color(rgb(TEXT)).child(title)),
+                    )
+                    .child(div().text_size(px(10.0)).text_color(rgb(MUTED)).child(label)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(10.0))
+                    .p(px(24.0))
+                    .child(div().text_size(px(13.0)).text_color(rgb(TEXT)).child("Terminal pane"))
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(rgb(MUTED))
+                            .child("Terminal input and output are pending; this pane is a layout prototype."),
+                    )
+                    .when(!active, |element| {
+                        element.child(
+                            Button::new("open-in-split")
+                                .ghost()
+                                .label("Open active tab in this pane")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.split_tab = Some(this.active_tab);
+                                    cx.notify();
+                                })),
+                        )
+                    }),
+            )
+    }
+
+    fn command_console(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .h(px(146.0))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .bg(rgb(SURFACE))
+            .border_t_1()
+            .border_color(rgb(BORDER))
+            .child(
+                div()
+                    .h(px(34.0))
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px(px(12.0))
+                    .border_b_1()
+                    .border_color(rgb(BORDER))
+                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::SEMIBOLD).child("Commands"))
+                    .child(div().text_size(px(11.0)).text_color(rgb(MUTED)).child("Send to active tab")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .p(px(10.0))
+                    .child(Input::new(&self.command_input).flex_1())
+                    .child(
+                        Button::new("send-command")
+                            .primary()
+                            .label("Send")
+                            .on_click(cx.listener(Self::send_command)),
+                    ),
+            )
+            .when_some(self.console_feedback.clone(), |element, message| {
+                element.child(div().px(px(12.0)).text_size(px(11.0)).text_color(rgb(WARNING)).child(message))
+            })
+            .when(self.console_feedback.is_none(), |element| {
+                element.child(
+                    div()
+                        .px(px(12.0))
+                        .text_size(px(11.0))
+                        .text_color(rgb(MUTED))
+                        .child("Commands will be routed to the active terminal when I/O is ready."),
+                )
+            })
     }
 }
 
 impl Render for PrototypeApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let terminal_label = self.selected_label.clone();
-        let error = self.error.clone();
+        let active_title = self.tabs.get(self.active_tab).map(|tab| tab.title.clone()).unwrap_or_else(|| "No tab".into());
+        let split_title = self.split_tab.and_then(|index| self.tabs.get(index)).map(|tab| tab.title.clone());
+        let tabs = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, _)| self.tab_button(index, cx).into_any_element())
+            .collect::<Vec<_>>();
+
         div()
             .size_full()
             .flex()
@@ -363,7 +471,7 @@ impl Render for PrototypeApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px(px(16.0))
+                    .px(px(14.0))
                     .bg(rgb(SURFACE))
                     .border_b_1()
                     .border_color(rgb(BORDER))
@@ -375,7 +483,31 @@ impl Render for PrototypeApp {
                             .child(div().text_size(px(14.0)).font_weight(gpui::FontWeight::SEMIBOLD).child("SSHTerm"))
                             .child(div().text_size(px(11.0)).text_color(rgb(MUTED)).child("GPUI exploration")),
                     )
-                    .child(div().text_size(px(11.0)).text_color(rgb(MUTED)).child("single session")),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(div().text_size(px(11.0)).text_color(rgb(WARNING)).child("TERMINAL I/O PENDING"))
+                            .child(
+                                Button::new("toggle-split")
+                                    .ghost()
+                                    .label(if self.split_enabled { "Close split" } else { "Split right" })
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.split_enabled = !this.split_enabled;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                Button::new("toggle-console")
+                                    .ghost()
+                                    .label(if self.console_open { "Hide commands" } else { "Show commands" })
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.console_open = !this.console_open;
+                                        cx.notify();
+                                    })),
+                            ),
+                    ),
             )
             .child(
                 div()
@@ -387,90 +519,46 @@ impl Render for PrototypeApp {
                             .flex()
                             .flex_col()
                             .flex_1()
-                            .bg(rgb(APP_BG))
+                            .min_w(px(0.0))
                             .child(
                                 div()
-                                    .h(px(36.0))
+                                    .h(px(38.0))
                                     .flex_shrink_0()
                                     .flex()
                                     .items_center()
-                                    .justify_between()
-                                    .px(px(12.0))
+                                    .gap(px(4.0))
+                                    .px(px(6.0))
                                     .bg(rgb(SURFACE))
                                     .border_b_1()
                                     .border_color(rgb(BORDER))
+                                    .children(tabs)
                                     .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(8.0))
-                                            .child(div().w(px(7.0)).h(px(7.0)).rounded(px(4.0)).bg(rgb(ACCENT)))
-                                            .child(div().text_size(px(12.0)).child(terminal_label)),
-                                    )
-                                    .child(div().text_size(px(11.0)).text_color(rgb(MUTED)).child("OpenSSH / ConPTY")),
+                                        Button::new("new-tab")
+                                            .ghost()
+                                            .label("+")
+                                            .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
+                                    ),
                             )
                             .child(
                                 div()
+                                    .flex()
                                     .flex_1()
-                                    .p(px(8.0))
-                                    .child(div().size_full().child(self.terminal.clone())),
+                                    .min_h(px(0.0))
+                                    .child(self.terminal_pane(active_title, true, cx))
+                                    .when(self.split_enabled, |row| {
+                                        row.child(div().w(px(1.0)).flex_shrink_0().bg(rgb(BORDER)))
+                                            .child(self.terminal_pane(split_title.unwrap_or_else(|| "Empty pane".into()), false, cx))
+                                    }),
                             )
-                            .when_some(error, |element, error| {
-                                element.child(
-                                    div()
-                                        .px(px(12.0))
-                                        .py(px(8.0))
-                                        .text_size(px(12.0))
-                                        .text_color(rgb(DANGER))
-                                        .child(error),
-                                )
-                            }),
+                            .when(self.console_open, |column| column.child(self.command_console(cx))),
                     ),
             )
     }
 }
 
-impl Drop for PrototypeApp {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-    }
-}
-
-fn spawn_process(program: &str, args: &[&str]) -> Result<ProcessSession> {
-    let pty = native_pty_system();
-    let pair = pty
-        .openpty(PtySize { rows: 26, cols: 88, pixel_width: 0, pixel_height: 0 })
-        .context("opening a terminal session")?;
-
-    let mut command = CommandBuilder::new(program);
-    for arg in args {
-        command.arg(arg);
-    }
-    command.env("TERM", "xterm-256color");
-    command.env("COLORTERM", "truecolor");
-
-    let child = pair.slave.spawn_command(command).context("starting the process")?;
-    let writer = pair.master.take_writer().context("opening terminal input")?;
-    let reader = pair.master.try_clone_reader().context("opening terminal output")?;
-    let master = Arc::new(Mutex::new(pair.master));
-    drop(pair.slave);
-
-    Ok(ProcessSession { reader, writer, master, child })
-}
-
 fn main() -> Result<()> {
-    let initial_session = spawn_process(
-        "powershell.exe",
-        &[
-            "-NoLogo",
-            "-NoProfile",
-            "-NoExit",
-            "-Command",
-            "Write-Host 'Local PowerShell ready'",
-        ],
-    )?;
     let app = Application::new();
-    app.run(move |cx| {
+    app.run(|cx| {
         gpui_component::init(cx);
         cx.spawn(async move |cx| {
             cx.open_window(
@@ -482,12 +570,9 @@ fn main() -> Result<()> {
                     window_min_size: Some(gpui::size(px(960.0), px(600.0))),
                     ..Default::default()
                 },
-                move |window, cx| {
-                    let root = cx.new(|cx| PrototypeApp::new(window, cx, initial_session));
-                    let terminal = root.read(cx).terminal.clone();
-                    let root = cx.new(|cx| Root::new(root, window, cx));
-                    terminal.read(cx).focus_handle().focus(window);
-                    root
+                |window, cx| {
+                    let root = cx.new(|cx| PrototypeApp::new(window, cx));
+                    cx.new(|cx| Root::new(root, window, cx))
                 },
             )?;
             Ok::<_, anyhow::Error>(())
