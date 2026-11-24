@@ -4,6 +4,20 @@ This is an isolated native-Rust UI experiment. It does **not** replace or modify
 
 ## Status and scope
 
+**Phase 1 (shell layout)** reproduces the production window layout with GPUI Kit components; the plan,
+component mapping and later phases are in [`docs/gpui-port.md`](../docs/gpui-port.md).
+
+- Title bar (app name, tunnels badge, theme button, settings, lock), connection tree with search, properties pane
+  for the selected connection, a 48 px vertical toolbar with all ten buttons, a `DockArea` pane area with tabs,
+  and a resizable, collapsible command console. Sizes and min/max come from the production layout.
+- Click a connection to fill the properties pane; double-click it to open a placeholder tab. Tabs can be dragged
+  between groups and split by dropping on an edge (built into the Kit dock). The toolbar layout buttons re-home the
+  open tabs into one, left/right, top/bottom or grid groups.
+- Not wired yet: split buttons act on the matching two-group preset (not on the focused pane), keyboard shortcuts,
+  editing in the properties pane, console targets and Ctrl+Enter, persistence, sessions, terminal emulation.
+
+### Earlier prototype scope (still true)
+
 - Native GPUI Kit window with its reusable `Tree` component and one terminal placeholder pane.
 - The Kit tree supplies hierarchical rendering, expand/collapse, selection, keyboard navigation, and virtualized rows.
 - Drag an item onto a folder to move it into that folder.
@@ -34,11 +48,22 @@ cargo run --manifest-path gpui-prototype/Cargo.toml --bin gpui-smoke
 # Stage 2: build and launch the connection-tree prototype.
 cargo run --manifest-path gpui-prototype/Cargo.toml --bin sshterm-gpui
 
-# Run the prototype's tree-model unit tests.
+# Run the prototype's unit tests (tree model and layout planning).
 cargo test --manifest-path gpui-prototype/Cargo.toml
 ```
 
 The prototype depends on the published `gpui-kit = "0.9.1"` facade. GPUI Kit pins a matching set of GPUI, GPUI Base, GPUI Component, and asset crates, avoiding a separately maintained set of incompatible GPUI dependency revisions.
+
+## Source layout
+
+| File | Role |
+| --- | --- |
+| `src/main.rs` | Starts the app, loads the bundled themes, opens the window (min size 900 x 560). |
+| `src/workspace.rs` | The window: title bar, tree, properties, rail, shell and main-area resizable groups, layout presets, theme switching. |
+| `src/panes.rs` | `TerminalPanel`, the placeholder hosted by the dock. |
+| `src/console.rs` | `CommandConsole` (Textarea + Send/Clear). |
+| `src/model.rs` | Pure connection-tree model and operations, with unit tests. |
+| `src/layout.rs` | Pure layout-preset planning (`distribute`), with unit tests. |
 
 ## Architecture and decisions
 
