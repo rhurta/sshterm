@@ -4,25 +4,28 @@ This document describes the connection workspace's side panels and the visual co
 
 ## Side-panel visibility
 
-The connection tree and selected-connection properties pane can be shown or hidden independently. Their visibility is stored outside the encrypted vault in the portable application's `config.toml`:
+The connection tree and selected-connection properties pane can be shown or hidden independently. Their visibility is stored outside the encrypted vault in `config/config.toml` beside the executable:
 
 ```toml
 [workspace_panels]
 tree_visible = true
 properties_visible = true
+expanded_folders = { "folder-id" = false }
 ```
 
 Both panels are visible by default. Missing settings in an older `config.toml` use these defaults, so adding the preference does not require a migration. These preferences are non-secret and are available before the vault is unlocked.
 
 The command console has its own independent persisted visibility and preferred height under `[command_console]`. Command drafts are intentionally kept in frontend memory only; they are not saved in configuration, the vault or logs.
 
+Folder expansion preferences are stored in `[workspace_panels].expanded_folders`, keyed by stable folder ID. Newly created folders default to expanded; existing folder choices are restored on the next launch.
+
 ## Connection properties pane
 
 When a connection is selected, the properties pane displays its saved values in a compact property/value grid. The view includes the connection identity and endpoint, authentication method and credential state, jump-host route and enabled/disabled hops, keepalive, and the configured connection options such as SFTP and port forwarding.
 
-Choose Edit to switch the pane into the inline connection editor. It uses the same editor and validation path as the full connection editor, so the complete saved connection configuration can be reviewed and changed without opening a separate modal. Save applies the changes; Cancel returns to the property grid.
+Editable scalar values have a click-to-edit control in the grid itself; Enter or the check control saves the value, while Escape or the cancel control discards the edit. Compound settings such as jump chains and port-forward lists remain available through Edit, which opens the full connection editor and uses the same validation path.
 
-**Secrets are never exposed in the properties grid.** Passwords and key passphrases are represented as saved/not-saved state. The user can update them through the secure authentication fields in the editor; the grid never renders their contents.
+**Secrets are masked by default.** For password-authenticated connections, the grid includes a Password row with an eye control on the right. The saved password is revealed only while the eye is enabled, and the value is masked again when another connection is selected. Key passphrases remain represented as saved/not-saved state and are never revealed in the grid. Credentials can still be updated through the secure authentication fields in the editor.
 
 With no connection selected, the pane displays its empty state. Loading and retrieval errors are shown in the pane rather than silently presenting stale values.
 

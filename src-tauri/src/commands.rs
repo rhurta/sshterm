@@ -191,7 +191,7 @@ pub fn config_set_appearance_settings(settings: config::AppearanceSettings) -> R
 const MAX_BACKGROUND_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Reads the background image and returns it as a `data:` URL. Relative paths are
-/// resolved against the exe folder, so a portable install can keep its image beside it.
+/// resolved against config/, with the old exe-relative location retained as a migration fallback.
 /// Errors are short codes the frontend translates.
 #[tauri::command]
 pub fn appearance_background_data(path: String) -> Result<String, String> {
@@ -202,7 +202,7 @@ pub fn appearance_background_data(path: String) -> Result<String, String> {
     }
     let mut file = std::path::PathBuf::from(trimmed);
     if file.is_relative() {
-        file = paths::app_dir().join(file);
+        file = paths::resolve_config_path(&file);
     }
     let mime = match file.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
         Some("png") => "image/png",

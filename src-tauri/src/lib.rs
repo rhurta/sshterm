@@ -68,7 +68,7 @@ struct SavedWindowState {
 }
 
 fn window_state_path() -> std::path::PathBuf {
-    paths::app_dir().join("window-state.json")
+    paths::config_dir().join("window-state.json")
 }
 
 fn save_window_state(window: &tauri::WebviewWindow, path: &std::path::Path) {
@@ -141,7 +141,14 @@ pub fn run() {
     // (release builds abort silently: panic = "abort", no console).
     crash::install();
 
-    // WebView2 cache is stored next to the exe (portable application).
+    // Move the previous flat data layout into config/ before resolving any
+    // vault, settings, window-state or WebView cache paths. Logs stay in logs/.
+    if let Err(error) = paths::migrate_legacy_layout() {
+        eprintln!("Could not prepare config directory: {error}");
+        return;
+    }
+
+    // WebView2 cache is stored in config/ with the other mutable app state.
     let data = paths::webview_data_dir();
     let _ = std::fs::create_dir_all(&data);
     // SAFETY: `set_var` is `unsafe` since Rust edition 2024 because changing the
@@ -248,6 +255,8 @@ pub fn run() {
             commands::config_get_app_behavior_settings,
             commands::config_set_app_behavior_settings,
             store::conn_list,
+            store::conn_export,
+            store::conn_export_ssh_config,
             store::conn_get,
             store::conn_upsert,
             store::conn_delete,

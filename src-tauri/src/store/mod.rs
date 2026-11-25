@@ -7,11 +7,14 @@
 pub mod import;
 pub mod tree;
 
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+
 use tauri::State;
 
 use crate::commands::VaultState;
 use crate::transport::PortForward;
-use crate::vault::{Auth, Connection, TreeNode, Tunnel, Vault};
+use crate::vault::{Auth, Connection, TreeNode, Tunnel, Vault, VaultData};
 
 /// What the sidebar shows: never includes a password or key path.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -338,6 +341,271 @@ pub fn conn_list(state: State<'_, VaultState>) -> Result<Vec<ConnectionSummary>,
     Ok(out)
 }
 
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExportReport {
+    pub connections: usize,
+    pub skipped: usize,
+}
+
+fn serialize_export(data: &VaultData) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec_pretty(data)
+}
+
+fn canonical_export_path(path: &Path) -> Result<PathBuf, String> {
+    let name = path.file_name().ok_or_else(|| "bad_export_path".to_string())?;
+    if path.exists() {
+        return std::fs::canonicalize(path).map_err(|_| "io_error".to_string());
+    }
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let parent = std::fs::canonicalize(parent).map_err(|_| "io_error".to_string())?;
+    Ok(parent.join(name))
+}
+
+fn same_export_path(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy().eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn validate_export_destination(destination: &Path) -> Result<(), String> {
+    if destination.as_os_str().is_empty() {
+        return Err("bad_export_path".into());
+    }
+
+    let destination_resolved = canonical_export_path(destination)?;
+    let vault_path = crate::paths::vault_path();
+    let vault_resolved = canonical_export_path(&vault_path)?;
+    let scripts_vault_path = crate::paths::scripts_vault_path();
+    // A configured scripts vault may live beneath a directory that has not
+    // been created yet. Only resolve it when its parent exists; the save dialog
+    // cannot select a file inside a missing directory.
+    let scripts_vault_conflict = scripts_vault_path
+        .parent()
+        .filter(|parent| parent.exists())
+        .and_then(|_| canonical_export_path(&scripts_vault_path).ok())
+        .is_some_and(|path| same_export_path(&destination_resolved, &path));
+    if same_export_path(&destination_resolved, &vault_resolved) || scripts_vault_conflict {
+        return Err("export_overwrites_vault".into());
+    }
+    Ok(())
+}
+
+/// Generate a conservative OpenSSH Host alias from a connection name.
+/// Wildcards, whitespace and config syntax are replaced rather than emitted.
+fn safe_host_alias(value: &str) -> String {
+    let mut alias = String::new();
+    let mut last_dash = false;
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+            alias.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            alias.push('-');
+            last_dash = true;
+        }
+    }
+    let alias = alias.trim_matches('-').to_string();
+    if alias.is_empty() { "connection".into() } else { alias }
+}
+
+fn host_aliases(data: &VaultData) -> std::collections::BTreeMap<String, String> {
+    let mut aliases = std::collections::BTreeMap::new();
+    let mut used = std::collections::HashSet::new();
+    for (id, connection) in &data.connections {
+        let base = safe_host_alias(&connection.name);
+        let mut alias = base.clone();
+        if !used.insert(alias.to_ascii_lowercase()) {
+            let suffix = safe_host_alias(id);
+            alias = format!("{base}-{suffix}");
+            let mut sequence = 2usize;
+            while !used.insert(alias.to_ascii_lowercase()) {
+                alias = format!("{base}-{suffix}-{sequence}");
+                sequence += 1;
+            }
+        }
+        aliases.insert(id.clone(), alias);
+    }
+    aliases
+}
+
+fn collect_ssh_config_order(
+    nodes: &[TreeNode],
+    folder_path: &mut Vec<String>,
+    seen: &mut std::collections::HashSet<String>,
+    output: &mut Vec<(String, Vec<String>)>,
+) {
+    for node in nodes {
+        match node {
+            TreeNode::Folder { name, children, .. } => {
+                folder_path.push(name.clone());
+                collect_ssh_config_order(children, folder_path, seen, output);
+                folder_path.pop();
+            }
+            TreeNode::Connection { id } if seen.insert(id.clone()) => {
+                output.push((id.clone(), folder_path.clone()));
+            }
+            TreeNode::Connection { .. } => {}
+        }
+    }
+}
+
+fn ssh_config_quote(value: &str) -> String {
+    #[cfg(windows)]
+    let normalized = value.replace('\\', "/");
+    #[cfg(not(windows))]
+    let normalized = value.to_string();
+    format!("\"{}\"", normalized.replace('"', "\\\""))
+}
+
+fn ssh_config_comment(value: &str) -> String {
+    value.chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Serialize the OpenSSH-compatible subset of a vault. Passwords, key
+/// passphrases, host-key trust, and UI-only settings deliberately stay out.
+fn serialize_ssh_config(data: &VaultData) -> (String, usize) {
+    let aliases = host_aliases(data);
+    let mut order = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    collect_ssh_config_order(&data.tree, &mut Vec::new(), &mut seen, &mut order);
+    for id in data.connections.keys() {
+        if seen.insert(id.clone()) {
+            order.push((id.clone(), Vec::new()));
+        }
+    }
+
+    let mut output = String::from(
+        "# OpenSSH client configuration exported by SSH Term.\n\
+         # Saved passwords and key passphrases are not included.\n\
+         # Host-key trust is not transferred; OpenSSH uses its own known_hosts file.\n\
+         # Per-connection colors, highlighting and other UI-only settings are omitted.\n\n",
+    );
+    let mut skipped = 0usize;
+
+    for (id, folders) in order {
+        let Some(connection) = data.connections.get(&id) else { continue };
+        if connection.port == 0 || !valid_address(&connection.user, &connection.host)
+            || resolve_jump_chain(&data.connections, &id).is_err()
+        {
+            let label = ssh_config_comment(&connection.name);
+            let _ = writeln!(output, "# Skipped {label}: invalid host or jump-host route.\n");
+            skipped += 1;
+            continue;
+        }
+
+        let Some(alias) = aliases.get(&id) else { continue };
+        if !folders.is_empty() {
+            let folder = ssh_config_comment(&folders.join(" / "));
+            let _ = writeln!(output, "# Folder: {folder}");
+        }
+        let _ = writeln!(output, "Host {alias}");
+        let _ = writeln!(output, "    HostName {}", connection.host);
+        let _ = writeln!(output, "    User {}", connection.user);
+        let _ = writeln!(output, "    Port {}", connection.port);
+        let _ = writeln!(output, "    ServerAliveInterval {}", connection.keepalive_secs);
+
+        if let Some(key_path) = connection.key_path().filter(|path| !path.chars().any(char::is_control)) {
+            let _ = writeln!(output, "    IdentityFile {}", ssh_config_quote(&key_path));
+            let _ = writeln!(output, "    IdentitiesOnly yes");
+        }
+        if matches!(&connection.auth, Auth::Password { .. }) {
+            let _ = writeln!(output, "    PreferredAuthentications password,keyboard-interactive");
+        }
+
+        let mut jump_aliases = Vec::new();
+        let mut jump_seen = std::collections::HashSet::new();
+        for jump_id in &connection.jump {
+            if connection.jump_disabled.iter().any(|disabled| disabled == jump_id) {
+                continue;
+            }
+            if jump_seen.insert(jump_id) {
+                if let Some(jump_alias) = aliases.get(jump_id) {
+                    jump_aliases.push(jump_alias.as_str());
+                }
+            }
+        }
+        if !jump_aliases.is_empty() {
+            let _ = writeln!(output, "    ProxyJump {}", jump_aliases.join(","));
+        }
+
+        for saved_tunnel in &connection.tunnels {
+            let mut tunnel = saved_tunnel.clone();
+            if normalize_tunnels(std::slice::from_mut(&mut tunnel)).is_err() {
+                continue;
+            }
+            match tunnel {
+                Tunnel::Local { bind, dest, enabled: true } => {
+                    let _ = writeln!(output, "    LocalForward {bind} {dest}");
+                }
+                Tunnel::Remote { bind, dest, enabled: true } => {
+                    let _ = writeln!(output, "    RemoteForward {bind} {dest}");
+                }
+                Tunnel::Dynamic { bind, enabled: true } => {
+                    let _ = writeln!(output, "    DynamicForward {bind}");
+                }
+                _ => {}
+            }
+        }
+        output.push('\n');
+    }
+
+    (output, skipped)
+}
+
+/// Exports the complete decrypted vault payload as plaintext JSON.
+/// The frontend obtains the destination from the native save-file dialog.
+#[tauri::command]
+pub fn conn_export(state: State<'_, VaultState>, path: String) -> Result<ExportReport, String> {
+    let destination = PathBuf::from(path.trim());
+    validate_export_destination(&destination)?;
+
+    let g = guard(&state);
+    let vault = g.as_ref().ok_or("locked")?;
+    let bytes = serialize_export(&vault.data).map_err(|_| "serialize_error".to_string())?;
+    std::fs::write(&destination, bytes).map_err(|_| "io_error".to_string())?;
+
+    Ok(ExportReport {
+        connections: vault.data.connections.len(),
+        skipped: 0,
+    })
+}
+
+
+/// Exports SSH-compatible connection settings to an OpenSSH client config.
+/// Secret credentials and local host-key trust are intentionally not exported.
+#[tauri::command]
+pub fn conn_export_ssh_config(
+    state: State<'_, VaultState>,
+    path: String,
+) -> Result<ExportReport, String> {
+    let destination = PathBuf::from(path.trim());
+    validate_export_destination(&destination)?;
+
+    let g = guard(&state);
+    let vault = g.as_ref().ok_or("locked")?;
+    let (config, skipped) = serialize_ssh_config(&vault.data);
+    std::fs::write(&destination, config).map_err(|_| "io_error".to_string())?;
+
+    Ok(ExportReport {
+        connections: vault.data.connections.len().saturating_sub(skipped),
+        skipped,
+    })
+}
+
 #[tauri::command]
 pub fn conn_get(state: State<'_, VaultState>, id: String) -> Result<Option<Connection>, String> {
     let g = guard(&state);
@@ -510,6 +778,139 @@ pub fn import_apply(
 mod tests {
     use super::*;
     use crate::vault::VaultData;
+
+
+    #[test]
+    fn connection_export_roundtrips_the_complete_vault_payload() {
+        let mut data = VaultData::default();
+        data.tree = vec![TreeNode::Folder {
+            id: "folder".into(),
+            name: "Production".into(),
+            children: vec![TreeNode::Connection { id: "db".into() }],
+            highlight: vec!["database".into()],
+        }];
+        data.connections.insert(
+            "db".into(),
+            Connection {
+                id: "db".into(),
+                name: "database".into(),
+                host: "db.internal".into(),
+                user: "admin".into(),
+                auth: Auth::Password { password: "secret".into() },
+                jump: vec!["bastion".into()],
+                tunnels: vec![Tunnel::Local {
+                    bind: "15432".into(),
+                    dest: "db.internal:5432".into(),
+                    enabled: true,
+                }],
+                protected: true,
+                ..Connection::default()
+            },
+        );
+        data.known_hosts.insert("db.internal:22".into(), "SHA256:trusted".into());
+
+        let exported = serialize_export(&data).unwrap();
+        let json = String::from_utf8(exported.clone()).unwrap();
+        assert!(json.contains("secret"), "export includes saved authentication credentials");
+        let restored: VaultData = serde_json::from_slice(&exported).unwrap();
+        assert_eq!(restored, data);
+    }
+
+
+    #[test]
+    fn openssh_export_includes_aliases_jumps_keys_and_enabled_forwards_but_no_secrets() {
+        let mut data = VaultData::default();
+        data.tree = vec![TreeNode::Folder {
+            id: "prod".into(),
+            name: "Production".into(),
+            children: vec![
+                TreeNode::Connection { id: "bastion".into() },
+                TreeNode::Connection { id: "db".into() },
+            ],
+            highlight: Vec::new(),
+        }];
+        data.connections.insert(
+            "bastion".into(),
+            Connection {
+                id: "bastion".into(),
+                name: "Bastion Host".into(),
+                host: "bastion.example.com".into(),
+                user: "jump-user".into(),
+                auth: Auth::Key {
+                    path: r"C:\Users\me\.ssh\jump key".into(),
+                    passphrase: Some("jump-passphrase".into()),
+                },
+                ..Connection::default()
+            },
+        );
+        data.connections.insert(
+            "db".into(),
+            Connection {
+                id: "db".into(),
+                name: "Production Database".into(),
+                host: "db.internal".into(),
+                user: "db-user".into(),
+                auth: Auth::Password { password: "database-password".into() },
+                keepalive_secs: 15,
+                jump: vec!["bastion".into()],
+                tunnels: vec![
+                    Tunnel::Local { bind: "127.0.0.1:15432".into(), dest: "db.internal:5432".into(), enabled: true },
+                    Tunnel::Remote { bind: "18080".into(), dest: "127.0.0.1:8080".into(), enabled: true },
+                    Tunnel::Dynamic { bind: "1080".into(), enabled: true },
+                    Tunnel::Local { bind: "15433".into(), dest: "db.internal:5432".into(), enabled: false },
+                ],
+                ..Connection::default()
+            },
+        );
+
+        let (config, skipped) = serialize_ssh_config(&data);
+        assert_eq!(skipped, 0);
+        assert!(config.contains("# Folder: Production"));
+        assert!(config.contains("Host Bastion-Host"));
+        #[cfg(windows)]
+        assert!(config.contains("IdentityFile \"C:/Users/me/.ssh/jump key\""));
+        #[cfg(not(windows))]
+        assert!(config.contains(r#"IdentityFile "C:\Users\me\.ssh\jump key""#));
+        assert!(config.contains("Host Production-Database"));
+        assert!(config.contains("ProxyJump Bastion-Host"));
+        assert!(config.contains("ServerAliveInterval 15"));
+        assert!(config.contains("LocalForward 127.0.0.1:15432 db.internal:5432"));
+        assert!(config.contains("RemoteForward 18080 127.0.0.1:8080"));
+        assert!(config.contains("DynamicForward 1080"));
+        assert!(!config.contains("15433"), "disabled forwards are not exported");
+        assert!(!config.contains("database-password"));
+        assert!(!config.contains("jump-passphrase"));
+    }
+
+    #[test]
+    fn openssh_export_sanitizes_host_aliases_and_skips_invalid_jump_routes() {
+        let mut data = VaultData::default();
+        data.connections.insert(
+            "one".into(),
+            Connection {
+                id: "one".into(),
+                name: "Database * Primary".into(),
+                host: "db.example.com".into(),
+                user: "admin".into(),
+                ..Connection::default()
+            },
+        );
+        data.connections.insert(
+            "two".into(),
+            Connection {
+                id: "two".into(),
+                name: "Database * Primary".into(),
+                host: "bad host\nHost *".into(),
+                user: "admin".into(),
+                ..Connection::default()
+            },
+        );
+        let (config, skipped) = serialize_ssh_config(&data);
+        assert_eq!(skipped, 1);
+        assert!(config.contains("Host Database-Primary"));
+        assert!(config.contains("# Skipped Database * Primary: invalid host or jump-host route."));
+        assert!(!config.contains("Host *"));
+    }
 
     #[test]
     fn normalize_fills_defaults_and_keeps_password_auth() {

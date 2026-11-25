@@ -47,11 +47,13 @@ export const DEFAULT_COMMAND_CONSOLE_SETTINGS: CommandConsoleSettings = {
 export interface WorkspacePanelSettings {
   tree_visible: boolean;
   properties_visible: boolean;
+  expanded_folders: Record<string, boolean>;
 }
 
 export const DEFAULT_WORKSPACE_PANEL_SETTINGS: WorkspacePanelSettings = {
   tree_visible: true,
   properties_visible: true,
+  expanded_folders: {},
 }
 
 export type Auth =
