@@ -1096,7 +1096,7 @@
                     {:else if sftpTab}
                       <!-- SFTP browsers use the same tab drag/drop contract as SSH sessions. -->
                       <!-- svelte-ignore a11y_no_static_element_interactions (supports drag and right-click; keyboard menu access is on the tab button) -->
-                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId}>
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:identity-colored={!!sftpTab.identityColor} style={sftpTab.identityColor ? `--identity-color: ${sftpTab.identityColor}` : undefined}>
                         <button role="tab" aria-haspopup="menu" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${sftpTab.name}${activeId === sessionId ? ", active pane" : ""}`}
                           title={sftpTab.name} onclick={() => activateSession(sessionId)}
