@@ -306,7 +306,7 @@
           <PasswordInput bind:value={passphrase} autocomplete="new-password" />
         </label>
       {:else}
-        <p class="hint">{t("editor.auth.agent")}</p>
+        <p class="hint">{t("editor.auth.agentHint")}</p>
       {/if}
     {:else if section === "advanced"}
       <label>
@@ -706,7 +706,9 @@
     border-color: var(--success-border);
   }
   .jump-candidates {
-    max-height: 10rem;
+    flex: 1 1 0;
+    min-height: 8rem;
+    max-height: none;
     overflow-y: auto;
     display: flex;
     flex-direction: column;

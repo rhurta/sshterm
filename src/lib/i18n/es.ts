@@ -285,6 +285,7 @@ export const es: Record<MessageKey, string> = {
   "editor.auth.password": "Contraseña",
   "editor.auth.key": "Archivo de clave",
   "editor.auth.agent": "Agente SSH / clave por defecto",
+  "editor.auth.agentHint": "Requiere un agente SSH en ejecución. En Windows, inicia el servicio OpenSSH ssh-agent o ejecuta Pageant. En Unix, inicia ssh-agent y verifica que SSH_AUTH_SOCK apunte a su socket.",
   "editor.passwordHint": "Déjalo vacío para usar una clave o el agente.",
   "editor.keyPath": "Ruta del archivo de clave",
   "editor.passphrase": "Frase de la clave (opcional)",

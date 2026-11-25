@@ -285,6 +285,7 @@ export const en = {
   "editor.auth.password": "Password",
   "editor.auth.key": "Key file",
   "editor.auth.agent": "SSH agent / default key",
+  "editor.auth.agentHint": "Requires a running SSH agent. On Windows, start the OpenSSH ssh-agent service or launch Pageant. On Unix, start ssh-agent and make sure SSH_AUTH_SOCK points to its socket.",
   "editor.passwordHint": "Leave empty to use a key or the agent.",
   "editor.keyPath": "Key file path",
   "editor.passphrase": "Key passphrase (optional)",
