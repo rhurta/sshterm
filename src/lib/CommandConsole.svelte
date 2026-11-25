@@ -33,6 +33,8 @@
   let includeProtected = $state(false);
   let sessionQuery = $state("");
   let confirmingMultiline = $state(false);
+  let pendingSendText = $state<string | null>(null);
+  let pendingSelection = $state<{ start: number; end: number } | null>(null);
   let sending = $state(false);
   let status = $state("");
   let statusError = $state(false);
@@ -62,8 +64,9 @@
     targetResize = null;
   }
 
-  let lineCount = $derived(draft.length ? draft.split(/\r\n|\r|\n/).length : 0);
-  let hasMultipleLines = $derived(lineCount > 1);
+  let pendingLineCount = $derived(pendingSendText
+    ? pendingSendText.replace(/(?:\r\n|\r|\n)+$/, "").split(/\r\n|\r|\n/).length
+    : 0);
   let targetResolution = $derived(resolveBroadcastTargets(
     sessions,
     activeSessionId,
@@ -90,6 +93,8 @@
     }
     sessionQuery = "";
     confirmingMultiline = false;
+    pendingSendText = null;
+    pendingSelection = null;
     status = "";
   }
 
@@ -98,6 +103,8 @@
       ? [...new Set([...selectedSessionIds, sessionId])]
       : selectedSessionIds.filter((id) => id !== sessionId);
     confirmingMultiline = false;
+    pendingSendText = null;
+    pendingSelection = null;
     status = "";
   }
 
@@ -111,6 +118,8 @@
   function toggleProtected(event: Event) {
     includeProtected = (event.currentTarget as HTMLInputElement).checked;
     confirmingMultiline = false;
+    pendingSendText = null;
+    pendingSelection = null;
     status = "";
   }
 
@@ -127,7 +136,7 @@
     });
   }
 
-  async function requestSend() {
+  async function requestSendText(text: string, selectionStart: number, selectionEnd: number) {
     const resolution = resolveBroadcastTargets(
       sessions,
       activeSessionId,
@@ -135,10 +144,12 @@
       selectedSessionIds,
       includeProtected,
     );
-    if (resolution.targets.length === 0 || draft.length === 0 || sending) return;
-    if ((hasMultipleLines || resolution.targets.length > 1) && !confirmingMultiline) {
-      const selectionStart = editor?.selectionStart ?? draft.length;
-      const selectionEnd = editor?.selectionEnd ?? selectionStart;
+    if (resolution.targets.length === 0 || text.length === 0 || sending || confirmingMultiline) return;
+
+    pendingSendText = text;
+    pendingSelection = { start: selectionStart, end: selectionEnd };
+    const textLineCount = text.replace(/(?:\r\n|\r|\n)+$/, "").split(/\r\n|\r|\n/).length;
+    if (textLineCount > 1 || resolution.targets.length > 1) {
       confirmingMultiline = true;
       status = "";
       await restoreEditorFocus(selectionStart, selectionEnd);
@@ -147,8 +158,31 @@
     void sendDraft();
   }
 
-  async function sendDraft() {
+  async function requestSend() {
     if (draft.length === 0 || sending) return;
+    const selectionStart = editor?.selectionStart ?? draft.length;
+    const selectionEnd = editor?.selectionEnd ?? selectionStart;
+    await requestSendText(draft, selectionStart, selectionEnd);
+  }
+
+  async function requestSendCurrentLine() {
+    if (!editor || sending || confirmingMultiline) return;
+    const cursor = editor.selectionStart;
+    const beforeCursor = draft.slice(0, cursor);
+    const lineStart = beforeCursor.lastIndexOf("\n") + 1;
+    const nextBreak = draft.indexOf("\n", cursor);
+    const lineEnd = nextBreak < 0 ? draft.length : nextBreak;
+    const line = draft.slice(lineStart, lineEnd).replace(/\r$/, "");
+    if (!line.trim()) return;
+
+    // Include a line feed so the remote shell executes this command. The draft
+    // itself is left untouched, and the caret is restored to its original spot.
+    await requestSendText(line + "\n", cursor, cursor);
+  }
+
+  async function sendDraft() {
+    const text = pendingSendText ?? draft;
+    if (text.length === 0 || sending) return;
     // Resolve again at dispatch time so closed sessions and changed selections
     // cannot remain in a stale confirmation target set.
     const resolution = resolveBroadcastTargets(
@@ -160,17 +194,21 @@
     );
     const targets = resolution.targets;
     if (targets.length === 0) {
-      confirmingMultiline = false;
+      cancelPendingSend();
       status = t("console.noEligibleSessions");
       statusError = true;
       return;
     }
 
+    const selection = pendingSelection ?? {
+      start: editor?.selectionStart ?? draft.length,
+      end: editor?.selectionEnd ?? draft.length,
+    };
     sending = true;
     confirmingMultiline = false;
     status = "";
     statusError = false;
-    const payload = toBase64(new TextEncoder().encode(draft));
+    const payload = toBase64(new TextEncoder().encode(text));
     const accepted: string[] = [];
     const failed: string[] = [];
     try {
@@ -181,27 +219,38 @@
           await invoke("session_write", { id: target.sessionId, data: payload });
           accepted.push(target.name);
         } catch (error) {
-          failed.push(`${target.name}: ${String(error)}`);
+          failed.push(target.name + ": " + String(error));
         }
       }
 
       const summary = t("console.writeAccepted", { accepted: accepted.length, total: targets.length });
-      status = failed.length ? `${summary} ${t("console.failed", { details: failed.join(" | ") })}` : summary;
+      status = failed.length ? summary + " " + t("console.failed", { details: failed.join(" | ") }) : summary;
       statusError = failed.length > 0;
     } finally {
       sending = false;
-      // The confirmation button disappears after dispatch. Return focus to the
-      // editor once it is enabled again so typing can continue immediately.
-      await restoreEditorFocus();
+      pendingSendText = null;
+      pendingSelection = null;
+      // A line send leaves the editor contents intact and restores the original
+      // caret so the console remains ready for the next command.
+      await restoreEditorFocus(selection.start, selection.end);
     }
   }
 
+  function cancelPendingSend() {
+    confirmingMultiline = false;
+    pendingSendText = null;
+    pendingSelection = null;
+  }
+
   function onEditorKeydown(event: KeyboardEvent) {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
-      requestSend();
+      void requestSendCurrentLine();
+    } else if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      void requestSend();
     } else if (event.key === "Escape" && confirmingMultiline) {
-      confirmingMultiline = false;
+      cancelPendingSend();
     }
   }
 
@@ -261,7 +310,7 @@
   function clearDraft() {
     loadedScript = null;
     draft = "";
-    confirmingMultiline = false;
+    cancelPendingSend();
     status = "";
     statusError = false;
     editor?.focus();
@@ -276,14 +325,14 @@
     {#if confirmingMultiline}
       <div class="confirmation-banner" role="alert">
         <span>{t("console.confirmation", {
-          lines: lineCount,
+          lines: pendingLineCount,
           lineLabel: lineCount === 1 ? t("console.line") : t("console.lines"),
           sessions: targetResolution.targets.length,
           sessionLabel: targetResolution.targets.length === 1 ? t("console.session") : t("console.sessions"),
           names: targetNames,
         })}</span>
         <button class="send" onclick={sendDraft} disabled={sending || targetResolution.targets.length === 0}>{t("console.confirmSend")}</button>
-        <button class="secondary" onclick={() => (confirmingMultiline = false)}>{t("console.cancel")}</button>
+        <button class="secondary" onclick={cancelPendingSend}>{t("console.cancel")}</button>
       </div>
     {/if}
   </div>
