@@ -101,7 +101,7 @@
     const base = channels(solidPalette.background);
     const tint = channels(identityColor);
     const mixed = base.map((value, i) => Math.round(value * 0.84 + tint[i] * 0.16));
-    const alpha = palette.background.match(/,\\s*([\\d.]+)\\s*\\)$/)?.[1];
+    const alpha = palette.background.match(/,\s*([\d.]+)\s*\)$/)?.[1];
     const background = alpha ? `rgba(${mixed.join(", ")}, ${alpha})` : `#${mixed.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
     return { ...palette, background };
   }
