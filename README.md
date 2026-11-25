@@ -224,9 +224,11 @@ unlock: the flat list is wrapped in one **Connections** folder and the old
 `password` field moves into `auth`.
 
 New commands: `tree_get`, `folder_upsert`, `folder_delete`, `move_node`,
-`search`, `import_preview`, `import_apply`, `conn_export`. Exports write the complete
-decrypted vault payload to plaintext JSON after an explicit warning; treat the export
-"import as copy" is selected. Export files include stored credentials and should be kept secure.
+`search`, `import_preview`, `import_apply`, `conn_export`. Imports are read-only until
+the user confirms the preview; duplicates on `(host, port, user)` are skipped unless
+"import as copy" is selected. Export writes the complete decrypted vault payload to
+plaintext JSON after an explicit warning; it includes stored credentials and should be
+kept secure.
 
 Tree drag-and-drop supports:
 - Moving a connection or folder before/after another node.
