@@ -28,6 +28,7 @@
     theme,
     onmultilinepaste,
     highlightSets = [],
+    identityColor = null,
   }: {
     sessionId: string;
     /** Pane element this terminal is attached to. The terminal is created once
@@ -44,6 +45,7 @@
     terminalOpacity?: number;
     onmultilinepaste: (text: string) => Promise<boolean>;
     highlightSets?: string[];
+    identityColor?: string | null;
   } = $props();
 
   // Workspace opens each session with the last fitted size (80x24 for the very
@@ -91,6 +93,16 @@
     if (!disconnected) void invoke("session_resize", { id: sessionId, cols, rows });
   }
 
+  function tintedTerminalTheme() {
+    const palette = getTerminalTheme(theme, terminalOpacity);
+    if (!identityColor || !/^#[0-9a-fA-F]{6}$/.test(identityColor)) return palette;
+    const channels = (value: string) => [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16));
+    const base = channels(palette.background);
+    const tint = channels(identityColor);
+    const background = `#${base.map((value, i) => Math.round(value * 0.84 + tint[i] * 0.16).toString(16).padStart(2, "0")).join("")}`;
+    return { ...palette, background };
+  }
+
   onMount(() => {
     // The canvas renderer is used deliberately: the WebGL addon can fail to
     // paint in WebView2, which shows a cursor but no text at all.
@@ -100,7 +112,7 @@
       cursorBlink: true,
       scrollback: 5000,
       allowProposedApi: true,
-      theme: getTerminalTheme(theme, terminalOpacity),
+      theme: tintedTerminalTheme(),
       allowTransparency: true,
     });
     term = t;
@@ -403,7 +415,8 @@
 
   // Keep already-open terminals in sync when the application theme changes.
   $effect(() => {
-    const palette = getTerminalTheme(theme, terminalOpacity);
+    identityColor;
+    const palette = tintedTerminalTheme();
     if (mounted && term) term.options.theme = palette;
   });
 
