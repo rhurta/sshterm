@@ -79,6 +79,7 @@
   let consoleHeight = $state(DEFAULT_COMMAND_CONSOLE_SETTINGS.height);
   let treeVisible = $state(DEFAULT_WORKSPACE_PANEL_SETTINGS.tree_visible);
   let propertiesVisible = $state(DEFAULT_WORKSPACE_PANEL_SETTINGS.properties_visible);
+  let treeExpandedFolders = $state<Record<string, boolean>>({ ...DEFAULT_WORKSPACE_PANEL_SETTINGS.expanded_folders });
   let selectedConnectionId = $state<string | null>(null), propertiesFocusToken = $state(0), propertiesWidth = $state(320);
   let workspacePanelSettingsDirty = false;
   let workspacePanelSaveQueue: Promise<void> = Promise.resolve();
@@ -150,6 +151,7 @@
     const settings: WorkspacePanelSettings = {
       tree_visible: treeVisible,
       properties_visible: propertiesVisible,
+      expanded_folders: treeExpandedFolders,
     };
     workspacePanelSaveQueue = workspacePanelSaveQueue
       .then(() => invoke("config_set_workspace_panel_settings", { settings }))
@@ -167,6 +169,12 @@
     workspacePanelSettingsDirty = true;
     propertiesVisible = !propertiesVisible;
     if (propertiesVisible) propertiesFocusToken += 1;
+    persistWorkspacePanelSettings();
+  }
+
+  function persistTreeExpansion(next: Record<string, boolean>) {
+    treeExpandedFolders = { ...next };
+    workspacePanelSettingsDirty = true;
     persistWorkspacePanelSettings();
   }
   function startPropertiesResize(event: PointerEvent) { if (event.button !== 0) return; event.preventDefault(); propertiesResize = { startX: event.clientX, startWidth: propertiesWidth }; }
@@ -193,6 +201,7 @@
         if (!workspacePanelSettingsDirty) {
           treeVisible = value.tree_visible;
           propertiesVisible = value.properties_visible;
+          treeExpandedFolders = { ...(value.expanded_folders ?? {}) };
         }
       })
       .catch(() => {});
@@ -899,7 +908,7 @@
   {/if}
 
   <div class="body">
-    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
     {#if propertiesVisible}
       <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? 8 : -8))); } }}></div>
