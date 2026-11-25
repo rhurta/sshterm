@@ -112,6 +112,7 @@ export interface Connection {
   auth: Auth;
   keepalive_secs: number;
   colors?: Colors | null;
+  identity_color?: string | null;
   protected: boolean;
   /** Ordered saved connection IDs used as ProxyJump hops. */
   jump: string[];
@@ -159,10 +160,12 @@ export interface ConnectionSummary {
   tunnel_count: number;
   /** Whether the saved connection is protected from broadcast by default. */
   protected: boolean;
+  /** Effective identity color, inherited from the nearest colored folder. */
+  identity_color?: string | null;
 }
 
 export type TreeNode =
-  | { type: "folder"; id: string; name: string; children: TreeNode[]; highlight?: string[] }
+  | { type: "folder"; id: string; name: string; children: TreeNode[]; highlight?: string[]; color?: string | null }
   | { type: "connection"; id: string };
 
 export interface SearchHit {
@@ -217,6 +220,7 @@ export interface Tab {
   connected: boolean;
   /** Effective inherited/overridden syntax highlighting rule sets. */
   highlightSets: string[];
+  identityColor?: string | null;
 }
 
 /** How the window is drawn; changing it needs a restart. */
