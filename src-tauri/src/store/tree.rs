@@ -524,6 +524,23 @@ mod tests {
 
 
     #[test]
+    fn identity_colors_inherit_from_nearest_folder_and_allow_connection_override() {
+        let mut tree = vec![folder(
+            "root", "Root",
+            vec![folder("nested", "Nested", vec![link_to("c1")])],
+        )];
+        assert_eq!(resolve_identity_color(&tree, "c1", None), None);
+        assert!(set_folder_color(&mut tree, "root", Some("#336699".into())));
+        assert_eq!(resolve_identity_color(&tree, "c1", None).as_deref(), Some("#336699"));
+        assert!(set_folder_color(&mut tree, "nested", Some("#993366".into())));
+        assert_eq!(resolve_identity_color(&tree, "c1", None).as_deref(), Some("#993366"));
+        assert_eq!(resolve_identity_color(&tree, "c1", Some("#228844")).as_deref(), Some("#228844"));
+        assert!(set_folder_color(&mut tree, "nested", None));
+        assert_eq!(resolve_identity_color(&tree, "c1", None).as_deref(), Some("#336699"));
+        assert!(!set_folder_color(&mut tree, "missing", Some("#ffffff".into())));
+    }
+
+    #[test]
     fn set_folder_highlight_changes_only_the_requested_folder() {
         let mut tree = vec![folder(
             "root", "Root",
