@@ -45,7 +45,7 @@
   } = $props();
 
   let tabs = $state<Tab[]>([]);
-  type SftpWorkspaceTab = { id: string; connectionId: string | null; name: string };
+  type SftpWorkspaceTab = { id: string; connectionId: string | null; name: string; identityColor?: string | null };
   let sftpTabs = $state<SftpWorkspaceTab[]>([]);
   let workspaceTabIds = $derived([...tabs.map((tab) => tab.sessionId), ...sftpTabs.map((tab) => tab.id)]);
   let activeId = $state<string | null>(null);
@@ -401,15 +401,16 @@
 
   async function openSftpInPane(connectionId: string | null, paneOverride?: string) {
     let name = t("sftp.title");
+    let identityColor: string | null = null;
     if (connectionId) {
       try {
         const connections = await invoke<ConnectionSummary[]>("conn_list");
         const connection = connections.find((item) => item.id === connectionId);
-        if (connection) name = `${t("sftp.title")} · ${connection.name}`;
+        if (connection) { name = `${t("sftp.title")} · ${connection.name}`; identityColor = connection.identity_color ?? null; }
       } catch { /* SftpBrowser reports its own connection-list errors. */ }
     }
     const id = crypto.randomUUID();
-    sftpTabs = [...sftpTabs, { id, connectionId, name }];
+    sftpTabs = [...sftpTabs, { id, connectionId, name, identityColor }];
     const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
     if (!layoutTree || !targetPaneId) {
       layoutTree = { type: "leaf", sessionId: id, sessionIds: [id] };
@@ -1029,7 +1030,7 @@
   {/if}
 
   <div class="body">
-    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} oncolorschange={(connections) => { const colors = new Map(connections.map((item) => [item.id, item.identity_color ?? null])); tabs = tabs.map((tab) => ({ ...tab, identityColor: colors.get(tab.connId) ?? null })); sftpTabs = sftpTabs.map((tab) => ({ ...tab, identityColor: tab.connectionId ? colors.get(tab.connectionId) ?? null : null })); }} />{/if}
     {#if propertiesVisible}
       <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? -8 : 8))); } }}></div>
