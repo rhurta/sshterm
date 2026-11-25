@@ -459,7 +459,10 @@ fn collect_ssh_config_order(
 }
 
 fn ssh_config_quote(value: &str) -> String {
+    #[cfg(windows)]
     let normalized = value.replace('\\', "/");
+    #[cfg(not(windows))]
+    let normalized = value.to_string();
     format!("\"{}\"", normalized.replace('"', "\\\""))
 }
 
