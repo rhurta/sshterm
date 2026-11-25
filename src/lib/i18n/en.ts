@@ -310,6 +310,8 @@ export const en = {
   "tree.edit": "Edit…",
   "tree.rename": "Rename (F2)",
   "tree.highlightRules": "Syntax highlighting rules…",
+  "tree.identityColor": "Connection color",
+  "tree.identityColorClear": "Clear color (inherit)",
   "tree.duplicate": "Duplicate",
   "tree.delete": "Delete",
   "tree.confirmConnection": "Delete {name}?",
