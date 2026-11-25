@@ -817,6 +817,7 @@ mod tests {
             name: "Production".into(),
             children: vec![TreeNode::Connection { id: "db".into() }],
             highlight: vec!["database".into()],
+            color: None,
         }];
         data.connections.insert(
             "db".into(),
@@ -857,6 +858,7 @@ mod tests {
                 TreeNode::Connection { id: "db".into() },
             ],
             highlight: Vec::new(),
+            color: None,
         }];
         data.connections.insert(
             "bastion".into(),
