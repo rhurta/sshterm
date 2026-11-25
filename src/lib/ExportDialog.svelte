@@ -32,13 +32,17 @@
       const defaultPath = format === "json"
         ? "sshterm-connections.json"
         : await join(await homeDir(), ".ssh", "config");
-      const path = await save({
-        title: t("export.saveDialogTitle"),
-        defaultPath,
-        filters: format === "json"
-          ? [{ name: t("export.json"), extensions: ["json"] }]
-          : [{ name: t("export.sshConfig"), extensions: ["config"] }],
-      });
+      const path = await save(format === "json"
+        ? {
+            title: t("export.saveDialogTitle"),
+            defaultPath,
+            filters: [{ name: t("export.json"), extensions: ["json"] }],
+          }
+        : {
+            // OpenSSH config is deliberately named "config" without an extension.
+            title: t("export.saveDialogTitle"),
+            defaultPath,
+          });
       if (!path) return;
 
       const command = format === "json" ? "conn_export" : "conn_export_ssh_config";
