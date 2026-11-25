@@ -45,14 +45,22 @@ M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.
 
 ```
 sshterm.exe
-sshterm.vault      encrypted: connections, passwords, tunnels, colors
-scripts.vault      encrypted: saved command scripts (created on first unlock)
-config.toml        plain: language, theme, logging, terminal and application-behavior preferences, console layout
-known_hosts        SSH host-key fingerprints (used by ssh.exe in phase 1)
-highlight/         *.toml syntax-highlighting rule files
-logs/              <connection>_<YYYYMMDD-HHMMSS>.log  per-session logs
-webview-data/      WebView2 cache (WEBVIEW2_USER_DATA_FOLDER)
+bin/ssh.exe         optional bundled OpenSSH client
+config/
+  sshterm.vault     encrypted: connections, credentials, tunnels, colors
+  scripts.vault     encrypted: saved command scripts (created on first unlock)
+  config.toml       plain: theme, language, UI, terminal and application preferences
+  known_hosts       SSH host-key fingerprints
+  window-state.json saved window bounds and maximized state
+  highlight/        *.toml syntax-highlighting rule files
+  webview-data/     WebView2 cache (WEBVIEW2_USER_DATA_FOLDER)
+logs/               <connection>_<YYYYMMDD-HHMMSS>.log and crash.log
 ```
+
+All mutable application data is stored under `config/` beside the executable. On first
+startup after this change, legacy files and directories from the old flat layout are
+moved into `config/` without overwriting files already there. Session and crash logs
+remain in `logs/`.
 
 ## Technology stack
 
