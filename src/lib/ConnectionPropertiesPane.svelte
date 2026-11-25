@@ -46,6 +46,7 @@
   let editValue = $state("");
   let savingInline = $state(false);
   let inlineError = $state("");
+  let passwordVisible = $state(false);
   let version = 0;
   let lastFocusToken = 0;
 
@@ -85,6 +86,7 @@
     editing = false;
     activeField = null;
     inlineError = "";
+    passwordVisible = false;
     query = "";
     void load(id);
   });
@@ -113,7 +115,11 @@
 
     if (current.auth.type === "password") {
       values.push({ key: "authMethod", label: t("properties.authMethod"), value: t("properties.auth.password") });
-      values.push({ key: "passwordState", label: t("properties.passwordState"), value: current.auth.password ? t("properties.saved") : t("properties.notSaved") });
+      values.push({
+        key: "password",
+        label: t("properties.password"),
+        value: current.auth.password ? "••••••••" : t("properties.notSaved"),
+      });
     } else if (current.auth.type === "key") {
       values.push({ key: "authMethod", label: t("properties.authMethod"), value: t("properties.auth.key") });
       values.push({
@@ -364,7 +370,35 @@
       <div class="property-grid">
         {#each rows as row (row.key)}
           <div class="property-label">{row.label}</div>
-          {#if row.field === "protected"}
+          {#if row.key === "password" && connection.auth.type === "password" && connection.auth.password}
+            <div class="property-value password-value">
+              <span class="password-text">{passwordVisible ? connection.auth.password : "••••••••"}</span>
+              <button
+                class="password-reveal"
+                type="button"
+                aria-pressed={passwordVisible}
+                aria-label={passwordVisible ? t("password.hide") : t("password.show")}
+                title={passwordVisible ? t("password.hide") : t("password.show")}
+                onclick={() => (passwordVisible = !passwordVisible)}
+              >
+                {#if passwordVisible}
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                    <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                    <path d="M1 1l22 22" />
+                  </svg>
+                {:else}
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                {/if}
+              </button>
+            </div>
+          {:else if row.key === "password"}
+            <div class="property-value">{row.value}</div>
+          {:else if row.field === "protected"}
             <label class="property-value boolean-value">
               <input type="checkbox" checked={connection.protected} onchange={(event) => void setProtected(event.currentTarget.checked)} disabled={savingInline} />
               <span>{row.value}</span>
@@ -492,6 +526,49 @@
   .edit-hint { flex: 0 0 auto; color: var(--muted); opacity: 0; }
   button.property-value:hover .edit-hint,
   button.property-value:focus-visible .edit-hint { opacity: 1; }
+  .password-value {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+  }
+  .password-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .password-reveal {
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .password-reveal:hover {
+    color: var(--accent);
+    background: var(--surface-hover);
+    border-color: var(--border);
+  }
+  .password-reveal:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .password-reveal svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
   .cell-editing {
     display: flex;
     align-items: center;
