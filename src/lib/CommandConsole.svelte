@@ -167,13 +167,21 @@
 
   async function requestSendCurrentLine() {
     if (!editor || sending || confirmingMultiline) return;
-    const cursor = editor.selectionStart;
-    const beforeCursor = draft.slice(0, cursor);
-    const linePrefix = beforeCursor.match(/(?:\r\n|\r|\n)[^\r\n]*$/);
-    const lineStart = linePrefix ? cursor - linePrefix[0].length : 0;
-    const nextBreak = /(?:\r\n|\r|\n)/.exec(draft.slice(cursor));
-    const lineEnd = nextBreak ? cursor + nextBreak.index : draft.length;
-    const line = draft.slice(lineStart, lineEnd).replace(/\r$/, "");
+    // Read the textarea value directly; it is the source of truth during keydown.
+    const currentDraft = editor.value;
+    if (draft !== currentDraft) draft = currentDraft;
+    const cursor = editor.selectionDirection === "backward"
+      ? editor.selectionStart
+      : editor.selectionEnd;
+    const beforeCursor = currentDraft.slice(0, cursor);
+    const previousBreak = Math.max(beforeCursor.lastIndexOf("\n"), beforeCursor.lastIndexOf("\r"));
+    const lineStart = previousBreak + 1;
+    const afterCursor = currentDraft.slice(cursor);
+    const nextLf = afterCursor.indexOf("\n");
+    const nextCr = afterCursor.indexOf("\r");
+    const nextBreak = nextLf < 0 ? nextCr : nextCr < 0 ? nextLf : Math.min(nextLf, nextCr);
+    const lineEnd = nextBreak < 0 ? currentDraft.length : cursor + nextBreak;
+    const line = currentDraft.slice(lineStart, lineEnd);
     if (!line.trim()) return;
 
     // Include a line feed so the remote shell executes this command. The draft
