@@ -14,6 +14,9 @@ survive a move.
 | Drag a tab onto the center of a pane | Moves it to the end of that pane's tabs. |
 | Drag a tab onto the left / right / top / bottom quarter of a pane | Splits that pane and moves the tab into the new pane. |
 | **Ctrl+Alt+Shift+Arrows** | Moves the active tab to the neighboring pane in that direction (nothing happens if there is none). Keyboard path for the drag actions. |
+| Right-click a tab, or press **Shift+F10 / Menu** on a focused tab | Opens the tab context menu. |
+| Close all but this tab | Closes the other tabs in the same pane; tabs in neighboring panes are unaffected. |
+| Close all tabs | Closes every tab in the same pane and leaves that pane empty. |
 
 Rules:
 
@@ -22,8 +25,10 @@ Rules:
   empty pane (same as closing a tab) and can be removed with its × button.
 - Dropping the only tab of a pane onto the edge of that same pane does nothing.
 - Pane layout is workspace state and is not persisted.
-- The shortcut is swallowed by the terminal key handler, so it never reaches the
+- The move shortcut is swallowed by the terminal key handler, so it never reaches the
   remote shell as a modified-arrow sequence.
+- The tab context menu can be opened with the pointer or keyboard. Escape closes it
+  and returns focus to the invoking tab when it is still open.
 
 ## Design
 

@@ -66,6 +66,10 @@
   let draggingTab = $state<string | null>(null);
   type DropZone = "tabs" | "center" | "left" | "right" | "top" | "bottom";
   let tabDrop = $state<{ paneId: string; zone: DropZone; index?: number } | null>(null);
+  let tabContextMenu = $state<{ sessionId: string; x: number; y: number } | null>(null);
+  let tabContextMenuElement = $state<HTMLDivElement | null>(null);
+  let tabContextMenuAnchor = $state<HTMLElement | null>(null);
+  let tabContextMenuPaneAdd = $state<HTMLElement | null>(null);
   // Pane that receives the next connection (opened from the tree or picker) and
   // shows the focus outline. Usually follows the active tab, but an empty pane
   // can be focused too. Always read it through currentPaneId().
@@ -523,6 +527,81 @@
     if (target) applyTabMove(activeId, target);
   }
 
+  function openTabContextMenu(sessionId: string, x: number, y: number, anchor: HTMLElement | null, paneAdd: HTMLElement | null) {
+    const menuWidth = 224;
+    const menuHeight = 96;
+    tabContextMenuAnchor = anchor;
+    tabContextMenuPaneAdd = paneAdd;
+    tabContextMenu = {
+      sessionId,
+      x: Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8)),
+    };
+    void tick().then(() => {
+      tabContextMenuElement?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    });
+  }
+
+  function showTabContextMenu(event: MouseEvent, sessionId: string) {
+    event.preventDefault();
+    event.stopPropagation();
+    const tab = event.currentTarget as HTMLElement;
+    openTabContextMenu(
+      sessionId,
+      event.clientX,
+      event.clientY,
+      tab.querySelector<HTMLElement>('[role="tab"]'),
+      tab.closest(".pane-slot")?.querySelector<HTMLElement>(".pane-add") ?? null,
+    );
+  }
+
+  function handleTabContextMenuKeydown(event: KeyboardEvent, sessionId: string) {
+    const contextKey = (event.shiftKey && event.key === "F10")
+      || event.key === "ContextMenu"
+      || event.code === "ContextMenu";
+    if (!contextKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const tab = event.currentTarget as HTMLElement;
+    const bounds = tab.getBoundingClientRect();
+    openTabContextMenu(
+      sessionId,
+      bounds.left,
+      bounds.bottom,
+      tab,
+      tab.closest(".pane-slot")?.querySelector<HTMLElement>(".pane-add") ?? null,
+    );
+  }
+
+  function dismissTabContextMenu(restoreFocus = true) {
+    const anchor = tabContextMenuAnchor;
+    const paneAdd = tabContextMenuPaneAdd;
+    tabContextMenu = null;
+    tabContextMenuAnchor = null;
+    tabContextMenuPaneAdd = null;
+    if (restoreFocus) {
+      void tick().then(() => {
+        if (anchor?.isConnected) anchor.focus();
+        else if (paneAdd?.isConnected) paneAdd.focus();
+        else newTabButton?.focus();
+      });
+    }
+  }
+
+  function onTabMenuKeydown(event: KeyboardEvent) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const menu = event.currentTarget as HTMLElement;
+    const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')];
+    if (!items.length) return;
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === "Home" ? 0
+      : event.key === "End" ? items.length - 1
+      : event.key === "ArrowDown" ? (current + 1 + items.length) % items.length
+      : (current - 1 + items.length) % items.length;
+    event.preventDefault();
+    items[next].focus();
+  }
+
   function onTabDragStart(event: DragEvent, sessionId: string) {
     draggingTab = sessionId;
     if (event.dataTransfer) {
@@ -649,6 +728,12 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && tabContextMenu) {
+      e.preventDefault();
+      e.stopPropagation();
+      dismissTabContextMenu();
+      return;
+    }
     if (
       !e.repeat
       && !e.getModifierState("AltGraph")
@@ -785,6 +870,7 @@
   }
 
   function dropTab(sessionId: string) {
+    if (tabContextMenu?.sessionId === sessionId) dismissTabContextMenu(false);
     const oldPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(sessionId));
     const remainingInPane = oldPane?.sessionIds.filter((id) => id !== sessionId) ?? [];
     const remainingWorkspaceTabs = [
@@ -913,6 +999,24 @@
     }
     dropTab(sessionId);
   }
+
+  async function closeOtherTabsInPane(sessionId: string) {
+    const pane = layoutGeometry.leaves.find((item) => item.sessionIds.includes(sessionId));
+    const closingIds = pane?.sessionIds.filter((id) => id !== sessionId) ?? [];
+    dismissTabContextMenu();
+    for (const id of closingIds) await closeTab(id);
+  }
+
+  async function closeAllTabsInPane(sessionId: string) {
+    const pane = layoutGeometry.leaves.find((item) => item.sessionIds.includes(sessionId));
+    const closingIds = [...(pane?.sessionIds ?? [])];
+    const paneAdd = tabContextMenuPaneAdd;
+    dismissTabContextMenu(false);
+    for (const id of closingIds) await closeTab(id);
+    await tick();
+    if (paneAdd?.isConnected) paneAdd.focus();
+    else newTabButton?.focus();
+  }
 </script>
 
 <svelte:window ondragend={() => (connDrop = null)} onkeydown={onKeydown} onpointermove={(event) => { moveConsoleResize(event); movePropertiesResize(event); }} onpointerup={() => { endConsoleResize(); endPropertiesResize(); }} onpointercancel={() => { endConsoleResize(); endPropertiesResize(); }} />
@@ -954,12 +1058,13 @@
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
                     {@const sftpTab = sftpTabs.find((item) => item.id === sessionId)}
                     {#if tab}
-                      <!-- svelte-ignore a11y_no_static_element_interactions (drag is a mouse shortcut; Ctrl+Alt+Shift+Arrows is the keyboard path) -->
-                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
-                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
+                      <!-- svelte-ignore a11y_no_static_element_interactions (supports drag and right-click; keyboard menu access is on the tab button) -->
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
+                        <button role="tab" aria-haspopup="menu" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${tab.name}${activeId === sessionId ? ", active pane" : ""}${!tab.connected ? `, ${t("workspace.disconnected")}` : ""}`}
                           title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
-                          onclick={() => activateSession(sessionId)}>
+                          onclick={() => activateSession(sessionId)}
+                          onkeydown={(event) => handleTabContextMenuKeydown(event, sessionId)}>
                           <span class="pane-tab-name">{tab.name}</span>
                           {#if tab.jumpNames.length > 0}
                             <span class="pane-tab-indicator jump" title={t("workspace.jumpVia", { route: tab.jumpNames.join(" → ") })}>
@@ -988,10 +1093,12 @@
                       </div>
                     {:else if sftpTab}
                       <!-- SFTP browsers use the same tab drag/drop contract as SSH sessions. -->
-                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId}>
-                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
+                      <!-- svelte-ignore a11y_no_static_element_interactions (supports drag and right-click; keyboard menu access is on the tab button) -->
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId}>
+                        <button role="tab" aria-haspopup="menu" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${sftpTab.name}${activeId === sessionId ? ", active pane" : ""}`}
-                          title={sftpTab.name} onclick={() => activateSession(sessionId)}>
+                          title={sftpTab.name} onclick={() => activateSession(sessionId)}
+                          onkeydown={(event) => handleTabContextMenuKeydown(event, sessionId)}>
                           <span class="pane-tab-name">{sftpTab.name}</span>
                           <span class="pane-tab-indicator jump">{t("workspace.sftpTab")}</span>
                           {#if activeId === sessionId}<span class="pane-focus-dot" aria-hidden="true"></span>{/if}
@@ -1067,6 +1174,29 @@
       {/if}
     </main>
   </div>
+
+  {#if tabContextMenu}
+    {@const menuPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(tabContextMenu!.sessionId))}
+    <button class="tab-menu-backdrop" tabindex="-1" aria-label={t("workspace.close")} onclick={() => dismissTabContextMenu()}></button>
+    <div
+      bind:this={tabContextMenuElement}
+      class="tab-context-menu"
+      role="menu"
+      tabindex="-1"
+      aria-label={t("workspace.tabActions")}
+      style="left: {tabContextMenu.x}px; top: {tabContextMenu.y}px"
+      onkeydown={onTabMenuKeydown}
+    >
+      <button role="menuitem" disabled={!menuPane || menuPane.sessionIds.length <= 1}
+        onclick={() => void closeOtherTabsInPane(tabContextMenu!.sessionId)}>
+        {t("workspace.closeOtherTabs")}
+      </button>
+      <button role="menuitem" disabled={!menuPane || menuPane.sessionIds.length === 0}
+        onclick={() => void closeAllTabsInPane(tabContextMenu!.sessionId)}>
+        {t("workspace.closeAllTabs")}
+      </button>
+    </div>
+  {/if}
 
   {#if settingsOpen}
     <SettingsDialog
@@ -1281,6 +1411,42 @@
   .pane-tab[draggable="true"] { cursor: grab; }
   .pane-tab.dragging { opacity: 0.45; }
   .pane-tabs.drop-tabs { outline:2px solid var(--accent); outline-offset:-2px; background:var(--surface-raised); }
+  .tab-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    cursor: default;
+  }
+  .tab-context-menu {
+    position: fixed;
+    z-index: 41;
+    display: flex;
+    flex-direction: column;
+    width: 14rem;
+    padding: 0.25rem 0;
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .tab-context-menu button {
+    width: 100%;
+    min-height: 32px;
+    padding: 0.35rem 0.7rem;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    font: inherit;
+    font-size: var(--ui-font-control);
+    text-align: left;
+    white-space: normal;
+    cursor: pointer;
+  }
+  .tab-context-menu button:hover:not(:disabled) { background: var(--border); }
+  .tab-context-menu button:disabled { color: var(--muted); opacity: 0.6; cursor: default; }
+  .tab-context-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .drop-zone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 2px solid var(--accent); border-radius: 3px; }
   .drop-zone.center { inset: 1.9rem 0 0 0; }
   .drop-zone.left { top: 1.9rem; bottom: 0; left: 0; width: 50%; }
