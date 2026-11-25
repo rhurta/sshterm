@@ -319,13 +319,46 @@ fn is_agent_identity_binding_disconnect(bind_session: bool, error: &keys::Error)
         )
 }
 
+fn is_agent_identity_disconnect(error: &keys::Error) -> bool {
+    matches!(
+        error,
+        keys::Error::IO(io_error)
+            if io_error.kind() == std::io::ErrorKind::UnexpectedEof
+    )
+}
+
+fn agent_not_running_error(detail: impl fmt::Display) -> SftpError {
+    let guidance = if cfg!(windows) {
+        "Start the Windows OpenSSH ssh-agent service or launch Pageant before connecting."
+    } else {
+        "Start ssh-agent and ensure SSH_AUTH_SOCK points to its socket before connecting."
+    };
+    SftpError::new(
+        "sftp_agent_unavailable",
+        format!("SSH agent is not running or is not responding. {guidance} ({detail})"),
+    )
+}
+
 fn agent_identity_error_code(bind_session: bool, error: &keys::Error) -> &'static str {
-    if cfg!(windows) && is_agent_identity_binding_disconnect(bind_session, error) {
+    if is_agent_identity_binding_disconnect(bind_session, error) {
         "sftp_agent_binding_rejected"
+    } else if is_agent_identity_disconnect(error) {
+        "sftp_agent_unavailable"
     } else {
         "sftp_agent_identities"
     }
 }
+
+fn agent_identity_error(bind_session: bool, error: &keys::Error) -> SftpError {
+    let code = agent_identity_error_code(bind_session, error);
+    if code == "sftp_agent_unavailable" {
+        agent_not_running_error(error)
+    } else {
+        SftpError::new(code, error.to_string())
+    }
+}
+
+const AGENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 
 async fn authenticate_with_agent<S>(
     handle: &mut Handle<SftpHostKeyHandler>,
@@ -340,22 +373,49 @@ where
         let binding = handle.agent_session_binding().cloned().ok_or_else(|| {
             SftpError::new("sftp_agent_binding", "SSH agent session binding is unavailable.")
         })?;
-        agent.bind_session(&binding, false).await.map_err(|error| {
-            let legacy_fallback = is_legacy_agent_session_binding_failure(&error);
-            SftpError::new(
-                if legacy_fallback { "sftp_agent_binding_rejected" } else { "sftp_agent_binding" },
-                error.to_string(),
-            )
-        })?;
+        let bind_result = tokio::time::timeout(
+            AGENT_REQUEST_TIMEOUT,
+            agent.bind_session(&binding, false),
+        )
+        .await;
+        match bind_result {
+            Err(_) => {
+                return Err(SftpError::new(
+                    "sftp_agent_binding_rejected",
+                    "SSH agent did not respond to the session-binding request.",
+                ));
+            }
+            Ok(Err(error)) => {
+                let legacy_fallback = is_legacy_agent_session_binding_failure(&error);
+                return Err(SftpError::new(
+                    if legacy_fallback { "sftp_agent_binding_rejected" } else { "sftp_agent_binding" },
+                    error.to_string(),
+                ));
+            }
+            Ok(Ok(())) => {}
+        }
     }
 
-    let identities = agent.request_identities().await.map_err(|error| {
-        // Some Windows agents accept session binding but close the pipe before
-        // answering the following identity-list request. Treat only this EOF,
-        // and only on the bound attempt, like a rejected binding so the caller
-        // reconnects and retries once without session binding.
-        SftpError::new(agent_identity_error_code(bind_session, &error), error.to_string())
-    })?;
+    let identities = match tokio::time::timeout(
+        AGENT_REQUEST_TIMEOUT,
+        agent.request_identities(),
+    )
+    .await
+    {
+        Ok(Ok(identities)) => identities,
+        Ok(Err(error)) => return Err(agent_identity_error(bind_session, &error)),
+        Err(_) if bind_session => {
+            return Err(SftpError::new(
+                "sftp_agent_binding_rejected",
+                "SSH agent did not respond to the identity-list request after session binding.",
+            ));
+        }
+        Err(_) => {
+            return Err(agent_not_running_error(
+                "The SSH agent did not respond to the identity-list request within 3 seconds.",
+            ));
+        }
+    };
     let rsa_hash = best_rsa_hash(handle).await?;
 
     for identity in identities {
@@ -450,9 +510,17 @@ async fn authenticate_agent(
     let selected = selected_windows_agent_source();
     let (agent, source) = match connect_windows_agent(&selected).await {
         Ok(agent) => (agent, selected),
-        Err(_) => {
+        Err(pipe_error) => {
             let pageant = WindowsAgentSource::Pageant;
-            (connect_windows_agent(&pageant).await?, pageant)
+            match connect_windows_agent(&pageant).await {
+                Ok(agent) => (agent, pageant),
+                Err(pageant_error) => {
+                    return Err(agent_not_running_error(format!(
+                        "Windows SSH agent pipe unavailable: {}; Pageant unavailable: {}",
+                        pipe_error.detail, pageant_error.detail
+                    )));
+                }
+            }
         }
     };
 
@@ -465,10 +533,10 @@ async fn authenticate_agent(
             // pipe instead. Reconnect to get a clean request stream, continue
             // unbound, and expose that reduced security state to the UI.
             let legacy_agent = connect_windows_agent(&source).await.map_err(|reconnect_error| {
-                SftpError::new(
-                    "sftp_agent_unavailable",
-                    format!("Agent closed during session binding ({error}); reconnect failed: {}", reconnect_error.detail),
-                )
+                agent_not_running_error(format!(
+                    "Agent closed during session binding ({error}); reconnect failed: {}",
+                    reconnect_error.detail
+                ))
             })?;
             authenticate_with_agent(handle, user, legacy_agent, false).await?;
             Ok(AgentBindingStatus::LegacyUnbound)
@@ -484,9 +552,24 @@ async fn authenticate_agent(
 ) -> Result<AgentBindingStatus, SftpError> {
     let agent = AgentClient::connect_env()
         .await
-        .map_err(|error| SftpError::new("sftp_agent_unavailable", error.to_string()))?;
-    authenticate_with_agent(handle, user, agent, true).await?;
-    Ok(AgentBindingStatus::Bound)
+        .map_err(|error| agent_not_running_error(error))?;
+
+    match authenticate_with_agent(handle, user, agent, true).await {
+        Ok(()) => Ok(AgentBindingStatus::Bound),
+        Err(error) if error.code == "sftp_agent_binding_rejected" => {
+            // Some Unix agents do not support the OpenSSH session-bind extension,
+            // or disconnect while processing it. Reconnect to a clean stream and
+            // retry once without binding, exposing the reduced security state.
+            let legacy_agent = AgentClient::connect_env().await.map_err(|reconnect_error| {
+                agent_not_running_error(format!(
+                    "Agent closed during session binding ({error}); reconnect failed: {reconnect_error}"
+                ))
+            })?;
+            authenticate_with_agent(handle, user, legacy_agent, false).await?;
+            Ok(AgentBindingStatus::LegacyUnbound)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(not(any(windows, unix)))]
@@ -1724,23 +1807,37 @@ mod lifecycle_tests {
     }
 
     #[test]
-    fn identity_listing_eof_after_binding_uses_legacy_fallback_classification() {
+    fn identity_listing_eof_after_binding_retries_unbound_on_every_platform() {
         let eof = keys::Error::IO(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
         let permission_denied =
             keys::Error::IO(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
 
         assert!(is_agent_identity_binding_disconnect(true, &eof));
         assert!(!is_agent_identity_binding_disconnect(false, &eof));
-        assert_eq!(
-            agent_identity_error_code(true, &eof),
-            if cfg!(windows) { "sftp_agent_binding_rejected" } else { "sftp_agent_identities" }
-        );
-        assert_eq!(agent_identity_error_code(false, &eof), "sftp_agent_identities");
+        assert_eq!(agent_identity_error_code(true, &eof), "sftp_agent_binding_rejected");
+        assert_eq!(agent_identity_error_code(false, &eof), "sftp_agent_unavailable");
         assert_eq!(agent_identity_error_code(true, &permission_denied), "sftp_agent_identities");
         assert_eq!(
             agent_identity_error_code(true, &keys::Error::AgentFailure),
             "sftp_agent_identities"
         );
+    }
+
+    #[test]
+    fn missing_or_unresponsive_agent_has_actionable_error() {
+        let error = agent_not_running_error("pipe not found");
+        assert_eq!(error.code, "sftp_agent_unavailable");
+        assert!(error.detail.contains("SSH agent is not running or is not responding"));
+        if cfg!(windows) {
+            assert!(error.detail.contains("Pageant"));
+        } else {
+            assert!(error.detail.contains("SSH_AUTH_SOCK"));
+        }
+
+        let eof = keys::Error::IO(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        let unbound_error = agent_identity_error(false, &eof);
+        assert_eq!(unbound_error.code, "sftp_agent_unavailable");
+        assert!(unbound_error.detail.contains("SSH agent is not running"));
     }
 
     #[test]

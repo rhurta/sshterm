@@ -306,7 +306,7 @@
           <PasswordInput bind:value={passphrase} autocomplete="new-password" />
         </label>
       {:else}
-        <p class="hint">{t("editor.auth.agent")}</p>
+        <p class="hint">{t("editor.auth.agentHint")}</p>
       {/if}
     {:else if section === "advanced"}
       <label>
