@@ -1,4 +1,4 @@
-//! Non-secret settings, saved in `config.toml` next to the exe.
+//! Non-secret settings, saved in `config/config.toml`.
 //!
 //! They are kept outside the vault on purpose: they are needed before unlocking
 //! (for example, the lock screen language and application theme).
@@ -95,16 +95,22 @@ impl CommandConsoleSettings {
 }
 
 /// Visibility of the side panels, stored outside the vault with other UI preferences.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkspacePanelSettings {
     pub tree_visible: bool,
     pub properties_visible: bool,
+    /// Folder expansion state keyed by stable tree-node ID.
+    pub expanded_folders: std::collections::BTreeMap<String, bool>,
 }
 
 impl Default for WorkspacePanelSettings {
     fn default() -> Self {
-        Self { tree_visible: true, properties_visible: true }
+        Self {
+            tree_visible: true,
+            properties_visible: true,
+            expanded_folders: std::collections::BTreeMap::new(),
+        }
     }
 }
 
@@ -419,9 +425,14 @@ mod tests {
         cfg.workspace_panels.tree_visible = false;
         cfg.workspace_panels.properties_visible = false;
         cfg.save(&path).unwrap();
+        let mut expanded_folders = std::collections::BTreeMap::new();
+        expanded_folders.insert("folder-1".into(), false);
+        cfg.workspace_panels.expanded_folders = expanded_folders.clone();
+        cfg.save(&path).unwrap();
         assert_eq!(Config::load(&path).workspace_panels, WorkspacePanelSettings {
             tree_visible: false,
             properties_visible: false,
+            expanded_folders,
         });
     }
 
