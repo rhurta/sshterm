@@ -31,12 +31,12 @@ M6 implementation details and acceptance criteria: [docs/M6-implementation-plan.
 ### M6 delivered
 
 - Recursive workspace tiling with single, left/right, top/bottom and 2×2 layouts, draggable and keyboard-adjustable dividers, per-pane session tabs, empty-pane handling, and an active-pane outline/dot.
-- A bottom command console with a searchable left-side connection list, Active / Selected / All targeting, protected-session opt-in, multiline and multi-session confirmation, exact-byte sequential dispatch, and per-session failure reporting.
+- A bottom command console with a searchable left-side connection list, Active / Selected / All targeting, protected-session opt-in, multiline and multi-session confirmation, exact-byte sequential dispatch, and per-session failure reporting. Shift+Enter sends only the line at the caret and restores editor focus; Ctrl+Enter sends the complete draft.
 - Console visibility and height persist in non-secret `config.toml`; drafts remain in frontend memory only.
 - The connection tree and selected-connection properties pane have independently persisted visibility. The properties pane presents the selected connection in a compact property grid and supports inline editing of the complete connection configuration; secret values are never displayed in plaintext. See [`docs/workspace-panels.md`](docs/workspace-panels.md).
 - Appearance: seven themes (dark, light, Nord and the four Catppuccin flavors), an optional background image or see-through window (Transparent or Mica on Windows 11) with adjustable interface and terminal opacity, fixed-size proportional dialogs, a searchable settings dialog, and a show/hide eye on password fields. See [`docs/appearance.md`](docs/appearance.md). The window opens with one empty pane.
 - Scripts library: the command console has Save script… and Load script… buttons. Scripts are stored in folders in a second encrypted file, `scripts.vault`, opened with the same master password. Scripts marked as favorites get a one-click button below the console. See [`docs/scripts.md`](docs/scripts.md).
-- Keyboard shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Alt+Arrows focus the neighboring pane (Ctrl+Alt+, / Ctrl+Alt+. cycle panes, for keyboards where Windows takes the arrows) and Ctrl+Alt+Shift+Arrows move the active tab there; Ctrl+Enter requests a send.
+- Keyboard shortcuts: Ctrl+Alt+K toggles the console; Ctrl+Alt+1–4 select the four layout presets; Ctrl+Alt+Arrows focus the neighboring pane (Ctrl+Alt+, / Ctrl+Alt+. cycle panes, for keyboards where Windows takes the arrows) and Ctrl+Alt+Shift+Arrows move the active tab there; Shift+Enter sends the current command-console line; Ctrl+Enter sends the draft.
 - SSH and SFTP workspace tabs share the same pane hierarchy. Tabs move between panes without reconnecting: drag onto another pane's tab strip (or between tabs to reorder), onto a pane's center to move there, or onto an edge to split and move into the new pane. Each SFTP tab represents one connection and has no nested tab strip; moving it preserves the live SFTP session and transfer queue. See [`docs/tab-moves.md`](docs/tab-moves.md).
 - Connections can be dragged from the tree onto a pane or onto its edges (which split it); a new empty pane opens the connection list straight away; an empty pane can be focused (click or Ctrl+Alt+Arrows) so the next connection opened from the tree lands in it. See [`docs/pane-targets.md`](docs/pane-targets.md).
 - Automated coverage includes pure split-tree and broadcast-target resolution tests plus Rust config tests. Component-level UI automation and live multi-host dispatch integration tests remain follow-up work.
@@ -78,7 +78,7 @@ sshterm/
 ├── src/                         # Frontend (SvelteKit)
 │   ├── lib/
 │   │   ├── ConnectionTree.svelte / ConnectionSidebar.svelte
-│   │   ├── ConnectionEditor.svelte / ImportDialog.svelte / SearchBox.svelte
+│   │   ├── ConnectionEditor.svelte / ImportDialog.svelte / ExportDialog.svelte / SearchBox.svelte
 │   │   ├── Workspace.svelte / TerminalPane.svelte / CommandConsole.svelte
 │   │   ├── splitTree.ts          # Recursive tiling model and geometry helpers
 │   │   ├── broadcastTargets.ts   # Credential-free broadcast target resolution
@@ -224,9 +224,9 @@ unlock: the flat list is wrapped in one **Connections** folder and the old
 `password` field moves into `auth`.
 
 New commands: `tree_get`, `folder_upsert`, `folder_delete`, `move_node`,
-`search`, `import_preview`, `import_apply`. Imports are read-only until the user
-confirms the preview; duplicates on `(host, port, user)` are skipped unless
-"import as copy" is selected.
+`search`, `import_preview`, `import_apply`, `conn_export`. Exports write the complete
+decrypted vault payload to plaintext JSON after an explicit warning; treat the export
+"import as copy" is selected. Export files include stored credentials and should be kept secure.
 
 Tree drag-and-drop supports:
 - Moving a connection or folder before/after another node.
