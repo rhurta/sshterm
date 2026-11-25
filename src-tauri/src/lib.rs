@@ -248,6 +248,7 @@ pub fn run() {
             commands::config_get_app_behavior_settings,
             commands::config_set_app_behavior_settings,
             store::conn_list,
+            store::conn_export,
             store::conn_get,
             store::conn_upsert,
             store::conn_delete,
