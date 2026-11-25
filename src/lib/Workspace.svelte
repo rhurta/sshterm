@@ -786,18 +786,34 @@
 
   function dropTab(sessionId: string) {
     const oldPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(sessionId));
+    const remainingInPane = oldPane?.sessionIds.filter((id) => id !== sessionId) ?? [];
+    const remainingWorkspaceTabs = [
+      ...tabs.filter((tab) => tab.sessionId !== sessionId).map((tab) => tab.sessionId),
+      ...sftpTabs.filter((tab) => tab.id !== sessionId).map((tab) => tab.id),
+    ];
+
     tabs = tabs.filter((tab) => tab.sessionId !== sessionId);
     sftpTabs = sftpTabs.filter((tab) => tab.id !== sessionId);
     layoutTree = removeSession(layoutTree, sessionId, true);
+
     if (oldPane && paneActiveIds[oldPane.sessionId] === sessionId) {
-      const remaining = oldPane.sessionIds.filter((id) => id !== sessionId);
-      if (remaining.length) paneActiveIds = { ...paneActiveIds, [oldPane.sessionId]: remaining[0] };
-      else {
+      if (remainingInPane.length) {
+        // Prefer a surviving tab in the same pane, e.g. SSH after SFTP closes.
+        paneActiveIds = { ...paneActiveIds, [oldPane.sessionId]: remainingInPane[0] };
+      } else {
         const { [oldPane.sessionId]: _removed, ...rest } = paneActiveIds;
         paneActiveIds = rest;
       }
     }
-    if (activeId === sessionId) activeId = workspaceTabIds.find((id) => id !== sessionId) ?? null;
+
+    if (activeId === sessionId) {
+      const nextActiveId = remainingInPane[0] ?? remainingWorkspaceTabs[0] ?? null;
+      activeId = nextActiveId;
+      if (nextActiveId) {
+        const nextPaneId = paneOfSession(layoutTree, nextActiveId);
+        if (nextPaneId) focusedPaneId = nextPaneId;
+      }
+    }
   }
 
 
