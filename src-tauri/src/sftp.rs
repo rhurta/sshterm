@@ -320,7 +320,7 @@ fn is_agent_identity_binding_disconnect(bind_session: bool, error: &keys::Error)
 }
 
 fn agent_identity_error_code(bind_session: bool, error: &keys::Error) -> &'static str {
-    if is_agent_identity_binding_disconnect(bind_session, error) {
+    if cfg!(windows) && is_agent_identity_binding_disconnect(bind_session, error) {
         "sftp_agent_binding_rejected"
     } else {
         "sftp_agent_identities"
@@ -1729,7 +1729,12 @@ mod lifecycle_tests {
         let permission_denied =
             keys::Error::IO(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
 
-        assert_eq!(agent_identity_error_code(true, &eof), "sftp_agent_binding_rejected");
+        assert!(is_agent_identity_binding_disconnect(true, &eof));
+        assert!(!is_agent_identity_binding_disconnect(false, &eof));
+        assert_eq!(
+            agent_identity_error_code(true, &eof),
+            if cfg!(windows) { "sftp_agent_binding_rejected" } else { "sftp_agent_identities" }
+        );
         assert_eq!(agent_identity_error_code(false, &eof), "sftp_agent_identities");
         assert_eq!(agent_identity_error_code(true, &permission_denied), "sftp_agent_identities");
         assert_eq!(
