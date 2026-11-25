@@ -68,7 +68,7 @@ struct SavedWindowState {
 }
 
 fn window_state_path() -> std::path::PathBuf {
-    paths::app_dir().join("window-state.json")
+    paths::config_dir().join("window-state.json")
 }
 
 fn save_window_state(window: &tauri::WebviewWindow, path: &std::path::Path) {
