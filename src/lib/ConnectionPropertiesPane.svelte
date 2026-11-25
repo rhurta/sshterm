@@ -117,7 +117,7 @@
       values.push({ key: "authMethod", label: t("properties.authMethod"), value: t("properties.auth.password") });
       values.push({
         key: "password",
-        label: t("properties.password"),
+        label: t("properties.passwordState"),
         value: current.auth.password ? "••••••••" : t("properties.notSaved"),
       });
     } else if (current.auth.type === "key") {
