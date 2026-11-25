@@ -7,6 +7,7 @@
 pub mod import;
 pub mod tree;
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use tauri::State;
@@ -518,7 +519,7 @@ fn serialize_ssh_config(data: &VaultData) -> (String, usize) {
             let _ = writeln!(output, "    IdentityFile {}", ssh_config_quote(&key_path));
             let _ = writeln!(output, "    IdentitiesOnly yes");
         }
-        if matches!(connection.auth, Auth::Password { .. }) {
+        if matches!(&connection.auth, Auth::Password { .. }) {
             let _ = writeln!(output, "    PreferredAuthentications password,keyboard-interactive");
         }
 
