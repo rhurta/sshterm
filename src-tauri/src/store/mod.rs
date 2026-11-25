@@ -387,10 +387,15 @@ pub fn conn_export(state: State<'_, VaultState>, path: String) -> Result<ExportR
     let vault_path = crate::paths::vault_path();
     let vault_resolved = canonical_export_path(&vault_path)?;
     let scripts_vault_path = crate::paths::scripts_vault_path();
-    let scripts_vault_resolved = canonical_export_path(&scripts_vault_path)?;
-    if same_export_path(&destination_resolved, &vault_resolved)
-        || same_export_path(&destination_resolved, &scripts_vault_resolved)
-    {
+    // A configured scripts vault may live beneath a directory that has not
+    // been created yet. Only resolve it when its parent exists; the save dialog
+    // cannot select a file inside a missing directory.
+    let scripts_vault_conflict = scripts_vault_path
+        .parent()
+        .filter(|parent| parent.exists())
+        .and_then(|_| canonical_export_path(&scripts_vault_path).ok())
+        .is_some_and(|path| same_export_path(&destination_resolved, &path));
+    if same_export_path(&destination_resolved, &vault_resolved) || scripts_vault_conflict {
         return Err("export_overwrites_vault".into());
     }
 
