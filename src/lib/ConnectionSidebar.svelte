@@ -5,6 +5,7 @@
   import ConnectionTree from "./ConnectionTree.svelte";
   import SearchBox from "./SearchBox.svelte";
   import ImportDialog from "./ImportDialog.svelte";
+  import ExportDialog from "./ExportDialog.svelte";
   import FolderHighlightEditor from "./FolderHighlightEditor.svelte";
   import type {
     Connection,
@@ -44,6 +45,7 @@
   let pendingDelete = $state<TreeNode | null>(null);
   let folderHighlightTarget = $state<Extract<TreeNode, { type: "folder" }> | null>(null);
   let showImport = $state(false);
+  let showExport = $state(false);
   let error = $state("");
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -214,7 +216,7 @@
 <aside>
   <div class="head workspace-panel-header">
     <span class="title panel-title">{t("workspace.connections")}</span>
-    <div class="head-actions"><button class="icon-action" onclick={ontunnels} title={t("tunnels.open")} aria-label={t("tunnels.open")}><svg viewBox="0 0 24 24"><path d="M4 8h11a4 4 0 0 1 0 8H9m0 0 3-3m-3 3 3 3M20 8l-3-3m3 3-3 3"/></svg></button><button class="icon-action" onclick={() => createFolder(selectedFolder())} title={t("tree.newFolder")} aria-label={t("tree.newFolder")}><svg viewBox="0 0 24 24"><path d="M3 6.5h7l2 2H21v10H3z"/></svg></button><button class="icon-action" onclick={() => onnewconn(selectedFolder())} title={t("tree.newConnection")} aria-label={t("tree.newConnection")}><svg viewBox="0 0 24 24"><circle cx="6.5" cy="7" r="2.5"/><circle cx="17.5" cy="6" r="2.5"/><circle cx="17.5" cy="18" r="2.5"/><path d="M9 7h6m-6 2 6 7"/></svg></button><button class="icon-action" onclick={() => (showImport = true)} title={t("tree.import")} aria-label={t("tree.import")}><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg></button></div>
+    <div class="head-actions"><button class="icon-action" onclick={ontunnels} title={t("tunnels.open")} aria-label={t("tunnels.open")}><svg viewBox="0 0 24 24"><path d="M4 8h11a4 4 0 0 1 0 8H9m0 0 3-3m-3 3 3 3M20 8l-3-3m3 3-3 3"/></svg></button><button class="icon-action" onclick={() => createFolder(selectedFolder())} title={t("tree.newFolder")} aria-label={t("tree.newFolder")}><svg viewBox="0 0 24 24"><path d="M3 6.5h7l2 2H21v10H3z"/></svg></button><button class="icon-action" onclick={() => onnewconn(selectedFolder())} title={t("tree.newConnection")} aria-label={t("tree.newConnection")}><svg viewBox="0 0 24 24"><circle cx="6.5" cy="7" r="2.5"/><circle cx="17.5" cy="6" r="2.5"/><circle cx="17.5" cy="18" r="2.5"/><path d="M9 7h6m-6 2 6 7"/></svg></button><button class="icon-action" onclick={() => (showExport = true)} title={t("tree.export")} aria-label={t("tree.export")}><svg viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M4 17v4h16v-4"/></svg></button><button class="icon-action" onclick={() => (showImport = true)} title={t("tree.import")} aria-label={t("tree.import")}><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg></button></div>
   </div>
 
   <SearchBox value={query} count={hits.length} onchange={onQuery} autofocus />
@@ -272,6 +274,10 @@
       }
     }}
   />
+{/if}
+
+{#if showExport}
+  <ExportDialog onclose={() => (showExport = false)} />
 {/if}
 
 {#if showImport}
