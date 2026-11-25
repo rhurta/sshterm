@@ -1,13 +1,17 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { homeDir, join } from "@tauri-apps/api/path";
   import { save } from "@tauri-apps/plugin-dialog";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
+  let format = $state<"json" | "ssh_config">("json");
   let busy = $state(false);
   let error = $state("");
   let exportedCount = $state<number | null>(null);
+  let skippedCount = $state(0);
+  let completedFormat = $state<"json" | "ssh_config" | null>(null);
 
   function onKeydown(event: KeyboardEvent) {
     if (event.key === "Escape" && !busy) {
@@ -25,15 +29,23 @@
     busy = true;
     error = "";
     try {
+      const defaultPath = format === "json"
+        ? "sshterm-connections.json"
+        : await join(await homeDir(), ".ssh", "config");
       const path = await save({
         title: t("export.saveDialogTitle"),
-        defaultPath: "sshterm-connections.json",
-        filters: [{ name: t("export.json"), extensions: ["json"] }],
+        defaultPath,
+        filters: format === "json"
+          ? [{ name: t("export.json"), extensions: ["json"] }]
+          : [{ name: t("export.sshConfig"), extensions: ["config"] }],
       });
       if (!path) return;
 
-      const report = await invoke<{ connections: number }>("conn_export", { path });
+      const command = format === "json" ? "conn_export" : "conn_export_ssh_config";
+      const report = await invoke<{ connections: number; skipped: number }>(command, { path });
       exportedCount = report.connections;
+      skippedCount = report.skipped;
+      completedFormat = format;
     } catch (cause) {
       error = errorText(String(cause));
     } finally {
@@ -52,7 +64,14 @@
     </header>
 
     {#if exportedCount === null}
-      <p class="warning">{t("export.warning")}</p>
+      <label class="format">
+        <span>{t("export.format")}</span>
+        <select bind:value={format} disabled={busy}>
+          <option value="json">{t("export.json")}</option>
+          <option value="ssh_config">{t("export.sshConfig")}</option>
+        </select>
+      </label>
+      <p class="warning">{format === "json" ? t("export.warning") : t("export.sshConfigWarning")}</p>
       {#if error}
         <p class="error" role="alert">{error}</p>
       {/if}
@@ -61,7 +80,11 @@
         <button onclick={runExport} disabled={busy}>{busy ? t("console.sending") : t("export.save")}</button>
       </div>
     {:else}
-      <p class="success" role="status">{t("export.complete", { count: exportedCount })}</p>
+      <p class="success" role="status">
+        {completedFormat === "json"
+          ? t("export.complete", { count: exportedCount })
+          : t("export.sshConfigComplete", { count: exportedCount, skipped: skippedCount })}
+      </p>
       <div class="actions">
         <button onclick={onclose}>{t("export.done")}</button>
       </div>
@@ -111,6 +134,22 @@
     margin: 0;
     font-size: var(--ui-font-body);
     line-height: 1.5;
+  }
+  .format {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    color: var(--text-secondary);
+    font-size: var(--ui-font-body);
+  }
+  select {
+    width: 100%;
+    padding: 0.45rem 0.55rem;
+    font: inherit;
+    color: var(--text);
+    background: var(--app-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
   }
   .warning {
     padding: 0.75rem;
