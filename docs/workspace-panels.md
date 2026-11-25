@@ -22,7 +22,7 @@ When a connection is selected, the properties pane displays its saved values in 
 
 Choose Edit to switch the pane into the inline connection editor. It uses the same editor and validation path as the full connection editor, so the complete saved connection configuration can be reviewed and changed without opening a separate modal. Save applies the changes; Cancel returns to the property grid.
 
-**Secrets are never exposed in the properties grid.** Passwords and key passphrases are represented as saved/not-saved state. The user can update them through the secure authentication fields in the editor; the grid never renders their contents.
+**Secrets are masked by default.** For password-authenticated connections, the grid includes a Password row with an eye control on the right. The saved password is revealed only while the eye is enabled, and the value is masked again when another connection is selected. Key passphrases remain represented as saved/not-saved state and are never revealed in the grid. Credentials can still be updated through the secure authentication fields in the editor.
 
 With no connection selected, the pane displays its empty state. Loading and retrieval errors are shown in the pane rather than silently presenting stale values.
 
