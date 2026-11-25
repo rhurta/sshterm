@@ -249,6 +249,7 @@ pub fn run() {
             commands::config_set_app_behavior_settings,
             store::conn_list,
             store::conn_export,
+            store::conn_export_ssh_config,
             store::conn_get,
             store::conn_upsert,
             store::conn_delete,
