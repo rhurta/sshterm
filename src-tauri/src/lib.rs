@@ -141,7 +141,14 @@ pub fn run() {
     // (release builds abort silently: panic = "abort", no console).
     crash::install();
 
-    // WebView2 cache is stored next to the exe (portable application).
+    // Move the previous flat data layout into config/ before resolving any
+    // vault, settings, window-state or WebView cache paths. Logs stay in logs/.
+    if let Err(error) = paths::migrate_legacy_layout() {
+        eprintln!("Could not prepare config directory: {error}");
+        return;
+    }
+
+    // WebView2 cache is stored in config/ with the other mutable app state.
     let data = paths::webview_data_dir();
     let _ = std::fs::create_dir_all(&data);
     // SAFETY: `set_var` is `unsafe` since Rust edition 2024 because changing the
