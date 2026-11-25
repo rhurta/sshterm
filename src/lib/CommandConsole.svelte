@@ -331,6 +331,12 @@
 <section class="command-console" class:hidden={!visible} style={`height: ${height}px;`} aria-label={t("console.commandConsole")}>
   <div class="console-heading workspace-panel-header">
     <strong class="panel-title">{t("console.commandConsole")}</strong>
+    <button
+      class="shortcut-help"
+      type="button"
+      title={t("console.shortcutSendHelp")}
+      aria-label={t("console.shortcutSendHelp")}
+    >?</button>
     {#if confirmingMultiline}
       <div class="confirmation-banner" role="alert">
         <span>{t("console.confirmation", {
@@ -453,9 +459,6 @@
         >{t("console.saveScript")}</button>
         <button class="secondary" bind:this={loadButton} onclick={() => (scriptsDialog = "load")}>{t("console.loadScript")}</button>
         <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>{t("console.clear")}</button>
-        <span class="shortcut-hint" title={t("console.shortcutSendHelp")}>
-          <kbd>Shift+Enter</kbd>
-        </span>
         <button class="send" onclick={requestSend} disabled={targetResolution.targets.length === 0 || draft.length === 0 || sending}>
           {sending ? t("console.sending") : t("console.send")}
         </button>
@@ -509,6 +512,29 @@
   .command-console.hidden { display: none; }
   .console-heading { flex: 0 0 auto; }
   .console-heading .panel-title { flex: 0 0 auto; }
+  .shortcut-help {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    font: inherit;
+    font-size: var(--ui-font-meta);
+    line-height: 1;
+    cursor: help;
+  }
+  .shortcut-help:hover,
+  .shortcut-help:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+    outline: none;
+  }
   .confirmation-banner {
     display: flex; flex: 1 1 auto; align-items: center; gap: 0.5rem; min-width: 0;
     padding: 0.28rem 0.45rem; color: var(--warning, #d6a85f);
@@ -660,20 +686,6 @@
     gap: 0.55rem;
     min-height: 1.45rem;
     flex: 0 0 auto;
-  }
-  .shortcut-hint {
-    flex: 0 0 auto;
-    color: var(--muted);
-    font-size: var(--ui-font-meta);
-    white-space: nowrap;
-  }
-  .shortcut-hint kbd {
-    padding: 0.14rem 0.3rem;
-    color: var(--text-secondary);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    font: inherit;
   }
   .status, .confirmation { flex: 1; min-width: 0; color: var(--text-secondary); font-size: var(--ui-font-meta); }
   .status.error { color: var(--danger); }

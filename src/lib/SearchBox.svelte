@@ -38,22 +38,25 @@
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0 0.65rem 0.5rem;
+    padding: 0.5rem;
+    background: var(--surface);
   }
   input {
     flex: 1;
     min-width: 0;
+    min-height: 28px;
+    box-sizing: border-box;
     font: inherit;
-    font-size: var(--ui-font-body);
+    font-size: var(--ui-font-control, 12px);
     color: var(--text);
-    background: var(--app-bg);
+    background: var(--surface-deep);
     border: 1px solid var(--border);
     border-radius: 4px;
-    padding: 0.4rem 0.5rem;
+    padding: 0.3rem 0.5rem;
   }
-  input:focus {
-    outline: none;
-    border-color: var(--accent);
+  input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .clear {
     font: inherit;

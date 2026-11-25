@@ -79,12 +79,13 @@
       ]);
       tree = nodes;
       summaries = Object.fromEntries(list.map((c) => [c.id, c]));
-      // New folders start expanded; keep the user's own toggles.
+      // Preserve explicit folder choices; folders without a saved choice
+      // stay collapsed so a refresh after clone/save never opens the whole tree.
       const next: Record<string, boolean> = {};
       const walk = (items: TreeNode[]) => {
         for (const item of items) {
           if (item.type === "folder") {
-            next[item.id] = expanded[item.id] ?? true;
+            next[item.id] = expanded[item.id] ?? false;
             walk(item.children);
           }
         }
@@ -147,6 +148,13 @@
     return node?.type === "folder" ? node.id : findParent(tree, selectedId);
   }
 
+  function expandParent(parentId: string | null) {
+    if (!parentId || expanded[parentId]) return;
+    const next = { ...expanded, [parentId]: true };
+    expanded = next;
+    onexpandedchange(next);
+  }
+
   function countItems(node: TreeNode): number {
     if (node.type !== "folder") return 0;
     return node.children.reduce(
@@ -162,6 +170,13 @@
         parentId,
         name: t("tree.newFolder"),
       });
+      const nextExpanded = {
+        ...expanded,
+        ...(parentId ? { [parentId]: true } : {}),
+        [id]: true,
+      };
+      expanded = nextExpanded;
+      onexpandedchange(nextExpanded);
       await refresh();
       autoRename = id;
     });
@@ -188,7 +203,9 @@
         id: crypto.randomUUID(),
         name: `${full.name} (copy)`,
       };
-      await invoke("conn_upsert", { conn: copy, parentId: findParent(tree, c.id) });
+      const parentId = findParent(tree, c.id);
+      await invoke("conn_upsert", { conn: copy, parentId });
+      expandParent(parentId);
       await refresh();
     });
   }
@@ -257,7 +274,7 @@
     ondelete={(node) => (pendingDelete = node)}
     onrename={(node, name) => rename(node, name)}
     onnewfolder={(parentId) => createFolder(parentId)}
-    onnewconn={(parentId) => onnewconn(parentId)}
+    onnewconn={(parentId) => { expandParent(parentId); onnewconn(parentId); }}
     onmove={(id, parentId, index) => moveNode(id, parentId, index)}
     onfolderhighlight={(folder) => (folderHighlightTarget = folder)}
     onselect={(node) => { selectedId = node.id; onselectconnection(node.type === "connection" ? node.id : null); }}

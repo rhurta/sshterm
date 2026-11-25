@@ -178,7 +178,7 @@
     persistWorkspacePanelSettings();
   }
   function startPropertiesResize(event: PointerEvent) { if (event.button !== 0) return; event.preventDefault(); propertiesResize = { startX: event.clientX, startWidth: propertiesWidth }; }
-  function movePropertiesResize(event: PointerEvent) { if (propertiesResize) propertiesWidth = Math.max(250, Math.min(450, propertiesResize.startWidth + propertiesResize.startX - event.clientX)); }
+  function movePropertiesResize(event: PointerEvent) { if (propertiesResize) propertiesWidth = Math.max(250, Math.min(450, propertiesResize.startWidth + event.clientX - propertiesResize.startX)); }
   function endPropertiesResize() { propertiesResize = null; }
 
   onMount(() => {
@@ -927,7 +927,7 @@
     {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
     {#if propertiesVisible}
       <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
-      <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? 8 : -8))); } }}></div>
+      <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? -8 : 8))); } }}></div>
     {/if}
     <div class="layout-tools" role="toolbar" aria-label={t("workspace.layout")}>
       <button class:chosen={treeVisible} title={t("workspace.toggleTree")} aria-label={t("workspace.toggleTree")} aria-pressed={treeVisible} onclick={toggleTree}><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg></button>

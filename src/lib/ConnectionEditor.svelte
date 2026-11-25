@@ -706,7 +706,9 @@
     border-color: var(--success-border);
   }
   .jump-candidates {
-    max-height: 10rem;
+    flex: 1 1 0;
+    min-height: 8rem;
+    max-height: none;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
