@@ -24,6 +24,7 @@
     onnewconn,
     ontunnels,
     onselectconnection,
+    oncolorschange,
     expandedFolders,
     onexpandedchange,
   }: {
@@ -37,6 +38,7 @@
     onnewconn: (parentId: string | null) => void;
     ontunnels: () => void;
     onselectconnection: (id: string | null) => void;
+    oncolorschange: (connections: ConnectionSummary[]) => void;
   } = $props();
 
   let tree = $state<TreeNode[]>([]);
@@ -220,6 +222,8 @@
   async function setIdentityColor(node: TreeNode, color: string | null) {
     await guarded(async () => {
       await invoke(node.type === "folder" ? "folder_set_color" : "conn_set_identity_color", { id: node.id, color });
+      const current = await invoke<ConnectionSummary[]>("conn_list");
+      oncolorschange(current);
       await refresh();
     });
   }
