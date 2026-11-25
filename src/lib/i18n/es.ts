@@ -132,7 +132,7 @@ export const es: Record<MessageKey, string> = {
   "error.serialize_error": "No se pudieron guardar los datos.",
   "error.locked": "Desbloquea el vault primero.",
   "error.bad_export_path": "Selecciona una ruta de archivo válida para la exportación.",
-  "error.export_overwrites_vault": "El destino de exportación no puede ser el archivo cifrado del vault activo.",
+  "error.export_overwrites_vault": "El destino de exportación no puede ser un archivo cifrado del vault.",
   "error.connection_not_found": "Esa conexión ya no existe.",
   "error.bad_connection": "El nombre, el host, el usuario y el puerto son obligatorios.",
   "error.jump_not_found": "Uno de los hosts de salto seleccionados ya no existe.",
