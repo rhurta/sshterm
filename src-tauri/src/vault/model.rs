@@ -284,6 +284,7 @@ mod tests {
                 name: "Production".into(),
                 children: vec![TreeNode::Connection { id: "c1".into() }],
                 highlight: Vec::new(),
+                color: None,
             }],
             connections,
             ..VaultData::default()
