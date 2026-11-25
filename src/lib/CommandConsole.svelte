@@ -263,7 +263,7 @@
     // The text now comes from this script, so Save can update it. Appending mixes
     // sources, so it keeps the previous link only when there was none.
     loadedScript = how === "replace" || !loadedScript ? { id: script.id, name: script.name } : loadedScript;
-    confirmingMultiline = false;
+    cancelPendingSend();
     status = t("scripts.loadedStatus", { name: script.name });
     statusError = false;
   }
@@ -326,7 +326,7 @@
       <div class="confirmation-banner" role="alert">
         <span>{t("console.confirmation", {
           lines: pendingLineCount,
-          lineLabel: lineCount === 1 ? t("console.line") : t("console.lines"),
+          lineLabel: pendingLineCount === 1 ? t("console.line") : t("console.lines"),
           sessions: targetResolution.targets.length,
           sessionLabel: targetResolution.targets.length === 1 ? t("console.session") : t("console.sessions"),
           names: targetNames,
