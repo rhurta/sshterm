@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from "$lib/i18n/index.svelte";
   import type { ConnectionSummary, TreeNode } from "$lib/types";
+  import { IDENTITY_COLOR_PRESETS } from "$lib/identityColors";
 
   type DropPosition = "before" | "after" | "into";
   type MenuEntry = { node: TreeNode; parentId: string | null; index: number };
@@ -368,7 +369,7 @@
     <div class="separator"></div>
     <div class="color-label">{t("tree.identityColor")}</div>
     <div class="color-swatches">
-      {#each ["#e06c75", "#d19a66", "#e5c07b", "#98c379", "#56b6c2", "#61afef", "#c678dd", "#d3869b"] as color}
+      {#each IDENTITY_COLOR_PRESETS as color}
         <button class="color-swatch" style={`--swatch: ${color}`} title={color} aria-label={`${t("tree.identityColor")}: ${color}`} onclick={() => { oncolor(entry.node, color); menu = null; }}></button>
       {/each}
     </div>
