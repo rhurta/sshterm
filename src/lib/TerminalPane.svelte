@@ -96,10 +96,13 @@
   function tintedTerminalTheme() {
     const palette = getTerminalTheme(theme, terminalOpacity);
     if (!identityColor || !/^#[0-9a-fA-F]{6}$/.test(identityColor)) return palette;
+    const solidPalette = getTerminalTheme(theme, 100);
     const channels = (value: string) => [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16));
-    const base = channels(palette.background);
+    const base = channels(solidPalette.background);
     const tint = channels(identityColor);
-    const background = `#${base.map((value, i) => Math.round(value * 0.84 + tint[i] * 0.16).toString(16).padStart(2, "0")).join("")}`;
+    const mixed = base.map((value, i) => Math.round(value * 0.84 + tint[i] * 0.16));
+    const alpha = palette.background.match(/,\\s*([\\d.]+)\\s*\\)$/)?.[1];
+    const background = alpha ? `rgba(${mixed.join(", ")}, ${alpha})` : `#${mixed.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
     return { ...palette, background };
   }
 
@@ -415,7 +418,6 @@
 
   // Keep already-open terminals in sync when the application theme changes.
   $effect(() => {
-    identityColor;
     const palette = tintedTerminalTheme();
     if (mounted && term) term.options.theme = palette;
   });
