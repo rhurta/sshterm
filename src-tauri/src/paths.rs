@@ -1,7 +1,7 @@
 //! Centralized application data paths.
 //!
-//! Mutable app data lives in the portable \`config/\` directory beside the exe.
-//! Session logs deliberately remain in \`logs/\` beside it.
+//! Mutable app data lives in the portable `config/` directory beside the exe.
+//! Session logs deliberately remain in `logs/` beside it.
 
 use std::fs;
 use std::io;
@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::config::Config;
 
-/// Folder containing the executable and the separate \`logs/\` folder.
+/// Folder containing the executable and the separate `logs/` folder.
 pub fn app_dir() -> PathBuf {
     std::env::current_exe()
         .ok()
@@ -22,7 +22,7 @@ pub fn config_dir() -> PathBuf {
     app_dir().join("config")
 }
 
-/// Move the pre-config-folder data layout into \`config/\` without overwriting
+/// Move the pre-config-folder data layout into `config/` without overwriting
 /// anything already there. Existing user-configured relative vault/background
 /// paths are moved too, retaining their relative layout.
 pub fn migrate_legacy_layout() -> io::Result<()> {
@@ -102,7 +102,7 @@ pub fn vault_path() -> PathBuf {
     config_dir().join("sshterm.vault")
 }
 
-/// Scripts library file. Relative custom paths are resolved within \`config/\`;
+/// Scripts library file. Relative custom paths are resolved within `config/`;
 /// absolute paths remain explicit external locations.
 pub fn scripts_vault_path() -> PathBuf {
     let configured = Config::load(&config_path()).scripts_vault;
@@ -164,7 +164,7 @@ pub fn webview_data_dir() -> PathBuf {
     config_dir().join("webview-data")
 }
 
-/// M2: first \`bin/ssh.exe\` next to the exe (portability), then the OpenSSH
+/// M2: first `bin/ssh.exe` next to the exe (portability), then the OpenSSH
 /// client shipped with Windows 11. The bundled executable is not user data.
 pub fn ssh_program() -> Result<PathBuf, &'static str> {
     let bundled = app_dir().join("bin").join("ssh.exe");
@@ -187,7 +187,7 @@ pub fn ssh_program() -> Result<PathBuf, &'static str> {
 }
 
 /// The exe itself acts as the SSH_ASKPASS helper (mode detected by environment
-/// variable in \`main\`). This avoids creating any auxiliary file on disk.
+/// variable in `main`). This avoids creating any auxiliary file on disk.
 pub fn askpass_program() -> PathBuf {
     std::env::current_exe().unwrap_or_else(|_| app_dir().join("sshterm.exe"))
 }
