@@ -228,7 +228,9 @@ New commands: `tree_get`, `folder_upsert`, `folder_delete`, `move_node`,
 the user confirms the preview; duplicates on `(host, port, user)` are skipped unless
 "import as copy" is selected. Export writes the complete decrypted vault payload to
 plaintext JSON after an explicit warning; it includes stored credentials and should be
-kept secure.
+kept secure. A second format exports SSH-compatible options (including ProxyJump and
+port forwards) to an OpenSSH client config; passwords and local host-key trust are not
+exported, and an existing config file should be backed up before replacement.
 
 Tree drag-and-drop supports:
 - Moving a connection or folder before/after another node.
