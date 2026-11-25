@@ -352,6 +352,7 @@
         protected: c.protected,
         connected: true,
         highlightSets,
+        identityColor: c.identity_color ?? null,
       }];
       const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
       if (!layoutTree || !targetPaneId) {
@@ -1059,7 +1060,7 @@
                     {@const sftpTab = sftpTabs.find((item) => item.id === sessionId)}
                     {#if tab}
                       <!-- svelte-ignore a11y_no_static_element_interactions (supports drag and right-click; keyboard menu access is on the tab button) -->
-                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected} class:identity-colored={!!tab.identityColor} style={tab.identityColor ? `--identity-color: ${tab.identityColor}` : undefined}>
                         <button role="tab" aria-haspopup="menu" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${tab.name}${activeId === sessionId ? ", active pane" : ""}${!tab.connected ? `, ${t("workspace.disconnected")}` : ""}`}
                           title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
@@ -1149,7 +1150,7 @@
               <TerminalPane sessionId={tab.sessionId} container={paneEls[sessionPane[tab.sessionId]] ?? null}
                 active={paneActiveIds[sessionPane[tab.sessionId]] === tab.sessionId}
                 focused={activeId === tab.sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
-                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} {settings} {theme} {terminalOpacity} />
+                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} identityColor={tab.identityColor ?? null} {settings} {theme} {terminalOpacity} />
             {/each}
           </div>
           <!-- SFTP browser roots are re-parented into their active pane without
@@ -1368,6 +1369,8 @@
   .pane-slot.focused { outline:1px solid var(--accent); outline-offset:-1px; z-index:2; }
   .pane-tabs { display: flex; flex: 0 0 auto; min-height: 36px; overflow-x: auto; gap: var(--ui-space-1); padding: var(--ui-space-1) 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .pane-tab { display: flex; align-items: center; min-width: 0; max-width: 11rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-hover); }
+  .pane-tab.identity-colored { background: color-mix(in srgb, var(--identity-color) 18%, var(--surface)); }
+  .pane-tab.identity-colored.active { background: color-mix(in srgb, var(--identity-color) 25%, var(--surface-raised)); }
   .pane-tab.active { border-color:var(--border); border-top:2px solid var(--accent); border-bottom-color:var(--surface-raised); border-radius:4px 4px 0 0; margin-bottom:-1px; background:var(--surface-raised); }
   .pane-tab button { min-width: 0; min-height: 28px; display: flex; align-items: center; gap: 0.35rem; overflow: hidden; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: var(--ui-font-meta); cursor: pointer; }
   .pane-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
