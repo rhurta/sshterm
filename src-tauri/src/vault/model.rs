@@ -27,6 +27,8 @@ pub enum TreeNode {
         /// Rule sets inherited by descendants unless a connection overrides them.
         #[serde(default)]
         highlight: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color: Option<String>,
     },
     Connection {
         id: String,
@@ -133,6 +135,8 @@ pub struct Connection {
     pub keepalive_secs: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub colors: Option<Colors>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_color: Option<String>,
     pub protected: bool,
     /// Ordered jump chain (M5).
     pub jump: Vec<String>,
@@ -161,6 +165,7 @@ impl Default for Connection {
             auth: Auth::Agent,
             keepalive_secs: 30,
             colors: None,
+            identity_color: None,
             protected: false,
             jump: Vec::new(),
             jump_disabled: Vec::new(),
