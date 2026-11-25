@@ -1176,12 +1176,13 @@
   </div>
 
   {#if tabContextMenu}
-    {@const menuPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(tabContextMenu.sessionId))}
+    {@const menuPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(tabContextMenu!.sessionId))}
     <button class="tab-menu-backdrop" tabindex="-1" aria-label={t("workspace.close")} onclick={() => dismissTabContextMenu()}></button>
     <div
       bind:this={tabContextMenuElement}
       class="tab-context-menu"
       role="menu"
+      tabindex="-1"
       aria-label={t("workspace.tabActions")}
       style="left: {tabContextMenu.x}px; top: {tabContextMenu.y}px"
       onkeydown={onTabMenuKeydown}
