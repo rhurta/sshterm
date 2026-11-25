@@ -67,7 +67,7 @@
   type DropZone = "tabs" | "center" | "left" | "right" | "top" | "bottom";
   let tabDrop = $state<{ paneId: string; zone: DropZone; index?: number } | null>(null);
   let tabContextMenu = $state<{ sessionId: string; x: number; y: number } | null>(null);
-  let tabContextMenuFirstAction = $state<HTMLButtonElement | null>(null);
+  let tabContextMenuElement = $state<HTMLDivElement | null>(null);
   let tabContextMenuAnchor = $state<HTMLElement | null>(null);
   let tabContextMenuPaneAdd = $state<HTMLElement | null>(null);
   // Pane that receives the next connection (opened from the tree or picker) and
@@ -537,7 +537,9 @@
       x: Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8)),
       y: Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8)),
     };
-    void tick().then(() => tabContextMenuFirstAction?.focus());
+    void tick().then(() => {
+      tabContextMenuElement?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    });
   }
 
   function showTabContextMenu(event: MouseEvent, sessionId: string) {
@@ -1177,13 +1179,14 @@
     {@const menuPane = layoutGeometry.leaves.find((pane) => pane.sessionIds.includes(tabContextMenu.sessionId))}
     <button class="tab-menu-backdrop" tabindex="-1" aria-label={t("workspace.close")} onclick={() => dismissTabContextMenu()}></button>
     <div
+      bind:this={tabContextMenuElement}
       class="tab-context-menu"
       role="menu"
       aria-label={t("workspace.tabActions")}
       style="left: {tabContextMenu.x}px; top: {tabContextMenu.y}px"
       onkeydown={onTabMenuKeydown}
     >
-      <button bind:this={tabContextMenuFirstAction} role="menuitem" disabled={!menuPane || menuPane.sessionIds.length <= 1}
+      <button role="menuitem" disabled={!menuPane || menuPane.sessionIds.length <= 1}
         onclick={() => void closeOtherTabsInPane(tabContextMenu!.sessionId)}>
         {t("workspace.closeOtherTabs")}
       </button>
