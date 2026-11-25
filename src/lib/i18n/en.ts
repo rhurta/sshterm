@@ -311,6 +311,7 @@ export const en = {
   "tree.rename": "Rename (F2)",
   "tree.highlightRules": "Syntax highlighting rules…",
   "tree.identityColor": "Connection color",
+  "tree.identityColorCustom": "Custom color",
   "tree.identityColorClear": "Clear color (inherit)",
   "tree.duplicate": "Duplicate",
   "tree.delete": "Delete",
