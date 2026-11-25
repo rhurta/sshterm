@@ -7,11 +7,13 @@
 pub mod import;
 pub mod tree;
 
+use std::path::{Path, PathBuf};
+
 use tauri::State;
 
 use crate::commands::VaultState;
 use crate::transport::PortForward;
-use crate::vault::{Auth, Connection, TreeNode, Tunnel, Vault};
+use crate::vault::{Auth, Connection, TreeNode, Tunnel, Vault, VaultData};
 
 /// What the sidebar shows: never includes a password or key path.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -338,6 +340,66 @@ pub fn conn_list(state: State<'_, VaultState>) -> Result<Vec<ConnectionSummary>,
     Ok(out)
 }
 
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExportReport {
+    pub connections: usize,
+}
+
+fn serialize_export(data: &VaultData) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec_pretty(data)
+}
+
+fn canonical_export_path(path: &Path) -> Result<PathBuf, String> {
+    let name = path.file_name().ok_or_else(|| "bad_export_path".to_string())?;
+    if path.exists() {
+        return std::fs::canonicalize(path).map_err(|_| "io_error".to_string());
+    }
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let parent = std::fs::canonicalize(parent).map_err(|_| "io_error".to_string())?;
+    Ok(parent.join(name))
+}
+
+fn same_export_path(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy().eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+/// Exports the complete decrypted vault payload as plaintext JSON.
+/// The frontend obtains the destination from the native save-file dialog.
+#[tauri::command]
+pub fn conn_export(state: State<'_, VaultState>, path: String) -> Result<ExportReport, String> {
+    let destination = PathBuf::from(path.trim());
+    if destination.as_os_str().is_empty() {
+        return Err("bad_export_path".into());
+    }
+
+    let destination_resolved = canonical_export_path(&destination)?;
+    let vault_path = crate::paths::vault_path();
+    let vault_resolved = canonical_export_path(&vault_path)?;
+    if same_export_path(&destination_resolved, &vault_resolved) {
+        return Err("export_overwrites_vault".into());
+    }
+
+    let g = guard(&state);
+    let vault = g.as_ref().ok_or("locked")?;
+    let bytes = serialize_export(&vault.data).map_err(|_| "serialize_error".to_string())?;
+    std::fs::write(&destination, bytes).map_err(|_| "io_error".to_string())?;
+
+    Ok(ExportReport {
+        connections: vault.data.connections.len(),
+    })
+}
+
 #[tauri::command]
 pub fn conn_get(state: State<'_, VaultState>, id: String) -> Result<Option<Connection>, String> {
     let g = guard(&state);
@@ -510,6 +572,43 @@ pub fn import_apply(
 mod tests {
     use super::*;
     use crate::vault::VaultData;
+
+
+    #[test]
+    fn connection_export_roundtrips_the_complete_vault_payload() {
+        let mut data = VaultData::default();
+        data.tree = vec![TreeNode::Folder {
+            id: "folder".into(),
+            name: "Production".into(),
+            children: vec![TreeNode::Connection { id: "db".into() }],
+            highlight: vec!["database".into()],
+        }];
+        data.connections.insert(
+            "db".into(),
+            Connection {
+                id: "db".into(),
+                name: "database".into(),
+                host: "db.internal".into(),
+                user: "admin".into(),
+                auth: Auth::Password { password: "secret".into() },
+                jump: vec!["bastion".into()],
+                tunnels: vec![Tunnel::Local {
+                    bind: "15432".into(),
+                    dest: "db.internal:5432".into(),
+                    enabled: true,
+                }],
+                protected: true,
+                ..Connection::default()
+            },
+        );
+        data.known_hosts.insert("db.internal:22".into(), "SHA256:trusted".into());
+
+        let exported = serialize_export(&data).unwrap();
+        let json = String::from_utf8(exported.clone()).unwrap();
+        assert!(json.contains("secret"), "export includes saved authentication credentials");
+        let restored: VaultData = serde_json::from_slice(&exported).unwrap();
+        assert_eq!(restored, data);
+    }
 
     #[test]
     fn normalize_fills_defaults_and_keeps_password_auth() {
