@@ -169,9 +169,10 @@
     if (!editor || sending || confirmingMultiline) return;
     const cursor = editor.selectionStart;
     const beforeCursor = draft.slice(0, cursor);
-    const lineStart = beforeCursor.lastIndexOf("\n") + 1;
-    const nextBreak = draft.indexOf("\n", cursor);
-    const lineEnd = nextBreak < 0 ? draft.length : nextBreak;
+    const linePrefix = beforeCursor.match(/(?:\r\n|\r|\n)[^\r\n]*$/);
+    const lineStart = linePrefix ? cursor - linePrefix[0].length : 0;
+    const nextBreak = /(?:\r\n|\r|\n)/.exec(draft.slice(cursor));
+    const lineEnd = nextBreak ? cursor + nextBreak.index : draft.length;
     const line = draft.slice(lineStart, lineEnd).replace(/\r$/, "");
     if (!line.trim()) return;
 
