@@ -162,7 +162,7 @@
     onselect(node);
     menu = { node, parentId, index };
     menuX = Math.min(event.clientX, window.innerWidth - 180);
-    menuY = Math.min(event.clientY, window.innerHeight - 250);
+    menuY = Math.min(event.clientY, window.innerHeight - 340);
   }
 
   function menuParent(entry: MenuEntry): string | null {
