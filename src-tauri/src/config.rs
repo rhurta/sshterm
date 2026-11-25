@@ -148,7 +148,7 @@ pub enum WindowBackdrop {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearanceSettings {
-    /// Path of a background image (absolute, or relative to the exe folder). Empty = none.
+    /// Path of a background image (absolute, or relative to config/). Empty = none.
     pub background_image: String,
     /// Opacity of the interface surfaces over the background image, in percent.
     pub panel_opacity: u8,
@@ -196,7 +196,7 @@ pub struct Config {
     pub app_behavior: AppBehaviorSettings,
     /// Background image and transparency; stored outside the encrypted vault.
     pub appearance: AppearanceSettings,
-    /// Scripts library file (absolute, or relative to the exe folder). Empty = `scripts.vault`.
+    /// Scripts library file (absolute, or relative to config/). Empty = `scripts.vault`.
     pub scripts_vault: String,
 }
 
