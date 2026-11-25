@@ -372,6 +372,7 @@
         <button class="color-swatch" style={`--swatch: ${color}`} title={color} aria-label={`${t("tree.identityColor")}: ${color}`} onclick={() => { oncolor(entry.node, color); menu = null; }}></button>
       {/each}
     </div>
+    <label class="custom-color">{t("tree.identityColorCustom")}<input type="color" aria-label={t("tree.identityColorCustom")} value={entry.node.type === "folder" ? (entry.node.color ?? "#61afef") : (summary(entry.node)?.identity_color ?? "#61afef")} onchange={(event) => { oncolor(entry.node, event.currentTarget.value); menu = null; }} /></label>
     <button onclick={() => { oncolor(entry.node, null); menu = null; }}>{t("tree.identityColorClear")}</button>
     <button onclick={() => startRename(entry.node)}>{t("tree.rename")}</button>
     <div class="separator"></div>
@@ -423,6 +424,8 @@
   .color-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; padding: 0.25rem 0.65rem 0.45rem; }
   .color-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--text) 35%, transparent); background: var(--swatch); cursor: pointer; }
   .color-swatch:hover { outline: 2px solid var(--text); outline-offset: 1px; }
+  .custom-color { display: flex; align-items: center; justify-content: space-between; padding: 0.25rem 0.65rem; color: var(--text-secondary); font-size: var(--ui-font-control); }
+  .custom-color input { width: 30px; height: 24px; padding: 1px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-deep); cursor: pointer; }
   .row:hover {
     background: var(--surface-hover);
   }
