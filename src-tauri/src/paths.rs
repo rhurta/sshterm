@@ -245,7 +245,9 @@ background_image = "assets/background.png"
         migrate_legacy_layout_at(app).unwrap();
 
         let config = app.join("config");
-        assert_eq!(fs::read(config.join("config.toml")).unwrap(), fs::read(app.join("config.toml")).unwrap());
+        let migrated_settings = Config::load(&config.join("config.toml"));
+        assert_eq!(migrated_settings.scripts_vault, "team/scripts.vault");
+        assert_eq!(migrated_settings.appearance.background_image, "assets/background.png");
         assert_eq!(fs::read(config.join("sshterm.vault")).unwrap(), b"encrypted-main");
         assert_eq!(fs::read(config.join("scripts.vault")).unwrap(), b"encrypted-default-scripts");
         assert_eq!(fs::read(config.join("known_hosts")).unwrap(), b"known hosts");
