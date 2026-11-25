@@ -1,9 +1,31 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { t } from "$lib/i18n/index.svelte";
+  import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
   import type { Connection, ConnectionSummary, Tunnel } from "$lib/types";
+
+  type EditableField =
+    | "name"
+    | "host"
+    | "port"
+    | "user"
+    | "authPath"
+    | "keepalive"
+    | "protected"
+    | "colorFg"
+    | "colorBg"
+    | "sftpPort"
+    | "sftpStartDir";
+
+  type PropertyRow = {
+    key: string;
+    label: string;
+    value: string;
+    field?: EditableField;
+    inputType?: "text" | "number";
+    editValue?: string;
+  };
 
   let { connectionId, focusToken, width, onsave }: {
     connectionId: string | null;
@@ -19,6 +41,11 @@
   let error = $state("");
   let editing = $state(false);
   let searchInput = $state<HTMLInputElement | null>(null);
+  let editInput = $state<HTMLInputElement | null>(null);
+  let activeField = $state<EditableField | null>(null);
+  let editValue = $state("");
+  let savingInline = $state(false);
+  let inlineError = $state("");
   let version = 0;
   let lastFocusToken = 0;
 
@@ -30,6 +57,8 @@
       loading = false;
       error = "";
       editing = false;
+      activeField = null;
+      inlineError = "";
       query = "";
       return;
     }
@@ -54,6 +83,8 @@
   $effect(() => {
     const id = connectionId;
     editing = false;
+    activeField = null;
+    inlineError = "";
     query = "";
     void load(id);
   });
@@ -68,27 +99,34 @@
     }
   });
 
-  const rows = $derived.by((): Array<[string, string]> => {
+  const rows = $derived.by((): PropertyRow[] => {
     const current = connection;
     if (!current) return [];
-    const values: Array<[string, string]> = [];
+    const values: PropertyRow[] = [];
     const byId = new Map(summaries.map((item) => [item.id, item]));
 
-    values.push([t("properties.id"), current.id]);
-    values.push([t("properties.name"), current.name]);
-    values.push([t("properties.host"), current.host]);
-    values.push([t("properties.port"), String(current.port)]);
-    values.push([t("properties.username"), current.user]);
+    values.push({ key: "id", label: t("properties.id"), value: current.id });
+    values.push({ key: "name", label: t("properties.name"), value: current.name, field: "name", inputType: "text", editValue: current.name });
+    values.push({ key: "host", label: t("properties.host"), value: current.host, field: "host", inputType: "text", editValue: current.host });
+    values.push({ key: "port", label: t("properties.port"), value: String(current.port), field: "port", inputType: "number", editValue: String(current.port) });
+    values.push({ key: "user", label: t("properties.username"), value: current.user, field: "user", inputType: "text", editValue: current.user });
 
     if (current.auth.type === "password") {
-      values.push([t("properties.authMethod"), t("properties.auth.password")]);
-      values.push([t("properties.passwordState"), current.auth.password ? t("properties.saved") : t("properties.notSaved")]);
+      values.push({ key: "authMethod", label: t("properties.authMethod"), value: t("properties.auth.password") });
+      values.push({ key: "passwordState", label: t("properties.passwordState"), value: current.auth.password ? t("properties.saved") : t("properties.notSaved") });
     } else if (current.auth.type === "key") {
-      values.push([t("properties.authMethod"), t("properties.auth.key")]);
-      values.push([t("properties.sshKey"), current.auth.path || t("properties.none")]);
-      values.push([t("properties.keyPassphrase"), current.auth.passphrase ? t("properties.saved") : t("properties.notSaved")]);
+      values.push({ key: "authMethod", label: t("properties.authMethod"), value: t("properties.auth.key") });
+      values.push({
+        key: "sshKey",
+        label: t("properties.sshKey"),
+        value: current.auth.path || t("properties.none"),
+        field: "authPath",
+        inputType: "text",
+        editValue: current.auth.path,
+      });
+      values.push({ key: "keyPassphrase", label: t("properties.keyPassphrase"), value: current.auth.passphrase ? t("properties.saved") : t("properties.notSaved") });
     } else {
-      values.push([t("properties.authMethod"), t("properties.auth.agent")]);
+      values.push({ key: "authMethod", label: t("properties.authMethod"), value: t("properties.auth.agent") });
     }
 
     const jumpHosts = current.jump.map((id) => {
@@ -96,38 +134,197 @@
       const name = hop?.name ?? id;
       return current.jump_disabled.includes(id) ? name + " (" + t("editor.disabled") + ")" : name;
     });
-    values.push([t("properties.jumpHosts"), jumpHosts.join(" → ") || t("properties.none")]);
-    values.push([t("properties.keepalive"), String(current.keepalive_secs) + " s"]);
-    values.push([t("properties.protected"), current.protected ? t("common.yes") : t("common.no")]);
+    values.push({ key: "jumpHosts", label: t("properties.jumpHosts"), value: jumpHosts.join(" → ") || t("properties.none") });
+    values.push({
+      key: "keepalive",
+      label: t("properties.keepalive"),
+      value: String(current.keepalive_secs) + " s",
+      field: "keepalive",
+      inputType: "number",
+      editValue: String(current.keepalive_secs),
+    });
+    values.push({
+      key: "protected",
+      label: t("properties.protected"),
+      value: current.protected ? t("common.yes") : t("common.no"),
+      field: "protected",
+    });
 
-    const forwards: Array<[string, string]> = current.tunnels.map((tunnel: Tunnel, index) => {
+    const forwards: PropertyRow[] = current.tunnels.map((tunnel: Tunnel, index) => {
       const inactive = tunnel.enabled ? "" : " · " + t("editor.disabled");
       if (tunnel.kind === "dynamic") {
-        return [t("properties.forward", { index: index + 1 }), "SOCKS " + tunnel.bind + inactive];
+        return { key: "forward-" + index, label: t("properties.forward", { index: index + 1 }), value: "SOCKS " + tunnel.bind + inactive };
       }
       const kind = tunnel.kind === "local" ? "Local" : "Remote";
-      return [t("properties.forward", { index: index + 1 }), kind + " " + tunnel.bind + " → " + tunnel.dest + inactive];
+      return { key: "forward-" + index, label: t("properties.forward", { index: index + 1 }), value: kind + " " + tunnel.bind + " → " + tunnel.dest + inactive };
     });
     values.push(...forwards);
 
-    values.push([t("properties.colorForeground"), current.colors?.fg || t("properties.default")]);
-    values.push([t("properties.colorBackground"), current.colors?.bg || t("properties.default")]);
-    values.push([
-      t("properties.sftp"),
-      current.sftp
-        ? t("properties.sftpPort") + ": " + (current.sftp.port ?? t("properties.inheritSshPort")) + "; " + t("properties.sftpStartDir") + ": " + (current.sftp.start_dir || t("properties.default"))
-        : t("properties.default"),
-    ]);
-    values.push([t("properties.highlight"), current.highlight.join(", ") || t("properties.inherited")]);
+    values.push({
+      key: "colorFg",
+      label: t("properties.colorForeground"),
+      value: current.colors?.fg || t("properties.default"),
+      field: "colorFg",
+      inputType: "text",
+      editValue: current.colors?.fg ?? "",
+    });
+    values.push({
+      key: "colorBg",
+      label: t("properties.colorBackground"),
+      value: current.colors?.bg || t("properties.default"),
+      field: "colorBg",
+      inputType: "text",
+      editValue: current.colors?.bg ?? "",
+    });
+
+    if (current.sftp) {
+      values.push({
+        key: "sftpPort",
+        label: t("properties.sftpPort"),
+        value: current.sftp.port == null ? t("properties.inheritSshPort") : String(current.sftp.port),
+        field: "sftpPort",
+        inputType: "number",
+        editValue: current.sftp.port == null ? "" : String(current.sftp.port),
+      });
+      values.push({
+        key: "sftpStartDir",
+        label: t("properties.sftpStartDir"),
+        value: current.sftp.start_dir || t("properties.default"),
+        field: "sftpStartDir",
+        inputType: "text",
+        editValue: current.sftp.start_dir,
+      });
+    } else {
+      values.push({ key: "sftp", label: t("properties.sftp"), value: t("properties.default") });
+    }
+    values.push({ key: "highlight", label: t("properties.highlight"), value: current.highlight.join(", ") || t("properties.inherited") });
 
     const needle = query.trim().toLocaleLowerCase();
-    return values.filter(([label, value]) =>
+    return values.filter(({ label, value }) =>
       !needle || label.toLocaleLowerCase().includes(needle) || value.toLocaleLowerCase().includes(needle),
     );
   });
 
+  function errorText(code: string): string {
+    const key = "error." + code;
+    return hasMessage(key) ? t(key) : t("lock.error.unexpected", { detail: code });
+  }
+
   function beginEdit() { editing = true; }
   function cancelEdit() { editing = false; }
+
+  async function startCellEdit(row: PropertyRow) {
+    if (!row.field || !row.inputType || savingInline) return;
+    activeField = row.field;
+    editValue = row.editValue ?? "";
+    inlineError = "";
+    await tick();
+    editInput?.focus();
+    editInput?.select();
+  }
+
+  function cancelCellEdit() {
+    activeField = null;
+    inlineError = "";
+  }
+
+  function onCellKeydown(event: KeyboardEvent) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      void commitCellEdit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      cancelCellEdit();
+    }
+  }
+
+  async function persistDirect(next: Connection): Promise<boolean> {
+    savingInline = true;
+    inlineError = "";
+    try {
+      const failure = await onsave(next);
+      if (failure) {
+        inlineError = errorText(failure);
+        return false;
+      }
+      activeField = null;
+      await load(connectionId);
+      return true;
+    } catch (cause) {
+      inlineError = String(cause);
+      return false;
+    } finally {
+      savingInline = false;
+    }
+  }
+
+  async function commitCellEdit() {
+    const field = activeField;
+    const current = connection;
+    if (!field || !current || savingInline) return;
+
+    const raw = editValue.trim();
+    const next: Connection = { ...current };
+
+    switch (field) {
+      case "name":
+        if (!raw) { inlineError = t("editor.validation"); return; }
+        next.name = raw;
+        break;
+      case "host":
+        if (!raw) { inlineError = t("editor.validation"); return; }
+        next.host = raw;
+        break;
+      case "port": {
+        const value = Number(raw);
+        if (!Number.isInteger(value) || value < 1 || value > 65535) { inlineError = t("editor.validation"); return; }
+        next.port = value;
+        break;
+      }
+      case "user":
+        if (!raw) { inlineError = t("editor.validation"); return; }
+        next.user = raw;
+        break;
+      case "authPath":
+        if (current.auth.type !== "key") return;
+        next.auth = raw ? { ...current.auth, path: raw } : { type: "agent" };
+        break;
+      case "keepalive": {
+        const value = Number(raw);
+        if (!raw || !Number.isInteger(value) || value < 0 || value > 4294967295) { inlineError = t("editor.validation"); return; }
+        next.keepalive_secs = value;
+        break;
+      }
+      case "colorFg":
+      case "colorBg": {
+        if (raw && !/^#[0-9a-fA-F]{6}$/.test(raw)) { inlineError = "#RRGGBB"; return; }
+        const fg = field === "colorFg" ? raw : (current.colors?.fg ?? "");
+        const bg = field === "colorBg" ? raw : (current.colors?.bg ?? "");
+        next.colors = fg || bg ? { fg, bg } : null;
+        break;
+      }
+      case "sftpPort": {
+        const value = raw ? Number(raw) : null;
+        if (value !== null && (!Number.isInteger(value) || value < 1 || value > 65535)) { inlineError = t("editor.validationSftpPort"); return; }
+        next.sftp = { ...(current.sftp ?? { port: null, start_dir: "" }), port: value };
+        break;
+      }
+      case "sftpStartDir":
+        next.sftp = { ...(current.sftp ?? { port: null, start_dir: "" }), start_dir: raw };
+        break;
+      case "protected":
+        return;
+    }
+
+    await persistDirect(next);
+  }
+
+  async function setProtected(value: boolean) {
+    if (!connection || savingInline) return;
+    await persistDirect({ ...connection, protected: value });
+  }
 
   async function saveInline(next: Connection): Promise<string | null> {
     const failure = await onsave(next);
@@ -165,11 +362,39 @@
       <p class="state">{t("properties.noMatches", { query })}</p>
     {:else}
       <div class="property-grid">
-        {#each rows as row, index (index)}
-          <div class="property-label">{row[0]}</div>
-          <div class="property-value" title={row[1]}>{row[1]}</div>
+        {#each rows as row (row.key)}
+          <div class="property-label">{row.label}</div>
+          {#if row.field === "protected"}
+            <label class="property-value boolean-value">
+              <input type="checkbox" checked={connection.protected} onchange={(event) => void setProtected(event.currentTarget.checked)} disabled={savingInline} />
+              <span>{row.value}</span>
+            </label>
+          {:else if row.field && activeField === row.field}
+            <div class="property-value cell-editing">
+              <input
+                bind:this={editInput}
+                bind:value={editValue}
+                type={row.inputType ?? "text"}
+                aria-label={row.label}
+                onkeydown={onCellKeydown}
+                disabled={savingInline}
+              />
+              <button class="cell-action" type="button" title={t("editor.save")} aria-label={t("editor.save")} onclick={() => void commitCellEdit()} disabled={savingInline}>✓</button>
+              <button class="cell-action" type="button" title={t("editor.cancel")} aria-label={t("editor.cancel")} onclick={cancelCellEdit} disabled={savingInline}>×</button>
+            </div>
+          {:else if row.field}
+            <button class="property-value editable" type="button" title={t("properties.edit")} onclick={() => void startCellEdit(row)} disabled={savingInline}>
+              <span>{row.value}</span>
+              <span class="edit-hint" aria-hidden="true">✎</span>
+            </button>
+          {:else}
+            <div class="property-value" title={row.value}>{row.value}</div>
+          {/if}
         {/each}
       </div>
+      {#if inlineError}
+        <p class="state error" role="alert">{inlineError}</p>
+      {/if}
     {/if}
   {/if}
 </aside>
@@ -243,14 +468,65 @@
   }
   .property-value {
     min-width: 0;
+    width: 100%;
     padding: 0.38rem 0.45rem;
+    box-sizing: border-box;
     color: var(--text);
     background: var(--surface-deep);
     border: 1px solid var(--border);
     border-radius: 0 3px 3px 0;
     overflow-wrap: anywhere;
     user-select: text;
+    text-align: left;
+    font: inherit;
+    font-size: inherit;
   }
+  button.property-value {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.3rem;
+    cursor: text;
+  }
+  button.property-value:hover { border-color: var(--accent); background: var(--surface-hover); }
+  .edit-hint { flex: 0 0 auto; color: var(--muted); opacity: 0; }
+  button.property-value:hover .edit-hint,
+  button.property-value:focus-visible .edit-hint { opacity: 1; }
+  .cell-editing {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+  }
+  .cell-editing input {
+    width: 100%;
+    min-width: 0;
+    padding: 0.22rem 0.28rem;
+    color: var(--text);
+    background: var(--app-bg, var(--surface));
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    font: inherit;
+  }
+  .cell-action {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 24px;
+    padding: 0;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .cell-action:hover { color: var(--accent); background: var(--surface-hover); border-color: var(--border); }
+  .boolean-value {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+  }
+  .boolean-value input { accent-color: var(--accent); }
   .state { margin: 0; padding: 0.75rem; color: var(--muted); font-size: var(--ui-font-meta, 11px); }
   .state.error { color: var(--danger); }
 </style>
