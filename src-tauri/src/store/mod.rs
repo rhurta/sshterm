@@ -386,7 +386,11 @@ pub fn conn_export(state: State<'_, VaultState>, path: String) -> Result<ExportR
     let destination_resolved = canonical_export_path(&destination)?;
     let vault_path = crate::paths::vault_path();
     let vault_resolved = canonical_export_path(&vault_path)?;
-    if same_export_path(&destination_resolved, &vault_resolved) {
+    let scripts_vault_path = crate::paths::scripts_vault_path();
+    let scripts_vault_resolved = canonical_export_path(&scripts_vault_path)?;
+    if same_export_path(&destination_resolved, &vault_resolved)
+        || same_export_path(&destination_resolved, &scripts_vault_resolved)
+    {
         return Err("export_overwrites_vault".into());
     }
 
