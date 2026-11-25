@@ -217,6 +217,13 @@
     });
   }
 
+  async function setIdentityColor(node: TreeNode, color: string | null) {
+    await guarded(async () => {
+      await invoke(node.type === "folder" ? "folder_set_color" : "conn_set_identity_color", { id: node.id, color });
+      await refresh();
+    });
+  }
+
   async function confirmDelete() {
     const node = pendingDelete;
     pendingDelete = null;
@@ -277,6 +284,7 @@
     onnewconn={(parentId) => { expandParent(parentId); onnewconn(parentId); }}
     onmove={(id, parentId, index) => moveNode(id, parentId, index)}
     onfolderhighlight={(folder) => (folderHighlightTarget = folder)}
+    oncolor={setIdentityColor}
     onselect={(node) => { selectedId = node.id; onselectconnection(node.type === "connection" ? node.id : null); }}
     ontoggle={(id) => {
       expanded = { ...expanded, [id]: !expanded[id] };
