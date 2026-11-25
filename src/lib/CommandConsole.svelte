@@ -453,6 +453,9 @@
         >{t("console.saveScript")}</button>
         <button class="secondary" bind:this={loadButton} onclick={() => (scriptsDialog = "load")}>{t("console.loadScript")}</button>
         <button class="secondary" onclick={clearDraft} disabled={draft.length === 0}>{t("console.clear")}</button>
+        <span class="shortcut-hint" title={t("console.shortcutSendHelp")}>
+          <kbd>Shift+Enter</kbd>
+        </span>
         <button class="send" onclick={requestSend} disabled={targetResolution.targets.length === 0 || draft.length === 0 || sending}>
           {sending ? t("console.sending") : t("console.send")}
         </button>
@@ -657,6 +660,20 @@
     gap: 0.55rem;
     min-height: 1.45rem;
     flex: 0 0 auto;
+  }
+  .shortcut-hint {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: var(--ui-font-meta);
+    white-space: nowrap;
+  }
+  .shortcut-hint kbd {
+    padding: 0.14rem 0.3rem;
+    color: var(--text-secondary);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font: inherit;
   }
   .status, .confirmation { flex: 1; min-width: 0; color: var(--text-secondary); font-size: var(--ui-font-meta); }
   .status.error { color: var(--danger); }
