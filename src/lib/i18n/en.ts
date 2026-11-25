@@ -132,7 +132,7 @@ export const en = {
   "error.serialize_error": "Could not save the data.",
   "error.locked": "Unlock the vault first.",
   "error.bad_export_path": "Choose a valid export file path.",
-  "error.export_overwrites_vault": "The export destination cannot be the active encrypted vault file.",
+  "error.export_overwrites_vault": "The export destination cannot be an encrypted vault file.",
   "error.connection_not_found": "That connection no longer exists.",
   "error.bad_connection": "Name, host, user and port are required.",
   "error.jump_not_found": "A selected jump host no longer exists.",
