@@ -30,6 +30,7 @@ pub struct ConnectionSummary {
     pub jump_disabled: Vec<String>,
     pub tunnel_count: usize,
     pub protected: bool,
+    pub identity_color: Option<String>,
 }
 
 impl From<&Connection> for ConnectionSummary {
@@ -48,6 +49,7 @@ impl From<&Connection> for ConnectionSummary {
                 | Tunnel::Dynamic { enabled, .. } => *enabled,
             }).count(),
             protected: c.protected,
+            identity_color: c.identity_color.clone(),
         }
     }
 }
@@ -335,7 +337,11 @@ pub fn conn_list(state: State<'_, VaultState>) -> Result<Vec<ConnectionSummary>,
         .data
         .connections
         .values()
-        .map(ConnectionSummary::from)
+        .map(|connection| {
+            let mut summary = ConnectionSummary::from(connection);
+            summary.identity_color = tree::resolve_identity_color(&vault.data.tree, &connection.id, connection.identity_color.as_deref());
+            summary
+        })
         .collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
@@ -669,6 +675,29 @@ pub fn tree_get(state: State<'_, VaultState>) -> Result<Vec<TreeNode>, String> {
     Ok(vault.data.tree.clone())
 }
 
+
+fn valid_identity_color(color: &str) -> bool {
+    color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+#[tauri::command]
+pub fn conn_set_identity_color(state: State<'_, VaultState>, id: String, color: Option<String>) -> Result<(), String> {
+    if color.as_deref().is_some_and(|value| !valid_identity_color(value)) { return Err("color_bad_value".into()); }
+    let mut g = guard(&state);
+    let vault = g.as_mut().ok_or("locked")?;
+    let connection = vault.data.connections.get_mut(&id).ok_or("connection_not_found")?;
+    connection.identity_color = color;
+    vault.save().map_err(|e| e.code().to_string())
+}
+
+#[tauri::command]
+pub fn folder_set_color(state: State<'_, VaultState>, id: String, color: Option<String>) -> Result<(), String> {
+    if color.as_deref().is_some_and(|value| !valid_identity_color(value)) { return Err("color_bad_value".into()); }
+    let mut g = guard(&state);
+    let vault = g.as_mut().ok_or("locked")?;
+    if !tree::set_folder_color(&mut vault.data.tree, &id, color) { return Err("folder_not_found".into()); }
+    vault.save().map_err(|e| e.code().to_string())
+}
 
 #[tauri::command]
 pub fn folder_set_highlight(
