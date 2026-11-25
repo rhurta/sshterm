@@ -488,7 +488,7 @@ fn serialize_ssh_config(data: &VaultData) -> (String, usize) {
     let mut output = String::from(
         "# OpenSSH client configuration exported by SSH Term.\n\
          # Saved passwords and key passphrases are not included.\n\
-         # Host-key trust remains in the local OpenSSH known_hosts file.\n\
+         # Host-key trust is not transferred; OpenSSH uses its own known_hosts file.\n\
          # Per-connection colors, highlighting and other UI-only settings are omitted.\n\n",
     );
     let mut skipped = 0usize;
