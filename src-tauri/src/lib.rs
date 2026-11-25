@@ -263,6 +263,8 @@ pub fn run() {
             store::tree_get,
             store::folder_upsert,
             store::folder_set_highlight,
+            store::folder_set_color,
+            store::conn_set_identity_color,
             store::folder_delete,
             store::move_node,
             store::search,
