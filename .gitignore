@@ -15,6 +15,7 @@ webview-data/
 logs/
 known_hosts
 config.toml
+/config/
 highlight/
 
 gpui-prototype
