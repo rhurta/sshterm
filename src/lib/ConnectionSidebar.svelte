@@ -24,9 +24,13 @@
     onnewconn,
     ontunnels,
     onselectconnection,
+    expandedFolders,
+    onexpandedchange,
   }: {
     openIds: string[];
     refreshToken: number;
+    expandedFolders: Record<string, boolean>;
+    onexpandedchange: (next: Record<string, boolean>) => void;
     onopen: (c: ConnectionSummary) => void;
     onopensftp: (c: ConnectionSummary) => void;
     onedit: (c: ConnectionSummary) => void;
@@ -48,6 +52,10 @@
   let showExport = $state(false);
   let error = $state("");
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    expanded = { ...expandedFolders };
+  });
 
   function errText(code: string): string {
     const key = `error.${code}`;
@@ -253,7 +261,10 @@
     onmove={(id, parentId, index) => moveNode(id, parentId, index)}
     onfolderhighlight={(folder) => (folderHighlightTarget = folder)}
     onselect={(node) => { selectedId = node.id; onselectconnection(node.type === "connection" ? node.id : null); }}
-    ontoggle={(id) => (expanded = { ...expanded, [id]: !expanded[id] })}
+    ontoggle={(id) => {
+      expanded = { ...expanded, [id]: !expanded[id] };
+      onexpandedchange(expanded);
+    }}
   />
 
   <div class="foot"><span class="hint">{t("tree.hint")}</span></div>
