@@ -867,7 +867,10 @@ mod tests {
         assert_eq!(skipped, 0);
         assert!(config.contains("# Folder: Production"));
         assert!(config.contains("Host Bastion-Host"));
+        #[cfg(windows)]
         assert!(config.contains("IdentityFile \"C:/Users/me/.ssh/jump key\""));
+        #[cfg(not(windows))]
+        assert!(config.contains(r#"IdentityFile "C:\Users\me\.ssh\jump key""#));
         assert!(config.contains("Host Production-Database"));
         assert!(config.contains("ProxyJump Bastion-Host"));
         assert!(config.contains("ServerAliveInterval 15"));
