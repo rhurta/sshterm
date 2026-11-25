@@ -886,6 +886,9 @@
     return () => {
       mounted = false;
       stopProgress?.();
+      // This root may have been re-parented into a workspace pane. Detach it
+      // explicitly so closing this tab cannot leave an orphaned SFTP overlay.
+      root?.remove();
       for (const session of sessions) void invoke("sftp_close", { sessionId: session.session_id }).catch(() => {});
     };
   });
