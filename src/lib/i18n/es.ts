@@ -311,6 +311,7 @@ export const es: Record<MessageKey, string> = {
   "tree.rename": "Renombrar (F2)",
   "tree.highlightRules": "Reglas de resaltado de sintaxis…",
   "tree.identityColor": "Color de conexión",
+  "tree.identityColorCustom": "Color personalizado",
   "tree.identityColorClear": "Quitar color (heredar)",
   "tree.duplicate": "Duplicar",
   "tree.delete": "Eliminar",
