@@ -310,6 +310,23 @@ fn is_legacy_agent_session_binding_failure(error: &keys::Error) -> bool {
         )
 }
 
+fn is_agent_identity_binding_disconnect(bind_session: bool, error: &keys::Error) -> bool {
+    bind_session
+        && matches!(
+            error,
+            keys::Error::IO(io_error)
+                if io_error.kind() == std::io::ErrorKind::UnexpectedEof
+        )
+}
+
+fn agent_identity_error_code(bind_session: bool, error: &keys::Error) -> &'static str {
+    if is_agent_identity_binding_disconnect(bind_session, error) {
+        "sftp_agent_binding_rejected"
+    } else {
+        "sftp_agent_identities"
+    }
+}
+
 async fn authenticate_with_agent<S>(
     handle: &mut Handle<SftpHostKeyHandler>,
     user: &str,
@@ -332,10 +349,13 @@ where
         })?;
     }
 
-    let identities = agent
-        .request_identities()
-        .await
-        .map_err(|error| SftpError::new("sftp_agent_identities", error.to_string()))?;
+    let identities = agent.request_identities().await.map_err(|error| {
+        // Some Windows agents accept session binding but close the pipe before
+        // answering the following identity-list request. Treat only this EOF,
+        // and only on the bound attempt, like a rejected binding so the caller
+        // reconnects and retries once without session binding.
+        SftpError::new(agent_identity_error_code(bind_session, &error), error.to_string())
+    })?;
     let rsa_hash = best_rsa_hash(handle).await?;
 
     for identity in identities {
@@ -1701,6 +1721,21 @@ mod lifecycle_tests {
             std::io::Error::from(std::io::ErrorKind::PermissionDenied),
         )));
         assert!(is_legacy_agent_session_binding_failure(&keys::Error::AgentFailure));
+    }
+
+    #[test]
+    fn identity_listing_eof_after_binding_uses_legacy_fallback_classification() {
+        let eof = keys::Error::IO(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        let permission_denied =
+            keys::Error::IO(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+
+        assert_eq!(agent_identity_error_code(true, &eof), "sftp_agent_binding_rejected");
+        assert_eq!(agent_identity_error_code(false, &eof), "sftp_agent_identities");
+        assert_eq!(agent_identity_error_code(true, &permission_denied), "sftp_agent_identities");
+        assert_eq!(
+            agent_identity_error_code(true, &keys::Error::AgentFailure),
+            "sftp_agent_identities"
+        );
     }
 
     #[test]
