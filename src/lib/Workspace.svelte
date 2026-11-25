@@ -1056,10 +1056,9 @@
                     {@const tab = tabs.find((item) => item.sessionId === sessionId)}
                     {@const sftpTab = sftpTabs.find((item) => item.id === sessionId)}
                     {#if tab}
-                      <!-- svelte-ignore a11y_no_static_element_interactions (drag is a mouse shortcut; Ctrl+Alt+Shift+Arrows is the keyboard path) -->
                       <!-- svelte-ignore a11y_no_static_element_interactions (supports drag and right-click; keyboard menu access is on the tab button) -->
                       <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
-                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
+                        <button role="tab" aria-haspopup="menu" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${tab.name}${activeId === sessionId ? ", active pane" : ""}${!tab.connected ? `, ${t("workspace.disconnected")}` : ""}`}
                           title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
                           onclick={() => activateSession(sessionId)}
@@ -1094,7 +1093,7 @@
                       <!-- SFTP browsers use the same tab drag/drop contract as SSH sessions. -->
                       <!-- svelte-ignore a11y_no_static_element_interactions (supports drag and right-click; keyboard menu access is on the tab button) -->
                       <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId}>
-                        <button role="tab" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
+                        <button role="tab" aria-haspopup="menu" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${sftpTab.name}${activeId === sessionId ? ", active pane" : ""}`}
                           title={sftpTab.name} onclick={() => activateSession(sessionId)}
                           onkeydown={(event) => handleTabContextMenuKeydown(event, sessionId)}>
