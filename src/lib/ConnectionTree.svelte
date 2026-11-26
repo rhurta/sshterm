@@ -345,7 +345,7 @@
     <button class="row local-row" onclick={() => onlocalopen("powershell")}>
       <span class="conn-icon local-icon"></span>
       <span class="conn"><span class="label">{t("workspace.localPowerShell")}</span><span class="detail">{t("workspace.localTerminal")}</span></span>
-      <span class="spacer"></span><span class="local-lock" title={t("workspace.builtInTerminal")}>●</span>
+      <span class="spacer"></span><span class="local-lock" title={t("workspace.builtInTerminal")}>🔒</span>
     </button>
   </div>
   <div class="line local-line" role="treeitem">
