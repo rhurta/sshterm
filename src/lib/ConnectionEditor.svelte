@@ -695,7 +695,8 @@
   .identity-color-none.chosen {
     border-color: var(--accent);
     color: var(--text);
-  }\n  .jump-heading {
+  }
+  .jump-heading {
     margin: 0.35rem 0 0;
     font-size: var(--ui-font-body);
     font-weight: 500;
