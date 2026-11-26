@@ -23,8 +23,7 @@
     onedit,
     onnewconn,
     ontunnels,
-    onselectconnection,
-    oncolorschange,
+    onselectnode,
     expandedFolders,
     onexpandedchange,
   }: {
@@ -37,8 +36,7 @@
     onedit: (c: ConnectionSummary) => void;
     onnewconn: (parentId: string | null) => void;
     ontunnels: () => void;
-    onselectconnection: (id: string | null) => void;
-    oncolorschange: (connections: ConnectionSummary[]) => void;
+    onselectnode: (node: TreeNode | null) => void;
   } = $props();
 
   let tree = $state<TreeNode[]>([]);
@@ -219,15 +217,6 @@
     });
   }
 
-  async function setIdentityColor(node: TreeNode, color: string | null) {
-    await guarded(async () => {
-      await invoke(node.type === "folder" ? "folder_set_color" : "conn_set_identity_color", { id: node.id, color });
-      const current = await invoke<ConnectionSummary[]>("conn_list");
-      oncolorschange(current);
-      await refresh();
-    });
-  }
-
   async function confirmDelete() {
     const node = pendingDelete;
     pendingDelete = null;
@@ -288,8 +277,7 @@
     onnewconn={(parentId) => { expandParent(parentId); onnewconn(parentId); }}
     onmove={(id, parentId, index) => moveNode(id, parentId, index)}
     onfolderhighlight={(folder) => (folderHighlightTarget = folder)}
-    oncolor={setIdentityColor}
-    onselect={(node) => { selectedId = node.id; onselectconnection(node.type === "connection" ? node.id : null); }}
+    onselect={(node) => { selectedId = node.id; onselectnode(node); }}
     ontoggle={(id) => {
       expanded = { ...expanded, [id]: !expanded[id] };
       onexpandedchange(expanded);
