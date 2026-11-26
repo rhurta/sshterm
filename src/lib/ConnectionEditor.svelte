@@ -263,6 +263,9 @@
       <button type="button" class:current={section === "highlight"} onclick={openHighlightSection}>
         {t("editor.section.highlight")}
       </button>
+      <button type="button" class:current={section === "colors"} onclick={() => (section = "colors")}>
+        {t("editor.section.colors")}
+      </button>
     </div>
 
     <div class="body">
