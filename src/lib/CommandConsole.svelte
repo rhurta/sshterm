@@ -188,7 +188,7 @@
 
     // Include a line feed so the remote shell executes this command. The draft
     // itself is left untouched, and the caret is restored to its original spot.
-    await requestSendText(line + "\n", cursor, cursor);
+    await requestSendText(line + "\r", cursor, cursor);
   }
 
   async function sendDraft() {
@@ -263,7 +263,8 @@
       }
     } else if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
-      void requestSend();
+      if (confirmingMultiline) void sendDraft();
+      else void requestSend();
     } else if (event.key === "Escape" && confirmingMultiline) {
       cancelPendingSend();
     }
