@@ -186,7 +186,7 @@
     const line = currentDraft.slice(lineStart, lineEnd);
     if (!line.trim()) return;
 
-    // Include a line feed so the remote shell executes this command. The draft
+    // Send the terminal Enter byte (carriage return) so local console shells execute the command. The draft
     // itself is left untouched, and the caret is restored to its original spot.
     await requestSendText(line + "\r", cursor, cursor);
   }
