@@ -28,6 +28,8 @@ export const es: Record<MessageKey, string> = {
   "settings.middleClickPaste": "Clic central pega cuando no hay texto seleccionado",
   "settings.ctrlCCopy": "Ctrl+C copia el texto seleccionado (si no, envía Ctrl+C por SSH)",
   "settings.confirmMultilinePaste": "Confirmar antes de pegar varias líneas",
+  "settings.confirmMultiTerminalSend": "Advertir antes de enviar comandos a varios terminales",
+  "console.confirmSendShortcut": "Shift+Enter para confirmar",
   "settings.keepDisconnectedSessions": "Mantener abiertas las pestañas desconectadas para revisar errores",
   "settings.highlightRules": "Reglas y probador de resaltado de sintaxis",
   "workspace.layout": "Distribución de terminales",
