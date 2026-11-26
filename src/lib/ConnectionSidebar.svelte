@@ -23,7 +23,7 @@
     onedit,
     onnewconn,
     ontunnels,
-    onselectconnection,
+    onselectnode,
     expandedFolders,
     onexpandedchange,
   }: {
@@ -36,7 +36,7 @@
     onedit: (c: ConnectionSummary) => void;
     onnewconn: (parentId: string | null) => void;
     ontunnels: () => void;
-    onselectconnection: (id: string | null) => void;
+    onselectnode: (node: TreeNode | null) => void;
   } = $props();
 
   let tree = $state<TreeNode[]>([]);
@@ -277,7 +277,7 @@
     onnewconn={(parentId) => { expandParent(parentId); onnewconn(parentId); }}
     onmove={(id, parentId, index) => moveNode(id, parentId, index)}
     onfolderhighlight={(folder) => (folderHighlightTarget = folder)}
-    onselect={(node) => { selectedId = node.id; onselectconnection(node.type === "connection" ? node.id : null); }}
+    onselect={(node) => { selectedId = node.id; onselectnode(node); }}
     ontoggle={(id) => {
       expanded = { ...expanded, [id]: !expanded[id] };
       onexpandedchange(expanded);

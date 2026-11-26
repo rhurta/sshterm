@@ -57,7 +57,7 @@
       items: [
         "settings.highlightRules", "settings.copyOnSelection", "settings.rightClickCopy", "settings.middleClickCopy",
         "settings.rightClickPaste", "settings.middleClickPaste", "settings.ctrlCCopy", "settings.confirmMultilinePaste",
-        "settings.keepDisconnectedSessions",
+        "settings.confirmMultiTerminalSend", "settings.keepDisconnectedSessions",
       ],
     },
   };
@@ -273,6 +273,9 @@
         {/if}
         {#if show("terminal", "settings.confirmMultilinePaste")}
           <label class="setting"><input type="checkbox" checked={settings.confirm_multiline_paste} onchange={(e) => onterminal("confirm_multiline_paste", e.currentTarget.checked)} />{t("settings.confirmMultilinePaste")}</label>
+        {/if}
+        {#if show("terminal", "settings.confirmMultiTerminalSend")}
+          <label class="setting"><input type="checkbox" checked={settings.confirm_multi_terminal_send} onchange={(e) => onterminal("confirm_multi_terminal_send", e.currentTarget.checked)} />{t("settings.confirmMultiTerminalSend")}</label>
         {/if}
         {#if show("terminal", "settings.keepDisconnectedSessions")}
           <label class="setting"><input type="checkbox" checked={settings.keep_disconnected_sessions} onchange={(e) => onterminal("keep_disconnected_sessions", e.currentTarget.checked)} />{t("settings.keepDisconnectedSessions")}</label>

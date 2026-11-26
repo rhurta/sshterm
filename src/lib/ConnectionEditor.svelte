@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import PasswordInput from "$lib/PasswordInput.svelte";
+  import { IDENTITY_COLOR_PRESETS } from "$lib/identityColors";
   import type { Auth, Connection, ConnectionSummary, HighlightRuleSetStatus, Tunnel } from "$lib/types";
 
   let {
@@ -19,7 +20,7 @@
     inline?: boolean;
   } = $props();
 
-  type Section = "general" | "auth" | "advanced" | "jumps" | "tunnels" | "highlight";
+  type Section = "general" | "auth" | "advanced" | "jumps" | "tunnels" | "highlight" | "colors";
 
   // Snapshot the props once: clone mutable M5/M7 arrays before editing.
   const initial = untrack(() => ({
@@ -164,6 +165,7 @@
   let colorsEnabled = $state(initial.colors != null);
   let colorFg = $state(initial.colors?.fg ?? "");
   let colorBg = $state(initial.colors?.bg ?? "");
+  let identityColor = $state(initial.identity_color ?? "");
   let sftpEnabled = $state(initial.sftp != null);
   let sftpPort = $state<number | undefined>(initial.sftp?.port ?? undefined);
   let sftpStartDir = $state(initial.sftp?.start_dir ?? "");
@@ -228,7 +230,7 @@
     const sftp = sftpEnabled ? { port: sftpPortValue, start_dir: sftpStartDir.trim() } : null;
     validation = "";
     saving = true;
-    const failure = await onsave({ ...form, port, keepalive_secs: keepalive, auth, colors, sftp });
+    const failure = await onsave({ ...form, port, keepalive_secs: keepalive, auth, colors, identity_color: identityColor || null, sftp });
     saving = false;
     if (failure) {
       validation = errorText(failure);
@@ -260,6 +262,9 @@
       </button>
       <button type="button" class:current={section === "highlight"} onclick={openHighlightSection}>
         {t("editor.section.highlight")}
+      </button>
+      <button type="button" class:current={section === "colors"} onclick={() => (section = "colors")}>
+        {t("editor.section.colors")}
       </button>
     </div>
 
@@ -318,20 +323,6 @@
         {t("editor.protected")}
       </label>
       <label class="check">
-        <input type="checkbox" bind:checked={colorsEnabled} />
-        {t("editor.customColors")}
-      </label>
-      {#if colorsEnabled}
-        <label>
-          {t("editor.colorForeground")}
-          <input bind:value={colorFg} placeholder="#ffffff" autocomplete="off" spellcheck="false" />
-        </label>
-        <label>
-          {t("editor.colorBackground")}
-          <input bind:value={colorBg} placeholder="#000000" autocomplete="off" spellcheck="false" />
-        </label>
-      {/if}
-      <label class="check">
         <input type="checkbox" bind:checked={sftpEnabled} />
         {t("editor.sftpOptions")}
       </label>
@@ -346,6 +337,45 @@
           <input bind:value={sftpStartDir} autocomplete="off" spellcheck="false" />
         </label>
       {/if}
+    {:else if section === "colors"}
+      <h3 class="jump-heading">{t("editor.terminalColors")}</h3>
+      <label class="check">
+        <input type="checkbox" bind:checked={colorsEnabled} />
+        {t("editor.customColors")}
+      </label>
+      {#if colorsEnabled}
+        <label>
+          {t("editor.colorForeground")}
+          <input bind:value={colorFg} placeholder="#ffffff" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>
+          {t("editor.colorBackground")}
+          <input bind:value={colorBg} placeholder="#000000" autocomplete="off" spellcheck="false" />
+        </label>
+      {/if}
+      <h3 class="jump-heading">{t("editor.identityColor")}</h3>
+      <p class="hint">{t("editor.identityColorHint")}</p>
+      <div class="identity-color-options">
+        <button type="button" class:chosen={!identityColor} class="identity-color-none" onclick={() => (identityColor = "")}>
+          {t("editor.identityColorInherit")}
+        </button>
+        {#each IDENTITY_COLOR_PRESETS as color (color)}
+          <button
+            type="button"
+            class="identity-color-swatch"
+            class:chosen={identityColor.toLowerCase() === color}
+            style="--swatch: {color}"
+            aria-label={color}
+            aria-pressed={identityColor.toLowerCase() === color}
+            title={color}
+            onclick={() => (identityColor = color)}
+          ></button>
+        {/each}
+      </div>
+      <label>
+        {t("editor.identityColorCustom")}
+        <input class="identity-color-picker" type="color" value={identityColor || "#61afef"} onchange={(event) => (identityColor = event.currentTarget.value)} />
+      </label>
     {:else if section === "jumps"}
       <p class="hint">{t("editor.jumpHint")}</p>
       <p class="hint">{t("editor.jumpAuthHint")}</p>
@@ -632,6 +662,61 @@
     margin: 0;
     font-size: var(--ui-font-control);
     color: var(--muted);
+  }
+  .identity-color-picker {
+    width: 3.25rem;
+    height: 2.1rem;
+    min-height: 2.1rem;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .identity-color-picker::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  .identity-color-picker::-webkit-color-swatch {
+    border: 0;
+    border-radius: 3px;
+  }
+  .identity-color-picker::-moz-color-swatch {
+    border: 0;
+    border-radius: 3px;
+  }
+  .identity-color-options {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .45rem;
+  }
+  .identity-color-swatch {
+    width: 1.8rem;
+    height: 1.8rem;
+    flex: 0 0 1.8rem;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background-color: var(--swatch) !important;
+    cursor: pointer;
+  }
+  .identity-color-swatch.chosen {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .identity-color-none {
+    font: inherit;
+    font-size: var(--ui-font-control);
+    padding: .35rem .55rem;
+    color: var(--text-secondary);
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .identity-color-none.chosen {
+    border-color: var(--accent);
+    color: var(--text);
   }
   .jump-heading {
     margin: 0.35rem 0 0;

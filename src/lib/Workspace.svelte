@@ -45,7 +45,7 @@
   } = $props();
 
   let tabs = $state<Tab[]>([]);
-  type SftpWorkspaceTab = { id: string; connectionId: string | null; name: string };
+  type SftpWorkspaceTab = { id: string; connectionId: string | null; name: string; identityColor?: string | null };
   let sftpTabs = $state<SftpWorkspaceTab[]>([]);
   let workspaceTabIds = $derived([...tabs.map((tab) => tab.sessionId), ...sftpTabs.map((tab) => tab.id)]);
   let activeId = $state<string | null>(null);
@@ -84,7 +84,7 @@
   let treeVisible = $state(DEFAULT_WORKSPACE_PANEL_SETTINGS.tree_visible);
   let propertiesVisible = $state(DEFAULT_WORKSPACE_PANEL_SETTINGS.properties_visible);
   let treeExpandedFolders = $state<Record<string, boolean>>({ ...DEFAULT_WORKSPACE_PANEL_SETTINGS.expanded_folders });
-  let selectedConnectionId = $state<string | null>(null), propertiesFocusToken = $state(0), propertiesWidth = $state(320);
+  let selectedNode = $state<TreeNode | null>(null), propertiesFocusToken = $state(0), propertiesWidth = $state(320);
   let workspacePanelSettingsDirty = false;
   let workspacePanelSaveQueue: Promise<void> = Promise.resolve();
   let propertiesResize: { startX: number; startWidth: number } | null = null;
@@ -352,6 +352,7 @@
         protected: c.protected,
         connected: true,
         highlightSets,
+        identityColor: c.identity_color ?? null,
       }];
       const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
       if (!layoutTree || !targetPaneId) {
@@ -400,15 +401,16 @@
 
   async function openSftpInPane(connectionId: string | null, paneOverride?: string) {
     let name = t("sftp.title");
+    let identityColor: string | null = null;
     if (connectionId) {
       try {
         const connections = await invoke<ConnectionSummary[]>("conn_list");
         const connection = connections.find((item) => item.id === connectionId);
-        if (connection) name = `${t("sftp.title")} · ${connection.name}`;
+        if (connection) { name = `${t("sftp.title")} · ${connection.name}`; identityColor = connection.identity_color ?? null; }
       } catch { /* SftpBrowser reports its own connection-list errors. */ }
     }
     const id = crypto.randomUUID();
-    sftpTabs = [...sftpTabs, { id, connectionId, name }];
+    sftpTabs = [...sftpTabs, { id, connectionId, name, identityColor }];
     const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
     if (!layoutTree || !targetPaneId) {
       layoutTree = { type: "leaf", sessionId: id, sessionIds: [id] };
@@ -1028,9 +1030,9 @@
   {/if}
 
   <div class="body">
-    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} />{/if}
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectnode={(node) => (selectedNode = node)} />{/if}
     {#if propertiesVisible}
-      <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
+      <ConnectionPropertiesPane selectedNode={selectedNode} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} oncolorschange={(connections) => { const colors = new Map(connections.map((item) => [item.id, item.identity_color ?? null])); tabs = tabs.map((tab) => ({ ...tab, identityColor: colors.get(tab.connId) ?? null })); sftpTabs = sftpTabs.map((tab) => ({ ...tab, identityColor: tab.connectionId ? colors.get(tab.connectionId) ?? null : null })); refreshToken += 1; }} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? -8 : 8))); } }}></div>
     {/if}
     <div class="layout-tools" role="toolbar" aria-label={t("workspace.layout")}>
@@ -1059,7 +1061,7 @@
                     {@const sftpTab = sftpTabs.find((item) => item.id === sessionId)}
                     {#if tab}
                       <!-- svelte-ignore a11y_no_static_element_interactions (supports drag and right-click; keyboard menu access is on the tab button) -->
-                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected}>
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:disconnected={!tab.connected} class:identity-colored={!!tab.identityColor} style={tab.identityColor ? `--identity-color: ${tab.identityColor}` : undefined}>
                         <button role="tab" aria-haspopup="menu" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${tab.name}${activeId === sessionId ? ", active pane" : ""}${!tab.connected ? `, ${t("workspace.disconnected")}` : ""}`}
                           title={tab.jumpNames.length ? `${tab.jumpNames.join(" → ")} → ${tab.name}` : tab.name}
@@ -1094,7 +1096,7 @@
                     {:else if sftpTab}
                       <!-- SFTP browsers use the same tab drag/drop contract as SSH sessions. -->
                       <!-- svelte-ignore a11y_no_static_element_interactions (supports drag and right-click; keyboard menu access is on the tab button) -->
-                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId}>
+                      <div class="pane-tab" data-tab-session={sessionId} draggable="true" ondragstart={(event) => onTabDragStart(event, sessionId)} ondragend={endTabDrag} oncontextmenu={(event) => showTabContextMenu(event, sessionId)} class:dragging={draggingTab === sessionId} class:active={paneActiveIds[pane.sessionId] === sessionId} class:identity-colored={!!sftpTab.identityColor} style={sftpTab.identityColor ? `--identity-color: ${sftpTab.identityColor}` : undefined}>
                         <button role="tab" aria-haspopup="menu" aria-selected={paneActiveIds[pane.sessionId] === sessionId}
                           aria-label={`${sftpTab.name}${activeId === sessionId ? ", active pane" : ""}`}
                           title={sftpTab.name} onclick={() => activateSession(sessionId)}
@@ -1149,7 +1151,7 @@
               <TerminalPane sessionId={tab.sessionId} container={paneEls[sessionPane[tab.sessionId]] ?? null}
                 active={paneActiveIds[sessionPane[tab.sessionId]] === tab.sessionId}
                 focused={activeId === tab.sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
-                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} {settings} {theme} {terminalOpacity} />
+                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} identityColor={tab.identityColor ?? null} {settings} {theme} {terminalOpacity} />
             {/each}
           </div>
           <!-- SFTP browser roots are re-parented into their active pane without
@@ -1170,7 +1172,7 @@
           <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
           <div class="console-resizer" role="separator" aria-orientation="horizontal" aria-label={t("workspace.resizeConsole")} aria-valuemin="110" aria-valuemax={maxConsoleHeight()} aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize} onkeydown={adjustConsoleHeight} onkeyup={saveConsoleResizeAfterKeyboard} title={t("workspace.resizeConsole")}></div>
         {/if}
-        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeTerminalId} height={consoleHeight} />
+        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeTerminalId} height={consoleHeight} confirmMultiTerminalSend={settings.confirm_multi_terminal_send} />
       {/if}
     </main>
   </div>
@@ -1368,6 +1370,8 @@
   .pane-slot.focused { outline:1px solid var(--accent); outline-offset:-1px; z-index:2; }
   .pane-tabs { display: flex; flex: 0 0 auto; min-height: 36px; overflow-x: auto; gap: var(--ui-space-1); padding: var(--ui-space-1) 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .pane-tab { display: flex; align-items: center; min-width: 0; max-width: 11rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-hover); }
+  .pane-tab.identity-colored { background: color-mix(in srgb, var(--identity-color) 18%, var(--surface)); }
+  .pane-tab.identity-colored.active { background: color-mix(in srgb, var(--identity-color) 25%, var(--surface-raised)); }
   .pane-tab.active { border-color:var(--border); border-top:2px solid var(--accent); border-bottom-color:var(--surface-raised); border-radius:4px 4px 0 0; margin-bottom:-1px; background:var(--surface-raised); }
   .pane-tab button { min-width: 0; min-height: 28px; display: flex; align-items: center; gap: 0.35rem; overflow: hidden; padding: 0.18rem 0.35rem; color: var(--text-secondary); background: transparent; border: 0; font: inherit; font-size: var(--ui-font-meta); cursor: pointer; }
   .pane-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

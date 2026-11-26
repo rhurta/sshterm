@@ -92,6 +92,7 @@ fn ensure_default_folder(tree: &mut Vec<TreeNode>) -> &mut Vec<TreeNode> {
             name: DEFAULT_FOLDER_NAME.into(),
             children: Vec::new(),
             highlight: Vec::new(),
+            color: None,
         });
     }
     let idx = tree.iter().position(is_default).unwrap();
@@ -135,6 +136,31 @@ pub fn resolve_highlight_rules(
     Some(if connection_rules.is_empty() { inherited } else { connection_rules.to_vec() })
 }
 
+
+/// Resolve a connection color from its explicit value or nearest colored ancestor folder.
+pub fn resolve_identity_color(tree: &[TreeNode], connection_id: &str, explicit: Option<&str>) -> Option<String> {
+    fn visit(nodes: &[TreeNode], id: &str, inherited: Option<&str>) -> Option<String> {
+        for node in nodes {
+            match node {
+                TreeNode::Connection { id: found } if found == id => return inherited.map(str::to_string),
+                TreeNode::Folder { children, color, .. } => {
+                    if let Some(found) = visit(children, id, color.as_deref().or(inherited)) { return Some(found); }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+    explicit.map(str::to_string).or_else(|| visit(tree, connection_id, None))
+}
+
+pub fn set_folder_color(nodes: &mut [TreeNode], id: &str, color: Option<String>) -> bool {
+    let Some(node) = folder_mut(nodes, id) else { return false };
+    match node {
+        TreeNode::Folder { color: current, .. } => { *current = color; true }
+        TreeNode::Connection { .. } => false,
+    }
+}
 
 /// Replace the rule-set assignments on one folder without disturbing its children.
 pub fn set_folder_highlight(nodes: &mut [TreeNode], id: &str, highlight: Vec<String>) -> bool {
@@ -247,6 +273,7 @@ pub fn upsert_folder(
             name,
             children: Vec::new(),
             highlight: Vec::new(),
+            color: None,
         });
         Ok(folder_id)
     }
@@ -398,6 +425,7 @@ pub fn ensure_path(
                     name: name.to_string(),
                     children: Vec::new(),
                     highlight: Vec::new(),
+            color: None,
                 });
                 created += 1;
                 current = Some(id);
@@ -482,7 +510,7 @@ mod tests {
     }
 
     fn folder(id: &str, name: &str, children: Vec<TreeNode>) -> TreeNode {
-        TreeNode::Folder { id: id.into(), name: name.into(), children, highlight: Vec::new() }
+        TreeNode::Folder { id: id.into(), name: name.into(), children, highlight: Vec::new(), color: None }
     }
 
     fn link_to(id: &str) -> TreeNode {
@@ -491,9 +519,26 @@ mod tests {
 
 
     fn folder_with_rules(id: &str, name: &str, highlight: Vec<String>, children: Vec<TreeNode>) -> TreeNode {
-        TreeNode::Folder { id: id.into(), name: name.into(), children, highlight }
+        TreeNode::Folder { id: id.into(), name: name.into(), children, highlight, color: None }
     }
 
+
+    #[test]
+    fn identity_colors_inherit_from_nearest_folder_and_allow_connection_override() {
+        let mut tree = vec![folder(
+            "root", "Root",
+            vec![folder("nested", "Nested", vec![link_to("c1")])],
+        )];
+        assert_eq!(resolve_identity_color(&tree, "c1", None), None);
+        assert!(set_folder_color(&mut tree, "root", Some("#336699".into())));
+        assert_eq!(resolve_identity_color(&tree, "c1", None).as_deref(), Some("#336699"));
+        assert!(set_folder_color(&mut tree, "nested", Some("#993366".into())));
+        assert_eq!(resolve_identity_color(&tree, "c1", None).as_deref(), Some("#993366"));
+        assert_eq!(resolve_identity_color(&tree, "c1", Some("#228844")).as_deref(), Some("#228844"));
+        assert!(set_folder_color(&mut tree, "nested", None));
+        assert_eq!(resolve_identity_color(&tree, "c1", None).as_deref(), Some("#336699"));
+        assert!(!set_folder_color(&mut tree, "missing", Some("#ffffff".into())));
+    }
 
     #[test]
     fn set_folder_highlight_changes_only_the_requested_folder() {

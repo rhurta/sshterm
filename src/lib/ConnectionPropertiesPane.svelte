@@ -3,7 +3,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
-  import type { Connection, ConnectionSummary, Tunnel } from "$lib/types";
+  import type { Connection, ConnectionSummary, HighlightRuleSetStatus, TreeNode, Tunnel } from "$lib/types";
+  import { IDENTITY_COLOR_PRESETS } from "$lib/identityColors";
 
   type EditableField =
     | "name"
@@ -27,15 +28,20 @@
     editValue?: string;
   };
 
-  let { connectionId, focusToken, width, onsave }: {
-    connectionId: string | null;
+  let { selectedNode, focusToken, width, onsave, oncolorschange }: {
+    selectedNode: TreeNode | null;
     focusToken: number;
     width: number;
     onsave: (connection: Connection) => Promise<string | null>;
+    oncolorschange: (connections: ConnectionSummary[]) => void;
   } = $props();
 
   let connection = $state<Connection | null>(null);
   let summaries = $state<ConnectionSummary[]>([]);
+  let treeNodes = $state<TreeNode[]>([]);
+  let highlightRuleSets = $state<HighlightRuleSetStatus[]>([]);
+  let highlightMenuOpen = $state(false);
+  let colorSaving = $state(false);
   let query = $state("");
   let loading = $state(false);
   let error = $state("");
@@ -50,11 +56,13 @@
   let version = 0;
   let lastFocusToken = 0;
 
-  async function load(id: string | null = connectionId) {
+  async function loadSelection(node: TreeNode | null = selectedNode) {
     const current = ++version;
-    if (!id) {
-      connection = null;
-      summaries = [];
+    connection = null;
+    summaries = [];
+    treeNodes = [];
+    highlightMenuOpen = false;
+    if (!node) {
       loading = false;
       error = "";
       editing = false;
@@ -66,14 +74,25 @@
     loading = true;
     error = "";
     try {
-      const [full, all] = await Promise.all([
-        invoke<Connection | null>("conn_get", { id }),
-        invoke<ConnectionSummary[]>("conn_list"),
-      ]);
-      if (current !== version) return;
-      connection = full;
-      summaries = all;
-      if (!full) error = t("properties.missing");
+      if (node.type === "folder") {
+        const [nodes, sets] = await Promise.all([invoke<TreeNode[]>("tree_get"), invoke<HighlightRuleSetStatus[]>("highlight_list")]);
+        if (current !== version) return;
+        treeNodes = nodes;
+        highlightRuleSets = sets;
+      } else {
+        const [full, all, nodes, sets] = await Promise.all([
+          invoke<Connection | null>("conn_get", { id: node.id }),
+          invoke<ConnectionSummary[]>("conn_list"),
+          invoke<TreeNode[]>("tree_get"),
+          invoke<HighlightRuleSetStatus[]>("highlight_list"),
+        ]);
+        if (current !== version) return;
+        connection = full;
+        summaries = all;
+        treeNodes = nodes;
+        highlightRuleSets = sets;
+        if (!full) error = t("properties.missing");
+      }
     } catch (e) {
       if (current === version) error = String(e);
     } finally {
@@ -81,14 +100,57 @@
     }
   }
 
+  type FolderContext = { folder: Extract<TreeNode, { type: "folder" }>; inheritedColor: string | null };
+  function findFolderContext(nodes: TreeNode[], id: string, inheritedColor: string | null = null): FolderContext | null {
+    for (const node of nodes) {
+      if (node.type !== "folder") continue;
+      if (node.id === id) return { folder: node, inheritedColor };
+      const nested = findFolderContext(node.children, id, node.color ?? inheritedColor);
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  const selectedFolderContext = $derived.by(() =>
+    selectedNode?.type === "folder" ? findFolderContext(treeNodes, selectedNode.id) : null,
+  );
+  const selectedSummary = $derived(
+    connection ? summaries.find((item) => item.id === connection!.id) ?? null : null,
+  );
+  const explicitIdentityColor = $derived(
+    selectedNode?.type === "folder" ? selectedFolderContext?.folder.color ?? null : connection?.identity_color ?? null,
+  );
+  const effectiveIdentityColor = $derived(
+    selectedNode?.type === "folder"
+      ? selectedFolderContext?.folder.color ?? selectedFolderContext?.inheritedColor ?? null
+      : connection?.identity_color ?? selectedSummary?.identity_color ?? null,
+  );
+
+  async function setIdentityColor(color: string | null) {
+    const node = selectedNode;
+    if (!node || colorSaving) return;
+    colorSaving = true;
+    inlineError = "";
+    try {
+      await invoke(node.type === "folder" ? "folder_set_color" : "conn_set_identity_color", { id: node.id, color });
+      const all = await invoke<ConnectionSummary[]>("conn_list");
+      oncolorschange(all);
+      await loadSelection(node);
+    } catch (cause) {
+      inlineError = String(cause);
+    } finally {
+      colorSaving = false;
+    }
+  }
+
   $effect(() => {
-    const id = connectionId;
+    const node = selectedNode;
     editing = false;
     activeField = null;
     inlineError = "";
     passwordVisible = false;
     query = "";
-    void load(id);
+    void loadSelection(node);
   });
 
   $effect(() => {
@@ -103,7 +165,7 @@
 
   const rows = $derived.by((): PropertyRow[] => {
     const current = connection;
-    if (!current) return [];
+    if (!current || selectedNode?.type !== "connection") return [];
     const values: PropertyRow[] = [];
     const byId = new Map(summaries.map((item) => [item.id, item]));
 
@@ -203,13 +265,42 @@
     } else {
       values.push({ key: "sftp", label: t("properties.sftp"), value: t("properties.default") });
     }
-    values.push({ key: "highlight", label: t("properties.highlight"), value: current.highlight.join(", ") || t("properties.inherited") });
 
     const needle = query.trim().toLocaleLowerCase();
     return values.filter(({ label, value }) =>
       !needle || label.toLocaleLowerCase().includes(needle) || value.toLocaleLowerCase().includes(needle),
     );
   });
+
+  const selectedHighlights = $derived(
+    selectedNode?.type === "folder"
+      ? selectedFolderContext?.folder.highlight ?? []
+      : connection?.highlight ?? [],
+  );
+
+  async function setHighlightSelected(name: string, checked: boolean) {
+    const node = selectedNode;
+    if (!node) return;
+    const next = checked
+      ? [...selectedHighlights, name]
+      : selectedHighlights.filter((item) => item !== name);
+    highlightMenuOpen = true;
+    inlineError = "";
+    try {
+      if (node.type === "folder") {
+        await invoke("folder_set_highlight", { id: node.id, highlight: next });
+        const all = await invoke<ConnectionSummary[]>("conn_list");
+        oncolorschange(all);
+        await loadSelection(node);
+        highlightMenuOpen = true;
+      } else if (connection) {
+        await persistDirect({ ...connection, highlight: next });
+        highlightMenuOpen = true;
+      }
+    } catch (cause) {
+      inlineError = String(cause);
+    }
+  }
 
   function errorText(code: string): string {
     const key = "error." + code;
@@ -256,7 +347,7 @@
         return false;
       }
       activeField = null;
-      await load(connectionId);
+      await loadSelection();
       return true;
     } catch (cause) {
       inlineError = String(cause);
@@ -336,11 +427,74 @@
     const failure = await onsave(next);
     if (!failure) {
       editing = false;
-      await load(connectionId);
+      await loadSelection();
     }
     return failure;
   }
 </script>
+
+{#snippet highlightEditor()}
+  <div class="property-value highlight-combobox">
+    <button
+      type="button"
+      class="highlight-trigger"
+      aria-haspopup="listbox"
+      aria-expanded={highlightMenuOpen}
+      disabled={loading || savingInline}
+      onclick={() => (highlightMenuOpen = !highlightMenuOpen)}
+    >
+      <span>{selectedHighlights.length ? selectedHighlights.join(", ") : t("properties.inherited")}</span>
+      <span class="highlight-chevron">▾</span>
+    </button>
+    {#if highlightMenuOpen}
+      <div class="highlight-options" role="group" aria-label={t("properties.highlight")}>
+        {#each highlightRuleSets as item (item.file)}
+          <label class="highlight-option">
+            <input
+              type="checkbox"
+              checked={selectedHighlights.includes(item.name)}
+              disabled={!item.valid || savingInline}
+              onchange={(event) => void setHighlightSelected(item.name, event.currentTarget.checked)}
+            />
+            <span>{item.name}</span>
+            <small>{item.rule_count}</small>
+          </label>
+        {:else}
+          <span class="highlight-empty">{t("editor.highlightNone")}</span>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet colorEditor()}
+  <div class="property-value identity-color-value">
+    <div class="color-swatches">
+      {#each IDENTITY_COLOR_PRESETS as color}
+        <button
+          class="color-swatch"
+          class:selected={effectiveIdentityColor?.toLowerCase() === color.toLowerCase()}
+          style={`--swatch: ${color}`}
+          title={color}
+          aria-label={`${t("properties.identityColor")}: ${color}`}
+          disabled={colorSaving}
+          onclick={() => void setIdentityColor(color)}
+        ></button>
+      {/each}
+    </div>
+    <div class="custom-color-row">
+      <input
+        type="color"
+        aria-label={t("properties.identityColor")}
+        value={effectiveIdentityColor ?? "#61afef"}
+        disabled={colorSaving}
+        onchange={(event) => void setIdentityColor(event.currentTarget.value)}
+      />
+      <button type="button" class="clear-color" disabled={colorSaving || !explicitIdentityColor} onclick={() => void setIdentityColor(null)}>{t("tree.identityColorClear")}</button>
+    </div>
+    <small>{explicitIdentityColor ? t("properties.colorCustom") : effectiveIdentityColor ? t("properties.colorInherited") : t("properties.colorNone")}</small>
+  </div>
+{/snippet}
 
 <aside class="properties-pane" aria-label={t("properties.title")} style:width={width + "px"}>
   <div class="properties-head workspace-panel-header">
@@ -362,17 +516,27 @@
       <p class="state">{t("properties.loading")}</p>
     {:else if error}
       <p class="state error" role="alert">{error}</p>
-    {:else if !connection}
+    {:else if !connection && selectedNode?.type !== "folder"}
       <p class="state">{t("properties.selectConnection")}</p>
+    {:else if selectedNode?.type === "folder" && selectedFolderContext}
+      <div class="property-grid">
+        <div class="property-label">{t("properties.id")}</div><div class="property-value">{selectedFolderContext.folder.id}</div>
+        <div class="property-label">{t("properties.name")}</div><div class="property-value">{selectedFolderContext.folder.name}</div>
+        <div class="property-label">{t("properties.folderChildren")}</div><div class="property-value">{selectedFolderContext.folder.children.length}</div>
+        <div class="property-label">{t("properties.highlight")}</div>{@render highlightEditor()}
+        <div class="property-label">{t("properties.identityColor")}</div>{@render colorEditor()}
+      </div>
+      {#if inlineError}<p class="state error" role="alert">{inlineError}</p>{/if}
     {:else if !rows.length}
       <p class="state">{t("properties.noMatches", { query })}</p>
     {:else}
       <div class="property-grid">
+        <div class="property-label">{t("properties.highlight")}</div>{@render highlightEditor()}
         {#each rows as row (row.key)}
           <div class="property-label">{row.label}</div>
-          {#if row.key === "password" && connection.auth.type === "password" && connection.auth.password}
+          {#if row.key === "password" && connection?.auth.type === "password" && connection?.auth.password}
             <div class="property-value password-value">
-              <span class="password-text">{passwordVisible ? connection.auth.password : "••••••••"}</span>
+              <span class="password-text">{passwordVisible ? (connection?.auth.type === "password" ? connection.auth.password : "") : "••••••••"}</span>
               <button
                 class="password-reveal"
                 type="button"
@@ -400,7 +564,7 @@
             <div class="property-value">{row.value}</div>
           {:else if row.field === "protected"}
             <label class="property-value boolean-value">
-              <input type="checkbox" checked={connection.protected} onchange={(event) => void setProtected(event.currentTarget.checked)} disabled={savingInline} />
+              <input type="checkbox" checked={connection?.protected ?? false} onchange={(event) => void setProtected(event.currentTarget.checked)} disabled={savingInline} />
               <span>{row.value}</span>
             </label>
           {:else if row.field && activeField === row.field}
@@ -425,6 +589,7 @@
             <div class="property-value" title={row.value}>{row.value}</div>
           {/if}
         {/each}
+        <div class="property-label">{t("properties.identityColor")}</div>{@render colorEditor()}
       </div>
       {#if inlineError}
         <p class="state error" role="alert">{inlineError}</p>
@@ -479,6 +644,27 @@
     font-size: var(--ui-font-control, 12px);
   }
   .properties-search-wrap input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .highlight-combobox { position: relative; padding: 0; }
+  .highlight-trigger { width: 100%; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .35rem; padding: .38rem .45rem; color: var(--text); background: transparent; border: 0; font: inherit; text-align: left; cursor: pointer; }
+  .highlight-trigger span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .highlight-chevron { color: var(--muted); flex: 0 0 auto; }
+  .highlight-options { position: absolute; z-index: 20; top: calc(100% + 3px); left: 0; right: 0; max-height: 12rem; overflow-y: auto; padding: .3rem; display: flex; flex-direction: column; gap: 2px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 5px; box-shadow: 0 5px 16px rgba(0,0,0,.25); }
+  .highlight-option { display: flex; align-items: center; gap: .4rem; padding: .3rem .35rem; border-radius: 3px; cursor: pointer; }
+  .highlight-option:hover { background: var(--surface-hover); }
+  .highlight-option input { accent-color: var(--accent); }
+  .highlight-option small { margin-left: auto; color: var(--muted); }
+  .highlight-empty { padding: .4rem; color: var(--muted); }
+  .identity-color-value { display: flex; flex-direction: column; gap: 0.4rem; }
+  .color-swatches { display: grid; grid-template-columns: repeat(4, minmax(18px, 1fr)); gap: 6px; }
+  .color-swatch { width: 20px; height: 20px; justify-self: center; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--text) 35%, transparent); background: var(--swatch); cursor: pointer; padding: 0; }
+  .color-swatch:hover, .color-swatch.selected { outline: 2px solid var(--text); outline-offset: 1px; }
+  .color-swatch:disabled { opacity: 0.5; cursor: default; }
+  .custom-color-row { display: flex; align-items: center; gap: 0.4rem; }
+  .custom-color-row input { width: 32px; height: 26px; padding: 1px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-deep); cursor: pointer; }
+  .clear-color { flex: 1; min-width: 0; padding: 0.25rem 0.35rem; color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 3px; font: inherit; font-size: var(--ui-font-meta); cursor: pointer; }
+  .clear-color:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+  .clear-color:disabled { opacity: 0.45; cursor: default; }
+  .identity-color-value small { color: var(--muted); font-size: var(--ui-font-meta); }
   .property-grid {
     min-height: 0;
     overflow: auto;

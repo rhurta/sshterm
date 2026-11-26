@@ -12,11 +12,13 @@
     sessions,
     activeSessionId,
     height,
+    confirmMultiTerminalSend,
   }: {
     visible: boolean;
     sessions: BroadcastSession[];
     activeSessionId: string | null;
     height: number;
+    confirmMultiTerminalSend: boolean;
   } = $props();
 
   let draft = $state("");
@@ -149,7 +151,7 @@
     pendingSendText = text;
     pendingSelection = { start: selectionStart, end: selectionEnd };
     const textLineCount = text.replace(/(?:\r\n|\r|\n)+$/, "").split(/\r\n|\r|\n/).length;
-    if (textLineCount > 1 || resolution.targets.length > 1) {
+    if (textLineCount > 1 || (confirmMultiTerminalSend && resolution.targets.length > 1)) {
       confirmingMultiline = true;
       status = "";
       await restoreEditorFocus(selectionStart, selectionEnd);
@@ -254,7 +256,11 @@
   function onEditorKeydown(event: KeyboardEvent) {
     if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
-      void requestSendCurrentLine();
+      if (confirmingMultiline) {
+        void sendDraft();
+      } else {
+        void requestSendCurrentLine();
+      }
     } else if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
       void requestSend();
@@ -347,6 +353,7 @@
           names: targetNames,
         })}</span>
         <button class="send" onclick={sendDraft} disabled={sending || targetResolution.targets.length === 0}>{t("console.confirmSend")}</button>
+        <small class="shortcut-hint">{t("console.confirmSendShortcut")}</small>
         <button class="secondary" onclick={cancelPendingSend}>{t("console.cancel")}</button>
       </div>
     {/if}
@@ -544,6 +551,7 @@
   }
   .confirmation-banner span { flex: 1 1 auto; min-width: 0; }
   .confirmation-banner button { padding: 0.22rem 0.5rem; }
+  .confirmation-banner .shortcut-hint { flex: 0 0 auto; color: var(--text-secondary); font-size: var(--ui-font-meta); white-space: nowrap; }
   .console-layout {
     box-sizing: border-box;
     padding: 8px 12px 10px;
