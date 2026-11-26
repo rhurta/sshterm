@@ -211,6 +211,8 @@ export interface ImportReport {
 
 export interface Tab {
   sessionId: string;
+  /** SSH connection tab (default) or a local PowerShell/WSL process. */
+  kind?: "ssh" | "local";
   connId: string;
   name: string;
   /** Resolved display names for the visual jump route. */
