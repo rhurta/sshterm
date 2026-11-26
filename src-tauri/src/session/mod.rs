@@ -427,6 +427,9 @@ pub async fn local_terminal_open(
     transport.open_local(&config, PtySize { cols, rows }).await
         .map_err(|e| format!("{}: {}", e.code, e.detail))?;
     let mut rx = transport.output().ok_or_else(|| "no_output".to_string())?;
+    let app_cfg = Config::load(&paths::config_path());
+    let logger = Arc::new(tokio::sync::Mutex::new(SessionLogger::open(&name, "local", &name, &app_cfg)));
+    state.loggers.lock().await.insert(id.clone(), Arc::clone(&logger));
     state.transports.lock().await.insert(id.clone(), Box::new(transport));
 
     let banner = format!("sshterm: starting {name} ...\r\n");
@@ -435,6 +438,7 @@ pub async fn local_terminal_open(
     tauri::async_runtime::spawn(async move {
         while let Some(bytes) = rx.recv().await {
             if bytes.is_empty() { break; }
+            logger.lock().await.write_raw(&bytes);
             if app.emit("session:data", DataEvent { id: event_id.clone(), data: STANDARD.encode(bytes) }).is_err() {
                 break;
             }
