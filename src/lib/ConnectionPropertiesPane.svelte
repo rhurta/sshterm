@@ -3,7 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
-  import type { Connection, ConnectionSummary, TreeNode, Tunnel } from "$lib/types";
+  import type { Connection, ConnectionSummary, HighlightRuleSetStatus, TreeNode, Tunnel } from "$lib/types";
   import { IDENTITY_COLOR_PRESETS } from "$lib/identityColors";
 
   type EditableField =
@@ -39,6 +39,8 @@
   let connection = $state<Connection | null>(null);
   let summaries = $state<ConnectionSummary[]>([]);
   let treeNodes = $state<TreeNode[]>([]);
+  let highlightRuleSets = $state<HighlightRuleSetStatus[]>([]);
+  let highlightMenuOpen = $state(false);
   let colorSaving = $state(false);
   let query = $state("");
   let loading = $state(false);
@@ -59,6 +61,7 @@
     connection = null;
     summaries = [];
     treeNodes = [];
+    highlightMenuOpen = false;
     if (!node) {
       loading = false;
       error = "";
@@ -72,19 +75,22 @@
     error = "";
     try {
       if (node.type === "folder") {
-        const nodes = await invoke<TreeNode[]>("tree_get");
+        const [nodes, sets] = await Promise.all([invoke<TreeNode[]>("tree_get"), invoke<HighlightRuleSetStatus[]>("highlight_list")]);
         if (current !== version) return;
         treeNodes = nodes;
+        highlightRuleSets = sets;
       } else {
-        const [full, all, nodes] = await Promise.all([
+        const [full, all, nodes, sets] = await Promise.all([
           invoke<Connection | null>("conn_get", { id: node.id }),
           invoke<ConnectionSummary[]>("conn_list"),
           invoke<TreeNode[]>("tree_get"),
+          invoke<HighlightRuleSetStatus[]>("highlight_list"),
         ]);
         if (current !== version) return;
         connection = full;
         summaries = all;
         treeNodes = nodes;
+        highlightRuleSets = sets;
         if (!full) error = t("properties.missing");
       }
     } catch (e) {
@@ -259,13 +265,41 @@
     } else {
       values.push({ key: "sftp", label: t("properties.sftp"), value: t("properties.default") });
     }
-    values.push({ key: "highlight", label: t("properties.highlight"), value: current.highlight.join(", ") || t("properties.inherited") });
 
     const needle = query.trim().toLocaleLowerCase();
     return values.filter(({ label, value }) =>
       !needle || label.toLocaleLowerCase().includes(needle) || value.toLocaleLowerCase().includes(needle),
     );
   });
+
+  const selectedHighlights = $derived(
+    selectedNode?.type === "folder"
+      ? selectedFolderContext?.folder.highlight ?? []
+      : connection?.highlight ?? [],
+  );
+
+  async function setHighlightSelected(name: string, checked: boolean) {
+    const node = selectedNode;
+    if (!node) return;
+    const next = checked
+      ? [...selectedHighlights, name]
+      : selectedHighlights.filter((item) => item !== name);
+    highlightMenuOpen = true;
+    inlineError = "";
+    try {
+      if (node.type === "folder") {
+        await invoke("folder_set_highlight", { id: node.id, highlight: next });
+        const all = await invoke<ConnectionSummary[]>("conn_list");
+        oncolorschange(all);
+        await loadSelection(node);
+        highlightMenuOpen = true;
+      } else if (connection) {
+        await persistDirect({ ...connection, highlight: next });
+      }
+    } catch (cause) {
+      inlineError = String(cause);
+    }
+  }
 
   function errorText(code: string): string {
     const key = "error." + code;
@@ -398,6 +432,40 @@
   }
 </script>
 
+{#snippet highlightEditor()}
+  <div class="property-value highlight-combobox">
+    <button
+      type="button"
+      class="highlight-trigger"
+      aria-haspopup="listbox"
+      aria-expanded={highlightMenuOpen}
+      disabled={loading || savingInline}
+      onclick={() => (highlightMenuOpen = !highlightMenuOpen)}
+    >
+      <span>{selectedHighlights.length ? selectedHighlights.join(", ") : t("properties.inherited")}</span>
+      <span class="highlight-chevron">▾</span>
+    </button>
+    {#if highlightMenuOpen}
+      <div class="highlight-options" role="group" aria-label={t("properties.highlight")}>
+        {#each highlightRuleSets as item (item.file)}
+          <label class="highlight-option">
+            <input
+              type="checkbox"
+              checked={selectedHighlights.includes(item.name)}
+              disabled={!item.valid || savingInline}
+              onchange={(event) => void setHighlightSelected(item.name, event.currentTarget.checked)}
+            />
+            <span>{item.name}</span>
+            <small>{item.rule_count}</small>
+          </label>
+        {:else}
+          <span class="highlight-empty">{t("editor.highlightNone")}</span>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
 {#snippet colorEditor()}
   <div class="property-value identity-color-value">
     <div class="color-swatches">
@@ -454,7 +522,8 @@
         <div class="property-label">{t("properties.id")}</div><div class="property-value">{selectedFolderContext.folder.id}</div>
         <div class="property-label">{t("properties.name")}</div><div class="property-value">{selectedFolderContext.folder.name}</div>
         <div class="property-label">{t("properties.folderChildren")}</div><div class="property-value">{selectedFolderContext.folder.children.length}</div>
-        <div class="property-label">{t("properties.highlight")}</div><div class="property-value">{selectedFolderContext.folder.highlight?.join(", ") || t("properties.inherited")}</div>
+        <div class="property-label">{t("properties.highlight")}</div>{@render highlightEditor()}
+        <div class="property-label">{t("properties.highlight")}</div>{@render highlightEditor()}
         <div class="property-label">{t("properties.identityColor")}</div>{@render colorEditor()}
       </div>
     {:else if !rows.length}
@@ -573,6 +642,16 @@
     font-size: var(--ui-font-control, 12px);
   }
   .properties-search-wrap input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .highlight-combobox { position: relative; padding: 0; }
+  .highlight-trigger { width: 100%; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .35rem; padding: .38rem .45rem; color: var(--text); background: transparent; border: 0; font: inherit; text-align: left; cursor: pointer; }
+  .highlight-trigger span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .highlight-chevron { color: var(--muted); flex: 0 0 auto; }
+  .highlight-options { position: absolute; z-index: 20; top: calc(100% + 3px); left: 0; right: 0; max-height: 12rem; overflow-y: auto; padding: .3rem; display: flex; flex-direction: column; gap: 2px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 5px; box-shadow: 0 5px 16px rgba(0,0,0,.25); }
+  .highlight-option { display: flex; align-items: center; gap: .4rem; padding: .3rem .35rem; border-radius: 3px; cursor: pointer; }
+  .highlight-option:hover { background: var(--surface-hover); }
+  .highlight-option input { accent-color: var(--accent); }
+  .highlight-option small { margin-left: auto; color: var(--muted); }
+  .highlight-empty { padding: .4rem; color: var(--muted); }
   .identity-color-value { display: flex; flex-direction: column; gap: 0.4rem; }
   .color-swatches { display: grid; grid-template-columns: repeat(4, minmax(18px, 1fr)); gap: 6px; }
   .color-swatch { width: 20px; height: 20px; justify-self: center; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--text) 35%, transparent); background: var(--swatch); cursor: pointer; padding: 0; }
