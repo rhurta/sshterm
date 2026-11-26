@@ -417,7 +417,7 @@ pub async fn local_terminal_open(
         (LocalShellConfig { program, args, cwd: None }, name)
     };
     #[cfg(not(windows))]
-    let (config, name) = {
+    let (config, name): (LocalShellConfig, String) = {
         let _ = (shell, distro, cols, rows);
         return Err("local_terminals_windows_only".into());
     };
