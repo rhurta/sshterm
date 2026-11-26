@@ -112,7 +112,7 @@
   let multilinePasteCancelButton = $state<HTMLButtonElement | null>(null);
   let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
 
-  let openIds = $derived(tabs.filter((tab) => tab.connected).map((tab) => tab.connId));
+  let openIds = $derived(tabs.filter((tab) => tab.connected && tab.kind !== "local").map((tab) => tab.connId));
   let consoleSessions = $derived<BroadcastSession[]>(tabs.map((tab) => ({
     sessionId: tab.sessionId,
     name: tab.name,
@@ -353,6 +353,47 @@
         connected: true,
         highlightSets,
         identityColor: c.identity_color ?? null,
+      }];
+      const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
+      if (!layoutTree || !targetPaneId) {
+        layoutTree = createLayoutTree([sessionId], "single", sessionId);
+        paneActiveIds = { ...paneActiveIds, [sessionId]: sessionId };
+      } else {
+        layoutTree = addSessionToPane(layoutTree, targetPaneId, sessionId);
+        paneActiveIds = { ...paneActiveIds, [targetPaneId]: sessionId };
+      }
+      pendingPaneId = null;
+      activeId = sessionId;
+      focusedPaneId = paneOfSession(layoutTree, sessionId);
+      picker = false;
+    } catch (e) {
+      error = errorText(String(e));
+    }
+  }
+
+  async function openLocalTerminal(shell: "powershell" | "wsl", paneOverride?: string) {
+    error = "";
+    try {
+      const size = getLastPaneSize();
+      const sessionId = await invoke<string>("local_terminal_open", {
+        shell,
+        distro: null,
+        cols: size.cols,
+        rows: size.rows,
+      });
+      rememberOpenSize(sessionId, size.cols, size.rows);
+      const name = shell === "powershell" ? "PowerShell" : "WSL";
+      tabs = [...tabs, {
+        sessionId,
+        connId: "",
+        kind: "local",
+        name,
+        jumpNames: [],
+        tunnelCount: 0,
+        protected: false,
+        connected: true,
+        highlightSets: [],
+        identityColor: null,
       }];
       const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
       if (!layoutTree || !targetPaneId) {
@@ -828,7 +869,7 @@
 
   async function toggleSessionProtection(sessionId: string) {
     const tab = tabs.find((item) => item.sessionId === sessionId);
-    if (!tab || !tab.connected) return;
+    if (!tab || !tab.connected || tab.kind === "local") return;
     const protectedNext = !tab.protected;
     try {
       const [connection, tree] = await Promise.all([
@@ -1040,6 +1081,8 @@
       <button class:chosen={propertiesVisible} title={t("workspace.toggleProperties")} aria-label={t("workspace.toggleProperties")} aria-pressed={propertiesVisible} onclick={toggleProperties}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16M13 8h5M13 12h5M13 16h3"/></svg></button>
       <span class="tool-separator"></span>
       <button bind:this={newTabButton} title={t("workspace.newTab")} aria-label={t("workspace.newTab")} onclick={openPicker}><svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></button>
+      <button title="New PowerShell terminal" aria-label="New PowerShell terminal" onclick={() => void openLocalTerminal("powershell")}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/></svg></button>
+      <button title="New WSL terminal" aria-label="New WSL terminal" onclick={() => void openLocalTerminal("wsl")}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/><path d="M15 4v4M13 6h4"/></svg></button>
       <button title={t("workspace.layout.single")} aria-label={t("workspace.layout.single")} aria-pressed={layoutPreset === "single"} class:chosen={layoutPreset === "single"} onclick={() => chooseLayout("single")}><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/></svg></button>
       <button title={t("workspace.layout.leftRight")} aria-label={t("workspace.layout.leftRight")} aria-pressed={layoutPreset === "left-right"} class:chosen={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16"/><rect x="13" y="4" width="8" height="16"/></svg></button>
       <button title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} class:chosen={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="8"/><rect x="4" y="13" width="16" height="8"/></svg></button>
@@ -1085,12 +1128,16 @@
                             <span class="pane-focus-dot" aria-hidden="true"></span>
                           {/if}
                         </button>
+                        {#if tab.kind !== "local"}
                         <button class="pane-tab-protect" class:protected={tab.protected}
                           aria-label={tab.protected ? t("workspace.session.unprotect") : t("workspace.session.protect")}
                           aria-pressed={tab.protected}
                           title={tab.protected ? t("workspace.session.unprotect") : t("workspace.session.protect")}
                           disabled={!tab.connected} onclick={() => toggleSessionProtection(sessionId)}
                         >{tab.protected ? "🔒" : "🔓"}</button>
+                        {:else}
+                          <span class="pane-tab-indicator jump">LOCAL</span>
+                        {/if}
                         <button class="pane-tab-close" aria-label={`Close ${tab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
                       </div>
                     {:else if sftpTab}
