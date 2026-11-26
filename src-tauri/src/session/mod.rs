@@ -363,7 +363,7 @@ pub fn local_terminal_wsl_distros() -> Result<Vec<String>, String> {
         } else {
             String::from_utf8_lossy(&bytes).into_owned()
         };
-        let distros = text.lines().map(|line| line.trim().trim_matches('\0').to_string())
+        let distros = text.lines().map(|line| line.trim().trim_matches('\0').trim_start_matches('\u{feff}').to_string())
             .filter(|line| !line.is_empty()).collect::<Vec<_>>();
         if distros.is_empty() { return Err("wsl_no_distros".into()); }
         Ok(distros)
