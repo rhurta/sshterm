@@ -10,6 +10,7 @@ export interface TerminalSettings {
   middle_click_paste: boolean;
   ctrl_c_copy: boolean;
   confirm_multiline_paste: boolean;
+  confirm_multi_terminal_send: boolean;
   keep_disconnected_sessions: boolean;
 }
 
@@ -21,6 +22,7 @@ export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   middle_click_paste: true,
   ctrl_c_copy: true,
   confirm_multiline_paste: true,
+  confirm_multi_terminal_send: true,
   keep_disconnected_sessions: false,
 }
 
