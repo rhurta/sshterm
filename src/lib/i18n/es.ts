@@ -172,6 +172,13 @@ export const es: Record<MessageKey, string> = {
   "error.session_closed": "La sesión ya está cerrada.",
   "error.session_not_found": "La sesión ya no existe.",
   "error.no_output": "La sesión no produjo flujo de salida.",
+  "error.wsl_unavailable": "WSL no está instalado o no se pudo iniciar.",
+  "error.wsl_list_failed": "No se pudieron listar las distribuciones de WSL.",
+  "error.wsl_no_distros": "No hay distribuciones de WSL instaladas.",
+  "error.local_shell_spawn": "No se pudo iniciar la terminal local.",
+  "error.wsl_bad_distro": "El nombre de la distribución WSL no es válido.",
+  "error.local_terminals_windows_only": "Las terminales locales solo están disponibles en Windows.",
+  "error.local_shell_unknown": "Tipo de terminal local desconocido.",
   "error.bad_base64": "Entrada de terminal no válida.",
 
   "home.unlocked": "Vault desbloqueado. Carpeta de datos: {dir}",
