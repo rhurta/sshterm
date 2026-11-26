@@ -1172,7 +1172,7 @@
           <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
           <div class="console-resizer" role="separator" aria-orientation="horizontal" aria-label={t("workspace.resizeConsole")} aria-valuemin="110" aria-valuemax={maxConsoleHeight()} aria-valuenow={consoleHeight} tabindex="0" onpointerdown={startConsoleResize} onkeydown={adjustConsoleHeight} onkeyup={saveConsoleResizeAfterKeyboard} title={t("workspace.resizeConsole")}></div>
         {/if}
-        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeTerminalId} height={consoleHeight} />
+        <CommandConsole visible={true} sessions={consoleSessions} activeSessionId={activeTerminalId} height={consoleHeight} confirmMultiTerminalSend={settings.confirm_multi_terminal_send} />
       {/if}
     </main>
   </div>
