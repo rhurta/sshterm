@@ -271,6 +271,8 @@ pub fn run() {
             store::import_preview,
             store::import_apply,
             session::session_open,
+            session::local_terminal_open,
+            session::local_terminal_wsl_distros,
             session::session_write,
             session::session_resize,
             session::session_close,
