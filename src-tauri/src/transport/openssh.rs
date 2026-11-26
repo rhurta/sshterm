@@ -437,6 +437,79 @@ impl Transport for OpenSshTransport {
         Ok(())
     }
 
+    async fn open_local(&mut self, cfg: &super::LocalShellConfig, size: PtySize) -> Result<(), TransportError> {
+        let pair = native_pty_system()
+            .openpty(raw_size(size))
+            .map_err(|e| TransportError::new("pty_open", e.to_string()))?;
+        let mut cmd = CommandBuilder::new(&cfg.program);
+        for arg in &cfg.args {
+            cmd.arg(arg);
+        }
+        if let Some(cwd) = &cfg.cwd {
+            cmd.cwd(cwd);
+        }
+        cmd.env("TERM", "xterm-256color");
+        let child = pair.slave.spawn_command(cmd)
+            .map_err(|e| TransportError::new("local_shell_spawn", format!("{}: {e}", cfg.program.display())))?;
+        let reader = pair.master.try_clone_reader()
+            .map_err(|e| TransportError::new("pty_reader", e.to_string()))?;
+        let writer = pair.master.take_writer()
+            .map_err(|e| TransportError::new("pty_writer", e.to_string()))?;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let watch_tx = tx.clone();
+        let reader_thread = std::thread::Builder::new()
+            .name("sshterm-local-pty-reader".into())
+            .spawn(move || {
+                let mut reader = reader;
+                let mut buf = [0u8; 8192];
+                loop {
+                    match reader.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) if tx.send(buf[..n].to_vec()).is_err() => break,
+                        Ok(_) => {}
+                    }
+                }
+            })
+            .map_err(|e| TransportError::new("pty_thread", e.to_string()))?;
+        if let Ok(mut guard) = self.master.lock() { *guard = Some(pair.master); }
+        if let Ok(mut guard) = self.child.lock() { *guard = Some(child); }
+        self.writer = Some(writer);
+        let watch_child = Arc::clone(&self.child);
+        let watch_master = Arc::clone(&self.master);
+        let watch_stop = Arc::clone(&self.stop);
+        std::thread::Builder::new()
+            .name("sshterm-local-pty-watch".into())
+            .spawn(move || {
+                loop {
+                    if watch_stop.load(Ordering::Relaxed) { break; }
+                    let exited = match watch_child.lock() {
+                        Ok(mut guard) => match guard.as_mut() {
+                            Some(child) => matches!(child.try_wait(), Ok(Some(_))),
+                            None => true,
+                        },
+                        Err(_) => true,
+                    };
+                    if exited { break; }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                if !watch_stop.swap(true, Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(150));
+                }
+                if let Ok(mut guard) = watch_master.lock() { let _ = guard.take(); }
+                for _ in 0..40 {
+                    if reader_thread.is_finished() {
+                        let _ = reader_thread.join();
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                let _ = watch_tx.send(Vec::new());
+            })
+            .map_err(|e| TransportError::new("pty_watch", e.to_string()))?;
+        self.output = Some(rx);
+        Ok(())
+    }
+
     async fn write(&mut self, data: &[u8]) -> Result<(), TransportError> {
         let writer = self
             .writer
