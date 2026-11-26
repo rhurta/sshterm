@@ -54,6 +54,8 @@ pub struct TerminalSettings {
     pub ctrl_c_copy: bool,
     /// Ask before sending clipboard contents containing more than one line.
     pub confirm_multiline_paste: bool,
+    /// Ask before broadcasting commands to more than one terminal.
+    pub confirm_multi_terminal_send: bool,
     /// Keep a terminal tab visible after its SSH process exits, so final output can be inspected.
     pub keep_disconnected_sessions: bool,
 }
@@ -68,6 +70,7 @@ impl Default for TerminalSettings {
             middle_click_paste: true,
             ctrl_c_copy: true,
             confirm_multiline_paste: true,
+            confirm_multi_terminal_send: true,
             keep_disconnected_sessions: false,
         }
     }
@@ -368,6 +371,7 @@ mod tests {
         assert!(cfg.terminal.middle_click_paste);
         assert!(cfg.terminal.ctrl_c_copy);
         assert!(cfg.terminal.confirm_multiline_paste);
+        assert!(cfg.terminal.confirm_multi_terminal_send);
         assert!(!cfg.terminal.keep_disconnected_sessions);
     }
 
@@ -379,6 +383,7 @@ mod tests {
         cfg.terminal.copy_on_selection = false;
         cfg.terminal.middle_click_paste = false;
         cfg.terminal.confirm_multiline_paste = false;
+        cfg.terminal.confirm_multi_terminal_send = false;
         cfg.terminal.keep_disconnected_sessions = true;
         cfg.save(&path).unwrap();
         let loaded = Config::load(&path);
@@ -387,6 +392,7 @@ mod tests {
         assert!(!loaded.terminal.middle_click_paste);
         assert!(loaded.terminal.right_click_paste);
         assert!(!loaded.terminal.confirm_multiline_paste);
+        assert!(!loaded.terminal.confirm_multi_terminal_send);
         assert!(loaded.terminal.keep_disconnected_sessions);
     }
 
