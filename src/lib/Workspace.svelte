@@ -1431,6 +1431,7 @@
     flex-direction: column;
     overflow: hidden;
   }
+  .wsl-distro-label { color: var(--text-secondary); font-size: var(--ui-font-body); }
   .error {
     margin: 0;
     padding: 0.5rem 0.9rem;
