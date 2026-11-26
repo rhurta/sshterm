@@ -19,6 +19,7 @@
     openIds,
     refreshToken,
     onopen,
+    onlocalopen,
     onopensftp,
     onedit,
     onnewconn,
@@ -32,6 +33,7 @@
     expandedFolders: Record<string, boolean>;
     onexpandedchange: (next: Record<string, boolean>) => void;
     onopen: (c: ConnectionSummary) => void;
+    onlocalopen: (shell: "powershell" | "wsl") => void;
     onopensftp: (c: ConnectionSummary) => void;
     onedit: (c: ConnectionSummary) => void;
     onnewconn: (parentId: string | null) => void;
@@ -268,6 +270,7 @@
     {selectedId}
     {autoRename}
     {onopen}
+    {onlocalopen}
     onsftp={(c) => onopensftp(c)}
     onedit={(c) => onedit(c)}
     onduplicate={(c) => duplicate(c)}
