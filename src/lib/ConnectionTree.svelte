@@ -271,7 +271,7 @@
     role="treeitem"
     aria-selected={selectedId === node.id}
     tabindex="-1"
-    style="padding-left: {depth * 14 + 8}px"
+    style="padding-left: {depth * 14 + 8}px; --tree-depth: {depth}"
     draggable={!query.trim() && renaming !== node.id}
     ondragstart={(event) => onDragStart(event, node)}
     ondragover={(event) => onDragOver(event, node)}
@@ -386,23 +386,40 @@
   .tree::-webkit-scrollbar-track { background: transparent; }
   .tree::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 6px; }
   .line {
+    position: relative;
     padding-right: 0.5rem;
     box-sizing: border-box;
+  }
+  .line::before {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    top: 0;
+    bottom: 0;
+    left: 8px;
+    width: calc(var(--tree-depth, 0) * 14px);
+    background: repeating-linear-gradient(
+      to right,
+      transparent 0 6px,
+      color-mix(in srgb, var(--border) 85%, transparent) 6px 7px,
+      transparent 7px 14px
+    );
+    opacity: .75;
   }
   .row {
     width: 100%;
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    min-height: 1.7rem;
+    min-height: 1.85rem;
     font: inherit;
     font-size: var(--ui-font-body);
     text-align: left;
     color: var(--text);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 4px;
-    padding: 0.15rem 0.3rem;
+    border-radius: 5px;
+    padding: 0.22rem 0.38rem;
     cursor: pointer;
     box-sizing: border-box;
   }
@@ -413,34 +430,74 @@
     background: var(--surface-hover);
   }
   .row.selected {
-    border-color: var(--accent);
-    background: var(--surface-hover);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface-raised));
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .row.into {
     border-color: var(--accent);
     border-style: dashed;
   }
   .row.folder {
-    font-weight: 500;
+    font-weight: 550;
+    letter-spacing: .005em;
   }
   .chevron {
-    width: 0.75rem;
+    width: 0.8rem;
     color: var(--muted);
-    flex: 0 0 0.75rem;
+    flex: 0 0 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .9rem;
+    transition: color .12s ease;
   }
+  .row.folder:hover .chevron { color: var(--text); }
   .folder-icon {
-    width: 0.6rem;
-    height: 0.5rem;
-    border: 1px solid var(--accent);
+    position: relative;
+    width: .78rem;
+    height: .55rem;
+    flex: 0 0 .78rem;
+    box-sizing: border-box;
+    border: 1px solid color-mix(in srgb, var(--identity-color, var(--accent)) 75%, var(--text));
     border-radius: 2px;
-    flex: 0 0 0.6rem;
+    background: color-mix(in srgb, var(--identity-color, var(--accent)) 12%, transparent);
+    margin-top: 2px;
+  }
+  .folder-icon::before {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: -3px;
+    width: .32rem;
+    height: 3px;
+    border: 1px solid color-mix(in srgb, var(--identity-color, var(--accent)) 75%, var(--text));
+    border-bottom: 0;
+    border-radius: 2px 2px 0 0;
   }
   .conn-icon {
-    width: 0.4rem;
-    height: 0.4rem;
+    width: .62rem;
+    height: .62rem;
+    box-sizing: border-box;
     border: 1px solid var(--muted);
+    border-radius: 3px;
+    flex: 0 0 .62rem;
+    background: color-mix(in srgb, var(--muted) 10%, transparent);
+    position: relative;
+  }
+  .conn-icon::after {
+    content: "";
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    left: 2px;
+    top: 2px;
     border-radius: 50%;
-    flex: 0 0 0.4rem;
+    background: var(--muted);
   }
   .label {
     overflow: hidden;
@@ -456,7 +513,14 @@
     flex: 1;
   }
   .badge {
+    min-width: 1.1rem;
+    padding: 0 .25rem;
+    box-sizing: border-box;
+    border-radius: 9px;
+    background: var(--surface-deep);
     font-size: var(--ui-font-meta);
+    line-height: 1.4;
+    text-align: center;
     color: var(--muted);
   }
   .conn {
