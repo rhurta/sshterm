@@ -309,6 +309,12 @@ export const en = {
   "editor.validation": "Host and user are required; the port must be 1-65535.",
 
   "workspace.newTab": "New tab",
+  "workspace.newPowerShell": "New PowerShell terminal",
+  "workspace.newWsl": "New WSL terminal",
+  "workspace.wslTitle": "Start WSL terminal",
+  "workspace.wslDistribution": "Distribution",
+  "workspace.wslDefault": "Default distribution",
+  "workspace.wslStart": "Start WSL",
   "workspace.picker": "Open a connection",
   "workspace.pickerEmpty": "No saved connections.",
 
