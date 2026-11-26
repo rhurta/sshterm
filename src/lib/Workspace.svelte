@@ -93,6 +93,10 @@
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let highlightPanelOpen = $state(false);
   let picker = $state(false);
+  let wslPickerOpen = $state(false);
+  let wslDistros = $state<string[]>([]);
+  let selectedWslDistro = $state("");
+  let wslPickerError = $state("");
   let pickerList = $state<ConnectionSummary[]>([]);
   let pickerQuery = $state("");
   let filteredPickerList = $derived.by(() => {
@@ -371,18 +375,18 @@
     }
   }
 
-  async function openLocalTerminal(shell: "powershell" | "wsl", paneOverride?: string) {
+  async function openLocalTerminal(shell: "powershell" | "wsl", paneOverride?: string, distro: string | null = null) {
     error = "";
     try {
       const size = getLastPaneSize();
       const sessionId = await invoke<string>("local_terminal_open", {
         shell,
-        distro: null,
+        distro,
         cols: size.cols,
         rows: size.rows,
       });
       rememberOpenSize(sessionId, size.cols, size.rows);
-      const name = shell === "powershell" ? "PowerShell" : "WSL";
+      const name = shell === "powershell" ? "PowerShell" : distro ? `WSL · ${distro}` : "WSL";
       tabs = [...tabs, {
         sessionId,
         connId: "",
@@ -409,6 +413,20 @@
       picker = false;
     } catch (e) {
       error = errorText(String(e));
+    }
+  }
+
+  async function openWslPicker() {
+    wslDistros = [];
+    selectedWslDistro = "";
+    wslPickerError = "";
+    wslPickerOpen = true;
+    try {
+      wslDistros = await invoke<string[]>("local_terminal_wsl_distros");
+    } catch (e) {
+      // Still allow launching the default WSL distribution; the backend will
+      // return a useful error if WSL is not installed or initialized.
+      wslPickerError = errorText(String(e));
     }
   }
 
@@ -1082,7 +1100,7 @@
       <span class="tool-separator"></span>
       <button bind:this={newTabButton} title={t("workspace.newTab")} aria-label={t("workspace.newTab")} onclick={openPicker}><svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></button>
       <button title="New PowerShell terminal" aria-label="New PowerShell terminal" onclick={() => void openLocalTerminal("powershell")}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/></svg></button>
-      <button title="New WSL terminal" aria-label="New WSL terminal" onclick={() => void openLocalTerminal("wsl")}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/><path d="M15 4v4M13 6h4"/></svg></button>
+      <button title="New WSL terminal" aria-label="New WSL terminal" onclick={() => void openWslPicker()}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/><path d="M15 4v4M13 6h4"/></svg></button>
       <button title={t("workspace.layout.single")} aria-label={t("workspace.layout.single")} aria-pressed={layoutPreset === "single"} class:chosen={layoutPreset === "single"} onclick={() => chooseLayout("single")}><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/></svg></button>
       <button title={t("workspace.layout.leftRight")} aria-label={t("workspace.layout.leftRight")} aria-pressed={layoutPreset === "left-right"} class:chosen={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16"/><rect x="13" y="4" width="8" height="16"/></svg></button>
       <button title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} class:chosen={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="8"/><rect x="4" y="13" width="16" height="8"/></svg></button>
@@ -1365,6 +1383,30 @@
     </div>
   {/if}
 
+  {#if wslPickerOpen}
+    <div class="backdrop">
+      <button class="scrim" tabindex="-1" aria-label="Close WSL launcher" onclick={() => (wslPickerOpen = false)}></button>
+      <div class="dialog" role="dialog" aria-modal="true" aria-label="Start WSL terminal">
+        <div class="dialog-head">
+          <h2>Start WSL terminal</h2>
+          <button class="close" onclick={() => (wslPickerOpen = false)} title={t("workspace.close")} aria-label={t("workspace.close")}>&times;</button>
+        </div>
+        <label class="wsl-distro-label" for="wsl-distro-select">Distribution</label>
+        <select id="wsl-distro-select" bind:value={selectedWslDistro}>
+          <option value="">Default distribution</option>
+          {#each wslDistros as distro (distro)}
+            <option value={distro}>{distro}</option>
+          {/each}
+        </select>
+        {#if wslPickerError}<p class="hint" role="status">{wslPickerError}</p>{/if}
+        <div class="dialog-actions">
+          <button class="primary" onclick={() => { wslPickerOpen = false; void openLocalTerminal("wsl", undefined, selectedWslDistro || null); }}>Start WSL</button>
+          <button class="ghost" onclick={() => (wslPickerOpen = false)}>{t("editor.cancel")}</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if editor}
     <ConnectionEditor
       conn={editor.conn}
@@ -1382,6 +1424,9 @@
     flex-direction: column;
     overflow: hidden;
   }
+  .wsl-distro-label { display:block; margin: 0 0 6px; color:var(--muted); font-size:var(--ui-font-control); }
+  .dialog select { width:100%; }
+  .dialog-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
   .error {
     margin: 0;
     padding: 0.5rem 0.9rem;
