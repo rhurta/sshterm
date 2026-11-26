@@ -374,7 +374,7 @@
       </div>
       <label>
         {t("editor.identityColorCustom")}
-        <input type="color" value={identityColor || "#61afef"} onchange={(event) => (identityColor = event.currentTarget.value)} />
+        <input class="identity-color-picker" type="color" value={identityColor || "#61afef"} onchange={(event) => (identityColor = event.currentTarget.value)} />
       </label>
     {:else if section === "jumps"}
       <p class="hint">{t("editor.jumpHint")}</p>
@@ -662,6 +662,28 @@
     margin: 0;
     font-size: var(--ui-font-control);
     color: var(--muted);
+  }
+  .identity-color-picker {
+    width: 3.25rem;
+    height: 2.1rem;
+    min-height: 2.1rem;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .identity-color-picker::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  .identity-color-picker::-webkit-color-swatch {
+    border: 0;
+    border-radius: 3px;
+  }
+  .identity-color-picker::-moz-color-swatch {
+    border: 0;
+    border-radius: 3px;
   }
   .identity-color-options {
     display: flex;
