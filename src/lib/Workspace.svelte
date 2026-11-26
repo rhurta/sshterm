@@ -1400,7 +1400,7 @@
         </select>
         {#if wslPickerError}<p class="hint" role="status">{wslPickerError}</p>{/if}
         <div class="dialog-actions">
-          <button class="primary" onclick={() => { wslPickerOpen = false; void openLocalTerminal("wsl", undefined, selectedWslDistro || null); }}>{t("workspace.wslStart")}</button>
+          <button class="confirm" onclick={() => { wslPickerOpen = false; void openLocalTerminal("wsl", undefined, selectedWslDistro || null); }}>{t("workspace.wslStart")}</button>
           <button class="ghost" onclick={() => (wslPickerOpen = false)}>{t("editor.cancel")}</button>
         </div>
       </div>
