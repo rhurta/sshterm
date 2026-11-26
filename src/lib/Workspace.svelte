@@ -1099,8 +1099,8 @@
       <button class:chosen={propertiesVisible} title={t("workspace.toggleProperties")} aria-label={t("workspace.toggleProperties")} aria-pressed={propertiesVisible} onclick={toggleProperties}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16M13 8h5M13 12h5M13 16h3"/></svg></button>
       <span class="tool-separator"></span>
       <button bind:this={newTabButton} title={t("workspace.newTab")} aria-label={t("workspace.newTab")} onclick={openPicker}><svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></button>
-      <button title="New PowerShell terminal" aria-label="New PowerShell terminal" onclick={() => void openLocalTerminal("powershell")}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/></svg></button>
-      <button title="New WSL terminal" aria-label="New WSL terminal" onclick={() => void openWslPicker()}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/><path d="M15 4v4M13 6h4"/></svg></button>
+      <button title={t("workspace.newPowerShell")} aria-label={t("workspace.newPowerShell")} onclick={() => void openLocalTerminal("powershell")}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/></svg></button>
+      <button title={t("workspace.newWsl")} aria-label={t("workspace.newWsl")} onclick={() => void openWslPicker()}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/><path d="M15 4v4M13 6h4"/></svg></button>
       <button title={t("workspace.layout.single")} aria-label={t("workspace.layout.single")} aria-pressed={layoutPreset === "single"} class:chosen={layoutPreset === "single"} onclick={() => chooseLayout("single")}><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/></svg></button>
       <button title={t("workspace.layout.leftRight")} aria-label={t("workspace.layout.leftRight")} aria-pressed={layoutPreset === "left-right"} class:chosen={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16"/><rect x="13" y="4" width="8" height="16"/></svg></button>
       <button title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} class:chosen={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="8"/><rect x="4" y="13" width="16" height="8"/></svg></button>
@@ -1385,22 +1385,22 @@
 
   {#if wslPickerOpen}
     <div class="backdrop">
-      <button class="scrim" tabindex="-1" aria-label="Close WSL launcher" onclick={() => (wslPickerOpen = false)}></button>
-      <div class="dialog" role="dialog" aria-modal="true" aria-label="Start WSL terminal">
+      <button class="scrim" tabindex="-1" aria-label={t("workspace.close")} onclick={() => (wslPickerOpen = false)}></button>
+      <div class="dialog" role="dialog" aria-modal="true" aria-label={t("workspace.wslTitle")}>
         <div class="dialog-head">
-          <h2>Start WSL terminal</h2>
+          <h2>{t("workspace.wslTitle")}</h2>
           <button class="close" onclick={() => (wslPickerOpen = false)} title={t("workspace.close")} aria-label={t("workspace.close")}>&times;</button>
         </div>
-        <label class="wsl-distro-label" for="wsl-distro-select">Distribution</label>
+        <label class="wsl-distro-label" for="wsl-distro-select">{t("workspace.wslDistribution")}</label>
         <select id="wsl-distro-select" bind:value={selectedWslDistro}>
-          <option value="">Default distribution</option>
+          <option value="">{t("workspace.wslDefault")}</option>
           {#each wslDistros as distro (distro)}
             <option value={distro}>{distro}</option>
           {/each}
         </select>
         {#if wslPickerError}<p class="hint" role="status">{wslPickerError}</p>{/if}
         <div class="dialog-actions">
-          <button class="primary" onclick={() => { wslPickerOpen = false; void openLocalTerminal("wsl", undefined, selectedWslDistro || null); }}>Start WSL</button>
+          <button class="primary" onclick={() => { wslPickerOpen = false; void openLocalTerminal("wsl", undefined, selectedWslDistro || null); }}>{t("workspace.wslStart")}</button>
           <button class="ghost" onclick={() => (wslPickerOpen = false)}>{t("editor.cancel")}</button>
         </div>
       </div>
