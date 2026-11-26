@@ -29,6 +29,41 @@ Editable scalar values have a click-to-edit control in the grid itself; Enter or
 
 With no connection selected, the pane displays its empty state. Loading and retrieval errors are shown in the pane rather than silently presenting stale values.
 
+## Connection and folder identity colors
+
+Connections and folders can have an optional identity color configured from the
+Properties pane or the connection editor's Colors tab. Folder colors are inherited
+by descendants from the nearest ancestor folder with a color. A connection-level
+color overrides the inherited folder color; clearing that override restores
+inheritance. Clearing a folder color makes descendants resolve against the next
+colored ancestor.
+
+The resolved color is used as a restrained tint on the connection tree row, SSH/SFTP
+workspace tab and terminal background. It is not a replacement for the terminal
+theme: foreground text, ANSI palette, cursor and active-pane accent remain unchanged.
+Color changes refresh the tree and already-open tabs. Color values are part of the
+encrypted connection vault, not the plain config.toml.
+
+The editor offers preset colors and a custom color picker. The Properties pane
+indicates whether the displayed color is inherited or explicitly assigned and
+provides a clear action to return to inheritance. Folder properties also show the
+folder's direct item count and configured highlight rules.
+
+## Command-console send confirmation
+
+The command console can target the active terminal, selected terminals or all
+eligible connected terminals. When a send targets more than one terminal, the
+application asks for confirmation by default. Confirm with **Shift+Enter** or
+cancel with **Escape**. The confirmation can be disabled in
+**Settings > Terminal > Warn before sending commands to multiple terminals**.
+
+This preference is independent of the multiline-paste warning: disabling the
+multi-terminal warning does not disable confirmation before sending a draft that
+contains multiple lines. The console's **Shift+Enter** shortcut sends only the
+line containing the caret; **Ctrl+Enter** sends the complete draft. After
+confirmation or cancellation, focus and the caret/selection are restored to the
+editor.
+
 ## Shared panel headers
 
 The Connections tree, Properties pane and Command Console use the shared `workspace-panel-header` styling from `src/routes/+page.svelte`:
