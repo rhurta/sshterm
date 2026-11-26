@@ -27,6 +27,8 @@ export const en = {
   "settings.middleClickPaste": "Middle-click pastes when there is no selection",
   "settings.ctrlCCopy": "Ctrl+C copies selected text (otherwise sends Ctrl+C to SSH)",
   "settings.confirmMultilinePaste": "Confirm before pasting multiple lines",
+  "settings.confirmMultiTerminalSend": "Warn before sending commands to multiple terminals",
+  "console.confirmSendShortcut": "Shift+Enter to confirm",
   "settings.keepDisconnectedSessions": "Keep disconnected terminal tabs open to inspect errors",
   "settings.highlightRules": "Syntax highlighting rules and tester",
   "workspace.layout": "Terminal layout",
