@@ -19,7 +19,7 @@ use crate::config::Config;
 use crate::logger::SessionLogger;
 use crate::paths;
 use crate::store;
-use crate::transport::{openssh::OpenSshTransport, JumpHost, PtySize, SshConfig, Transport};
+use crate::transport::{openssh::OpenSshTransport, JumpHost, LocalShellConfig, PtySize, SshConfig, Transport};
 
 #[derive(Default)]
 pub struct SessionState {
@@ -340,6 +340,107 @@ pub async fn session_open(
         let _ = app.emit("session:closed", ClosedEvent { id: event_id });
     });
 
+    Ok(id)
+}
+
+/// Lists installed WSL distributions. WSL may emit UTF-16LE when stdout is piped,
+/// so accept both UTF-16LE and UTF-8 output.
+#[tauri::command]
+pub fn local_terminal_wsl_distros() -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("wsl.exe")
+            .args(["--list", "--quiet"])
+            .output()
+            .map_err(|e| format!("wsl_unavailable: {e}"))?;
+        if !output.status.success() {
+            return Err("wsl_list_failed".into());
+        }
+        let bytes = output.stdout;
+        let text = if bytes.len() >= 2 && bytes.iter().skip(1).step_by(2).filter(|b| **b == 0).count() > bytes.len() / 8 {
+            let words = bytes.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+            String::from_utf16_lossy(&words.collect::<Vec<_>>())
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let distros = text.lines().map(|line| line.trim().trim_matches('\0').to_string())
+            .filter(|line| !line.is_empty()).collect::<Vec<_>>();
+        if distros.is_empty() { return Err("wsl_no_distros".into()); }
+        Ok(distros)
+    }
+    #[cfg(not(windows))]
+    {
+        Err("local_terminals_windows_only".into())
+    }
+}
+
+/// Opens PowerShell or WSL in a normal workspace terminal tab.
+#[tauri::command]
+pub async fn local_terminal_open(
+    app: AppHandle,
+    state: State<'_, SessionState>,
+    shell: String,
+    distro: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    #[cfg(windows)]
+    let (config, name) = {
+        let (program, args, name) = match shell.as_str() {
+            "powershell" => {
+                let path_dirs = std::env::var_os("PATH").unwrap_or_default();
+                let pwsh = std::env::split_paths(&path_dirs)
+                    .map(|dir| dir.join("pwsh.exe"))
+                    .find(|path| path.is_file());
+                let powershell = std::env::split_paths(&path_dirs)
+                    .map(|dir| dir.join("powershell.exe"))
+                    .find(|path| path.is_file());
+                let program = pwsh.or(powershell).unwrap_or_else(|| std::path::PathBuf::from("powershell.exe"));
+                let name = if program.file_stem().and_then(|s| s.to_str()).unwrap_or("").eq_ignore_ascii_case("pwsh") {
+                    "PowerShell 7"
+                } else { "Windows PowerShell" };
+                (program, vec!["-NoLogo".to_string()], name.to_string())
+            }
+            "wsl" => {
+                let mut args = Vec::new();
+                let selected = distro.as_deref().map(str::trim).filter(|s| !s.is_empty());
+                if let Some(name) = selected {
+                    if name.chars().any(|ch| ch.is_control()) { return Err("wsl_bad_distro".into()); }
+                    args.push("--distribution".to_string());
+                    args.push(name.to_string());
+                }
+                let label = selected.map(|name| format!("WSL · {name}")).unwrap_or_else(|| "WSL".into());
+                (std::path::PathBuf::from("wsl.exe"), args, label)
+            }
+            _ => return Err("local_shell_unknown".into()),
+        };
+        (LocalShellConfig { program, args, cwd: None }, name)
+    };
+    #[cfg(not(windows))]
+    let (config, name) = {
+        let _ = (shell, distro, cols, rows);
+        return Err("local_terminals_windows_only".into());
+    };
+
+    let id = new_id();
+    let mut transport = OpenSshTransport::new(None);
+    transport.open_local(&config, PtySize { cols, rows }).await
+        .map_err(|e| format!("{}: {}", e.code, e.detail))?;
+    let mut rx = transport.output().ok_or_else(|| "no_output".to_string())?;
+    state.transports.lock().await.insert(id.clone(), Box::new(transport));
+
+    let banner = format!("sshterm: starting {name} ...\r\n");
+    let _ = app.emit("session:data", DataEvent { id: id.clone(), data: STANDARD.encode(banner.as_bytes()) });
+    let event_id = id.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(bytes) = rx.recv().await {
+            if bytes.is_empty() { break; }
+            if app.emit("session:data", DataEvent { id: event_id.clone(), data: STANDARD.encode(bytes) }).is_err() {
+                break;
+            }
+        }
+        let _ = app.emit("session:closed", ClosedEvent { id: event_id });
+    });
     Ok(id)
 }
 
