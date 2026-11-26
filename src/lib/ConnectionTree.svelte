@@ -1,7 +1,6 @@
 <script lang="ts">
   import { t } from "$lib/i18n/index.svelte";
   import type { ConnectionSummary, TreeNode } from "$lib/types";
-  import { IDENTITY_COLOR_PRESETS } from "$lib/identityColors";
 
   type DropPosition = "before" | "after" | "into";
   type MenuEntry = { node: TreeNode; parentId: string | null; index: number };
@@ -27,7 +26,6 @@
     ondelete,
     onmove,
     onfolderhighlight,
-    oncolor,
   }: {
     tree: TreeNode[];
     summaries: Record<string, ConnectionSummary>;
@@ -49,7 +47,6 @@
     ondelete: (node: TreeNode) => void;
     onmove: (id: string, parentId: string | null, index: number) => void;
     onfolderhighlight: (folder: Extract<TreeNode, { type: "folder" }>) => void;
-    oncolor: (node: TreeNode, color: string | null) => void;
   } = $props();
 
   let menu = $state<MenuEntry | null>(null);
@@ -366,15 +363,6 @@
     {#if entry.node.type === "folder"}
       <button onclick={() => { onfolderhighlight(entry.node as Extract<TreeNode, { type: "folder" }>); menu = null; }}>{t("tree.highlightRules")}</button>
     {/if}
-    <div class="separator"></div>
-    <div class="color-label">{t("tree.identityColor")}</div>
-    <div class="color-swatches">
-      {#each IDENTITY_COLOR_PRESETS as color}
-        <button class="color-swatch" style={`--swatch: ${color}`} title={color} aria-label={`${t("tree.identityColor")}: ${color}`} onclick={() => { oncolor(entry.node, color); menu = null; }}></button>
-      {/each}
-    </div>
-    <label class="custom-color">{t("tree.identityColorCustom")}<input type="color" aria-label={t("tree.identityColorCustom")} value={entry.node.type === "folder" ? (entry.node.color ?? "#61afef") : (summary(entry.node)?.identity_color ?? "#61afef")} onchange={(event) => { oncolor(entry.node, event.currentTarget.value); menu = null; }} /></label>
-    <button onclick={() => { oncolor(entry.node, null); menu = null; }}>{t("tree.identityColorClear")}</button>
     <button onclick={() => startRename(entry.node)}>{t("tree.rename")}</button>
     <div class="separator"></div>
     <button class="danger" onclick={() => { ondelete(entry.node); menu = null; }}>
@@ -421,12 +409,6 @@
   .row.colored { background: color-mix(in srgb, var(--identity-color) 14%, transparent); }
   .row.colored:hover { background: color-mix(in srgb, var(--identity-color) 22%, var(--surface-hover)); }
   .row.colored.selected { background: color-mix(in srgb, var(--identity-color) 25%, var(--surface-raised)); }
-  .color-label { padding: 0.25rem 0.65rem; color: var(--muted); font-size: var(--ui-font-meta); }
-  .color-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; padding: 0.25rem 0.65rem 0.45rem; }
-  .color-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--text) 35%, transparent); background: var(--swatch); cursor: pointer; }
-  .color-swatch:hover { outline: 2px solid var(--text); outline-offset: 1px; }
-  .custom-color { display: flex; align-items: center; justify-content: space-between; padding: 0.25rem 0.65rem; color: var(--text-secondary); font-size: var(--ui-font-control); }
-  .custom-color input { width: 30px; height: 24px; padding: 1px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-deep); cursor: pointer; }
   .row:hover {
     background: var(--surface-hover);
   }
