@@ -84,7 +84,7 @@
   let treeVisible = $state(DEFAULT_WORKSPACE_PANEL_SETTINGS.tree_visible);
   let propertiesVisible = $state(DEFAULT_WORKSPACE_PANEL_SETTINGS.properties_visible);
   let treeExpandedFolders = $state<Record<string, boolean>>({ ...DEFAULT_WORKSPACE_PANEL_SETTINGS.expanded_folders });
-  let selectedConnectionId = $state<string | null>(null), propertiesFocusToken = $state(0), propertiesWidth = $state(320);
+  let selectedNode = $state<TreeNode | null>(null), propertiesFocusToken = $state(0), propertiesWidth = $state(320);
   let workspacePanelSettingsDirty = false;
   let workspacePanelSaveQueue: Promise<void> = Promise.resolve();
   let propertiesResize: { startX: number; startWidth: number } | null = null;
@@ -1030,9 +1030,9 @@
   {/if}
 
   <div class="body">
-    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectconnection={(id) => (selectedConnectionId = id)} oncolorschange={(connections) => { const colors = new Map(connections.map((item) => [item.id, item.identity_color ?? null])); tabs = tabs.map((tab) => ({ ...tab, identityColor: colors.get(tab.connId) ?? null })); sftpTabs = sftpTabs.map((tab) => ({ ...tab, identityColor: tab.connectionId ? colors.get(tab.connectionId) ?? null : null })); }} />{/if}
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectnode={(node) => (selectedNode = node)} />{/if}
     {#if propertiesVisible}
-      <ConnectionPropertiesPane connectionId={selectedConnectionId} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} />
+      <ConnectionPropertiesPane selectedNode={selectedNode} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} oncolorschange={(connections) => { const colors = new Map(connections.map((item) => [item.id, item.identity_color ?? null])); tabs = tabs.map((tab) => ({ ...tab, identityColor: colors.get(tab.connId) ?? null })); sftpTabs = sftpTabs.map((tab) => ({ ...tab, identityColor: tab.connectionId ? colors.get(tab.connectionId) ?? null : null })); refreshToken += 1; }} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? -8 : 8))); } }}></div>
     {/if}
     <div class="layout-tools" role="toolbar" aria-label={t("workspace.layout")}>
