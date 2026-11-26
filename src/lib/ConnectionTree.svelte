@@ -26,6 +26,7 @@
     ondelete,
     onmove,
     onfolderhighlight,
+    onlocalopen,
   }: {
     tree: TreeNode[];
     summaries: Record<string, ConnectionSummary>;
@@ -47,6 +48,7 @@
     ondelete: (node: TreeNode) => void;
     onmove: (id: string, parentId: string | null, index: number) => void;
     onfolderhighlight: (folder: Extract<TreeNode, { type: "folder" }>) => void;
+    onlocalopen: (shell: "powershell" | "wsl") => void;
   } = $props();
 
   let menu = $state<MenuEntry | null>(null);
@@ -339,6 +341,20 @@
 {/snippet}
 
 <div class="tree" role="tree" tabindex="0" aria-label={t("workspace.connections")} class:root-drop={rootDrop} ondragover={onRootDragOver} ondrop={onRootDrop} ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) rootDrop = false; }}>
+  <div class="line local-line" role="treeitem">
+    <button class="row local-row" onclick={() => onlocalopen("powershell")}>
+      <span class="conn-icon local-icon"></span>
+      <span class="conn"><span class="label">{t("workspace.localPowerShell")}</span><span class="detail">{t("workspace.localTerminal")}</span></span>
+      <span class="spacer"></span><span class="local-lock" title={t("workspace.builtInTerminal")}>●</span>
+    </button>
+  </div>
+  <div class="line local-line" role="treeitem">
+    <button class="row local-row" onclick={() => onlocalopen("wsl")}>
+      <span class="conn-icon local-icon"></span>
+      <span class="conn"><span class="label">{t("workspace.localWsl")}</span><span class="detail">{t("workspace.localTerminal")}</span></span>
+      <span class="spacer"></span><span class="local-lock" title={t("workspace.builtInTerminal")}>●</span>
+    </button>
+  </div> tabindex="0" aria-label={t("workspace.connections")} class:root-drop={rootDrop} ondragover={onRootDragOver} ondrop={onRootDrop} ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) rootDrop = false; }}>
   {#each visible(tree) as node, index (node.id)}
     {@render row(node, null, index, 0)}
   {/each}
@@ -423,6 +439,9 @@
     cursor: pointer;
     box-sizing: border-box;
   }
+  .local-row { padding-left: 0.38rem; }
+  .local-icon { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .local-lock { color: var(--muted); font-size: .55rem; padding: 0 .25rem; }
   .row.colored { background: color-mix(in srgb, var(--identity-color) 14%, transparent); }
   .row.colored:hover { background: color-mix(in srgb, var(--identity-color) 22%, var(--surface-hover)); }
   .row.colored.selected { background: color-mix(in srgb, var(--identity-color) 25%, var(--surface-raised)); }
