@@ -463,9 +463,9 @@
       <div class="property-grid">
         {#each rows as row (row.key)}
           <div class="property-label">{row.label}</div>
-          {#if row.key === "password" && connection.auth.type === "password" && connection.auth.password}
+          {#if row.key === "password" && connection?.auth.type === "password" && connection?.auth.password}
             <div class="property-value password-value">
-              <span class="password-text">{passwordVisible ? connection.auth.password : "••••••••"}</span>
+              <span class="password-text">{passwordVisible ? (connection?.auth.type === "password" ? connection.auth.password : "") : "••••••••"}</span>
               <button
                 class="password-reveal"
                 type="button"
@@ -493,7 +493,7 @@
             <div class="property-value">{row.value}</div>
           {:else if row.field === "protected"}
             <label class="property-value boolean-value">
-              <input type="checkbox" checked={connection.protected} onchange={(event) => void setProtected(event.currentTarget.checked)} disabled={savingInline} />
+              <input type="checkbox" checked={connection?.protected ?? false} onchange={(event) => void setProtected(event.currentTarget.checked)} disabled={savingInline} />
               <span>{row.value}</span>
             </label>
           {:else if row.field && activeField === row.field}
