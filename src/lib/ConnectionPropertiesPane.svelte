@@ -3,7 +3,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { hasMessage, t } from "$lib/i18n/index.svelte";
   import ConnectionEditor from "./ConnectionEditor.svelte";
-  import type { Connection, ConnectionSummary, Tunnel } from "$lib/types";
+  import type { Connection, ConnectionSummary, TreeNode, Tunnel } from "$lib/types";
+  import { IDENTITY_COLOR_PRESETS } from "$lib/identityColors";
 
   type EditableField =
     | "name"
@@ -27,15 +28,18 @@
     editValue?: string;
   };
 
-  let { connectionId, focusToken, width, onsave }: {
-    connectionId: string | null;
+  let { selectedNode, focusToken, width, onsave, oncolorschange }: {
+    selectedNode: TreeNode | null;
     focusToken: number;
     width: number;
     onsave: (connection: Connection) => Promise<string | null>;
+    oncolorschange: (connections: ConnectionSummary[]) => void;
   } = $props();
 
   let connection = $state<Connection | null>(null);
   let summaries = $state<ConnectionSummary[]>([]);
+  let treeNodes = $state<TreeNode[]>([]);
+  let colorSaving = $state(false);
   let query = $state("");
   let loading = $state(false);
   let error = $state("");
@@ -50,11 +54,12 @@
   let version = 0;
   let lastFocusToken = 0;
 
-  async function load(id: string | null = connectionId) {
+  async function loadSelection(node: TreeNode | null = selectedNode) {
     const current = ++version;
-    if (!id) {
-      connection = null;
-      summaries = [];
+    connection = null;
+    summaries = [];
+    treeNodes = [];
+    if (!node) {
       loading = false;
       error = "";
       editing = false;
@@ -66,14 +71,22 @@
     loading = true;
     error = "";
     try {
-      const [full, all] = await Promise.all([
-        invoke<Connection | null>("conn_get", { id }),
-        invoke<ConnectionSummary[]>("conn_list"),
-      ]);
-      if (current !== version) return;
-      connection = full;
-      summaries = all;
-      if (!full) error = t("properties.missing");
+      if (node.type === "folder") {
+        const nodes = await invoke<TreeNode[]>("tree_get");
+        if (current !== version) return;
+        treeNodes = nodes;
+      } else {
+        const [full, all, nodes] = await Promise.all([
+          invoke<Connection | null>("conn_get", { id: node.id }),
+          invoke<ConnectionSummary[]>("conn_list"),
+          invoke<TreeNode[]>("tree_get"),
+        ]);
+        if (current !== version) return;
+        connection = full;
+        summaries = all;
+        treeNodes = nodes;
+        if (!full) error = t("properties.missing");
+      }
     } catch (e) {
       if (current === version) error = String(e);
     } finally {
@@ -81,14 +94,57 @@
     }
   }
 
+  type FolderContext = { folder: Extract<TreeNode, { type: "folder" }>; inheritedColor: string | null };
+  function findFolderContext(nodes: TreeNode[], id: string, inheritedColor: string | null = null): FolderContext | null {
+    for (const node of nodes) {
+      if (node.type !== "folder") continue;
+      if (node.id === id) return { folder: node, inheritedColor };
+      const nested = findFolderContext(node.children, id, node.color ?? inheritedColor);
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  const selectedFolderContext = $derived.by(() =>
+    selectedNode?.type === "folder" ? findFolderContext(treeNodes, selectedNode.id) : null,
+  );
+  const selectedSummary = $derived(
+    connection ? summaries.find((item) => item.id === connection!.id) ?? null : null,
+  );
+  const explicitIdentityColor = $derived(
+    selectedNode?.type === "folder" ? selectedFolderContext?.folder.color ?? null : connection?.identity_color ?? null,
+  );
+  const effectiveIdentityColor = $derived(
+    selectedNode?.type === "folder"
+      ? selectedFolderContext?.folder.color ?? selectedFolderContext?.inheritedColor ?? null
+      : connection?.identity_color ?? selectedSummary?.identity_color ?? null,
+  );
+
+  async function setIdentityColor(color: string | null) {
+    const node = selectedNode;
+    if (!node || colorSaving) return;
+    colorSaving = true;
+    inlineError = "";
+    try {
+      await invoke(node.type === "folder" ? "folder_set_color" : "conn_set_identity_color", { id: node.id, color });
+      const all = await invoke<ConnectionSummary[]>("conn_list");
+      oncolorschange(all);
+      await loadSelection(node);
+    } catch (cause) {
+      inlineError = String(cause);
+    } finally {
+      colorSaving = false;
+    }
+  }
+
   $effect(() => {
-    const id = connectionId;
+    const node = selectedNode;
     editing = false;
     activeField = null;
     inlineError = "";
     passwordVisible = false;
     query = "";
-    void load(id);
+    void loadSelection(node);
   });
 
   $effect(() => {
@@ -103,7 +159,7 @@
 
   const rows = $derived.by((): PropertyRow[] => {
     const current = connection;
-    if (!current) return [];
+    if (!current || selectedNode?.type !== "connection") return [];
     const values: PropertyRow[] = [];
     const byId = new Map(summaries.map((item) => [item.id, item]));
 
@@ -256,7 +312,7 @@
         return false;
       }
       activeField = null;
-      await load(connectionId);
+      await loadSelection();
       return true;
     } catch (cause) {
       inlineError = String(cause);
@@ -336,11 +392,40 @@
     const failure = await onsave(next);
     if (!failure) {
       editing = false;
-      await load(connectionId);
+      await loadSelection();
     }
     return failure;
   }
 </script>
+
+{#snippet colorEditor()}
+  <div class="property-value identity-color-value">
+    <div class="color-swatches">
+      {#each IDENTITY_COLOR_PRESETS as color}
+        <button
+          class="color-swatch"
+          class:selected={effectiveIdentityColor?.toLowerCase() === color.toLowerCase()}
+          style={`--swatch: ${color}`}
+          title={color}
+          aria-label={`${t("properties.identityColor")}: ${color}`}
+          disabled={colorSaving}
+          onclick={() => void setIdentityColor(color)}
+        ></button>
+      {/each}
+    </div>
+    <div class="custom-color-row">
+      <input
+        type="color"
+        aria-label={t("properties.identityColor")}
+        value={effectiveIdentityColor ?? "#61afef"}
+        disabled={colorSaving}
+        onchange={(event) => void setIdentityColor(event.currentTarget.value)}
+      />
+      <button type="button" class="clear-color" disabled={colorSaving || !explicitIdentityColor} onclick={() => void setIdentityColor(null)}>{t("tree.identityColorClear")}</button>
+    </div>
+    <small>{explicitIdentityColor ? t("properties.colorCustom") : effectiveIdentityColor ? t("properties.colorInherited") : t("properties.colorNone")}</small>
+  </div>
+{/snippet}
 
 <aside class="properties-pane" aria-label={t("properties.title")} style:width={width + "px"}>
   <div class="properties-head workspace-panel-header">
@@ -362,8 +447,16 @@
       <p class="state">{t("properties.loading")}</p>
     {:else if error}
       <p class="state error" role="alert">{error}</p>
-    {:else if !connection}
+    {:else if !connection && selectedNode?.type !== "folder"}
       <p class="state">{t("properties.selectConnection")}</p>
+    {:else if selectedNode?.type === "folder" && selectedFolderContext}
+      <div class="property-grid">
+        <div class="property-label">{t("properties.id")}</div><div class="property-value">{selectedFolderContext.folder.id}</div>
+        <div class="property-label">{t("properties.name")}</div><div class="property-value">{selectedFolderContext.folder.name}</div>
+        <div class="property-label">{t("properties.folderChildren")}</div><div class="property-value">{selectedFolderContext.folder.children.length}</div>
+        <div class="property-label">{t("properties.highlight")}</div><div class="property-value">{selectedFolderContext.folder.highlight?.join(", ") || t("properties.inherited")}</div>
+        <div class="property-label">{t("properties.identityColor")}</div>{@render colorEditor()}
+      </div>
     {:else if !rows.length}
       <p class="state">{t("properties.noMatches", { query })}</p>
     {:else}
@@ -425,6 +518,7 @@
             <div class="property-value" title={row.value}>{row.value}</div>
           {/if}
         {/each}
+        <div class="property-label">{t("properties.identityColor")}</div>{@render colorEditor()}
       </div>
       {#if inlineError}
         <p class="state error" role="alert">{inlineError}</p>
@@ -479,6 +573,17 @@
     font-size: var(--ui-font-control, 12px);
   }
   .properties-search-wrap input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .identity-color-value { display: flex; flex-direction: column; gap: 0.4rem; }
+  .color-swatches { display: grid; grid-template-columns: repeat(4, minmax(18px, 1fr)); gap: 6px; }
+  .color-swatch { width: 20px; height: 20px; justify-self: center; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--text) 35%, transparent); background: var(--swatch); cursor: pointer; padding: 0; }
+  .color-swatch:hover, .color-swatch.selected { outline: 2px solid var(--text); outline-offset: 1px; }
+  .color-swatch:disabled { opacity: 0.5; cursor: default; }
+  .custom-color-row { display: flex; align-items: center; gap: 0.4rem; }
+  .custom-color-row input { width: 32px; height: 26px; padding: 1px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-deep); cursor: pointer; }
+  .clear-color { flex: 1; min-width: 0; padding: 0.25rem 0.35rem; color: var(--text-secondary); background: var(--surface-hover); border: 1px solid var(--border); border-radius: 3px; font: inherit; font-size: var(--ui-font-meta); cursor: pointer; }
+  .clear-color:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+  .clear-color:disabled { opacity: 0.45; cursor: default; }
+  .identity-color-value small { color: var(--muted); font-size: var(--ui-font-meta); }
   .property-grid {
     min-height: 0;
     overflow: auto;
