@@ -371,7 +371,7 @@
       </div>
       <label>
         {t("editor.identityColorCustom")}
-        <input type="color" bind:value={identityColor} />
+        <input type="color" value={identityColor || "#61afef"} onchange={(event) => (identityColor = event.currentTarget.value)} />
       </label>
     {:else if section === "jumps"}
       <p class="hint">{t("editor.jumpHint")}</p>
