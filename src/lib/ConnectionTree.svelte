@@ -354,7 +354,7 @@
       <span class="conn"><span class="label">{t("workspace.localWsl")}</span><span class="detail">{t("workspace.localTerminal")}</span></span>
       <span class="spacer"></span><span class="local-lock" title={t("workspace.builtInTerminal")}>●</span>
     </button>
-  </div> tabindex="0" aria-label={t("workspace.connections")} class:root-drop={rootDrop} ondragover={onRootDragOver} ondrop={onRootDrop} ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) rootDrop = false; }}>
+  </div>
   {#each visible(tree) as node, index (node.id)}
     {@render row(node, null, index, 0)}
   {/each}
