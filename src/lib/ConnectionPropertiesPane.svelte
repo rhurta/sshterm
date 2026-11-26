@@ -295,6 +295,7 @@
         highlightMenuOpen = true;
       } else if (connection) {
         await persistDirect({ ...connection, highlight: next });
+        highlightMenuOpen = true;
       }
     } catch (cause) {
       inlineError = String(cause);
@@ -523,9 +524,9 @@
         <div class="property-label">{t("properties.name")}</div><div class="property-value">{selectedFolderContext.folder.name}</div>
         <div class="property-label">{t("properties.folderChildren")}</div><div class="property-value">{selectedFolderContext.folder.children.length}</div>
         <div class="property-label">{t("properties.highlight")}</div>{@render highlightEditor()}
-        <div class="property-label">{t("properties.highlight")}</div>{@render highlightEditor()}
         <div class="property-label">{t("properties.identityColor")}</div>{@render colorEditor()}
       </div>
+      {#if inlineError}<p class="state error" role="alert">{inlineError}</p>{/if}
     {:else if !rows.length}
       <p class="state">{t("properties.noMatches", { query })}</p>
     {:else}
