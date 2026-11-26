@@ -531,6 +531,7 @@
       <p class="state">{t("properties.noMatches", { query })}</p>
     {:else}
       <div class="property-grid">
+        <div class="property-label">{t("properties.highlight")}</div>{@render highlightEditor()}
         {#each rows as row (row.key)}
           <div class="property-label">{row.label}</div>
           {#if row.key === "password" && connection?.auth.type === "password" && connection?.auth.password}
