@@ -309,6 +309,12 @@ export const es: Record<MessageKey, string> = {
   "editor.validation": "El host y el usuario son obligatorios; el puerto debe estar entre 1 y 65535.",
 
   "workspace.newTab": "Nueva pestaña",
+  "workspace.newPowerShell": "Nueva terminal de PowerShell",
+  "workspace.newWsl": "Nueva terminal WSL",
+  "workspace.wslTitle": "Iniciar terminal WSL",
+  "workspace.wslDistribution": "Distribución",
+  "workspace.wslDefault": "Distribución predeterminada",
+  "workspace.wslStart": "Iniciar WSL",
   "workspace.picker": "Abrir una conexión",
   "workspace.pickerEmpty": "No hay conexiones guardadas.",
 
