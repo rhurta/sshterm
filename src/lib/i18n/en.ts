@@ -172,6 +172,13 @@ export const en = {
   "error.session_closed": "The session is already closed.",
   "error.session_not_found": "The session no longer exists.",
   "error.no_output": "The session produced no output stream.",
+  "error.wsl_unavailable": "WSL is not installed or could not be started.",
+  "error.wsl_list_failed": "Could not list WSL distributions.",
+  "error.wsl_no_distros": "No WSL distributions are installed.",
+  "error.local_shell_spawn": "Could not start the local terminal.",
+  "error.wsl_bad_distro": "Invalid WSL distribution name.",
+  "error.local_terminals_windows_only": "Local terminals are only available on Windows.",
+  "error.local_shell_unknown": "Unknown local terminal type.",
   "error.bad_base64": "Invalid terminal input.",
 
   "home.unlocked": "Vault unlocked. Data folder: {dir}",
