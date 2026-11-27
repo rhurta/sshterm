@@ -140,7 +140,7 @@
     // In particular, params [3] near lastResizeAt would implicate ConPTY's
     // resize repaint in scrollback loss. Returning false lets xterm process it.
     const eraseDisplayObserver = t.parser.registerCsiHandler({ final: "J" }, (params) => {
-      console.debug(
+      console.log(
         "[sshterm][ED]",
         Array.from(params),
         performance.now().toFixed(0),
