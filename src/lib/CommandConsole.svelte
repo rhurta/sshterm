@@ -219,7 +219,6 @@
     confirmingMultiline = false;
     status = "";
     statusError = false;
-    const payload = toBase64(new TextEncoder().encode(text));
     const accepted: string[] = [];
     const failed: string[] = [];
     try {
@@ -231,7 +230,7 @@
           // SSH payloads unchanged, but translate script line endings for local
           // PowerShell/WSL and submit the final line as well.
           const targetText = target.kind === "local"
-            ? (text.replace(/\\r\\n|\\r|\\n/g, "\\r").replace(/\\r*$/, "\\r"))
+            ? text.replace(/\r\n|\r|\n/g, "\r").replace(/\r*$/, "\r")
             : text;
           const targetPayload = toBase64(new TextEncoder().encode(targetText));
           await invoke("session_write", { id: target.sessionId, data: targetPayload });
