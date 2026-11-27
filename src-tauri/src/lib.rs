@@ -273,6 +273,7 @@ pub fn run() {
             session::session_open,
             session::local_terminal_open,
             session::local_terminal_wsl_distros,
+            session::terminal_windows_build_number,
             session::session_write,
             session::session_resize,
             session::session_close,
