@@ -227,7 +227,14 @@
       // failure independently. There are deliberately no automatic retries.
       for (const target of targets) {
         try {
-          await invoke("session_write", { id: target.sessionId, data: payload });
+          // ConPTY-backed local shells expect carriage returns for Enter. Keep
+          // SSH payloads unchanged, but translate script line endings for local
+          // PowerShell/WSL and submit the final line as well.
+          const targetText = target.kind === "local"
+            ? (text.replace(/\\r\\n|\\r|\\n/g, "\\r").replace(/\\r*$/, "\\r"))
+            : text;
+          const targetPayload = toBase64(new TextEncoder().encode(targetText));
+          await invoke("session_write", { id: target.sessionId, data: targetPayload });
           accepted.push(target.name);
         } catch (error) {
           failed.push(target.name + ": " + String(error));
