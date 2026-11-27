@@ -343,6 +343,28 @@ pub async fn session_open(
     Ok(id)
 }
 
+/// Returns the Windows build number for xterm's ConPTY compatibility settings.
+/// The value is read at runtime so the frontend does not assume a particular
+/// Windows release. Non-Windows platforms return None.
+#[tauri::command]
+pub fn terminal_windows_build_number() -> Option<u32> {
+    #[cfg(windows)]
+    {
+        use winreg::enums::HKEY_LOCAL_MACHINE;
+        let key = winreg::RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion")
+            .ok()?;
+        key.get_value::<String, _>("CurrentBuildNumber")
+            .ok()?
+            .parse::<u32>()
+            .ok()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 /// Lists installed WSL distributions. WSL may emit UTF-16LE when stdout is piped,
 /// so accept both UTF-16LE and UTF-8 output.
 #[tauri::command]
