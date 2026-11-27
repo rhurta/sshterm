@@ -93,6 +93,10 @@
   let editor = $state<{ conn: Connection; isNew: boolean; parentId: string | null } | null>(null);
   let highlightPanelOpen = $state(false);
   let picker = $state(false);
+  let wslPickerOpen = $state(false);
+  let wslDistros = $state<string[]>([]);
+  let selectedWslDistro = $state("");
+  let wslPickerError = $state("");
   let pickerList = $state<ConnectionSummary[]>([]);
   let pickerQuery = $state("");
   let filteredPickerList = $derived.by(() => {
@@ -104,6 +108,7 @@
   let pickerDialog = $state<HTMLDivElement | null>(null);
   let pickerSearchInput = $state<HTMLInputElement | null>(null);
   let newTabButton = $state<HTMLButtonElement | null>(null);
+  let wslLauncherButton = $state<HTMLButtonElement | null>(null);
   let refreshToken = $state(0);
   let error = $state("");
   let settings = $state<TerminalSettings>({ ...DEFAULT_TERMINAL_SETTINGS });
@@ -112,12 +117,13 @@
   let multilinePasteCancelButton = $state<HTMLButtonElement | null>(null);
   let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
 
-  let openIds = $derived(tabs.filter((tab) => tab.connected).map((tab) => tab.connId));
+  let openIds = $derived(tabs.filter((tab) => tab.connected && tab.kind !== "local").map((tab) => tab.connId));
   let consoleSessions = $derived<BroadcastSession[]>(tabs.map((tab) => ({
     sessionId: tab.sessionId,
     name: tab.name,
     protected: tab.protected,
     connected: tab.connected,
+    kind: tab.kind,
   })));
 
   /** The backend sends short codes; here they are converted to messages. */
@@ -368,6 +374,67 @@
       picker = false;
     } catch (e) {
       error = errorText(String(e));
+    }
+  }
+
+  async function openLocalTerminal(shell: "powershell" | "wsl", paneOverride?: string, distro: string | null = null) {
+    error = "";
+    try {
+      const size = getLastPaneSize();
+      const sessionId = await invoke<string>("local_terminal_open", {
+        shell,
+        distro,
+        cols: size.cols,
+        rows: size.rows,
+      });
+      rememberOpenSize(sessionId, size.cols, size.rows);
+      const name = shell === "powershell" ? "PowerShell" : distro ? `WSL · ${distro}` : "WSL";
+      tabs = [...tabs, {
+        sessionId,
+        connId: "",
+        kind: "local",
+        name,
+        jumpNames: [],
+        tunnelCount: 0,
+        protected: false,
+        connected: true,
+        highlightSets: [],
+        identityColor: null,
+      }];
+      const targetPaneId = paneOverride ?? pendingPaneId ?? currentPaneId();
+      if (!layoutTree || !targetPaneId) {
+        layoutTree = createLayoutTree([sessionId], "single", sessionId);
+        paneActiveIds = { ...paneActiveIds, [sessionId]: sessionId };
+      } else {
+        layoutTree = addSessionToPane(layoutTree, targetPaneId, sessionId);
+        paneActiveIds = { ...paneActiveIds, [targetPaneId]: sessionId };
+      }
+      pendingPaneId = null;
+      activeId = sessionId;
+      focusedPaneId = paneOfSession(layoutTree, sessionId);
+      picker = false;
+    } catch (e) {
+      error = errorText(String(e));
+    }
+  }
+
+  async function closeWslPicker() {
+    wslPickerOpen = false;
+    await tick();
+    wslLauncherButton?.focus();
+  }
+
+  async function openWslPicker() {
+    wslDistros = [];
+    selectedWslDistro = "";
+    wslPickerError = "";
+    wslPickerOpen = true;
+    try {
+      wslDistros = await invoke<string[]>("local_terminal_wsl_distros");
+    } catch (e) {
+      // Still allow launching the default WSL distribution; the backend will
+      // return a useful error if WSL is not installed or initialized.
+      wslPickerError = errorText(String(e));
     }
   }
 
@@ -632,12 +699,15 @@
   }
 
   const CONN_MIME = "application/x-sshterm-conn";
+  const LOCAL_MIME = "application/x-sshterm-local";
   const isConnDrag = (event: DragEvent) => !draggingTab && !!event.dataTransfer?.types.includes(CONN_MIME);
+  const isLocalTerminalDrag = (event: DragEvent) => !draggingTab && !!event.dataTransfer?.types.includes(LOCAL_MIME);
+  const isTreeItemDrag = (event: DragEvent) => isConnDrag(event) || isLocalTerminalDrag(event);
 
   function onPaneDragOver(event: DragEvent, paneId: string) {
-    if (isConnDrag(event)) {
+    if (isTreeItemDrag(event)) {
       event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      if (event.dataTransfer) event.dataTransfer.dropEffect = isLocalTerminalDrag(event) ? "copy" : "move";
       const zone = dropZoneAt(event, event.currentTarget as HTMLElement);
       if (connDrop?.paneId !== paneId || connDrop.zone !== zone) connDrop = { paneId, zone };
       return;
@@ -705,13 +775,36 @@
     }
   }
 
+  async function dropLocalTerminal(shell: "powershell" | "wsl", paneId: string, zone: DropZone) {
+    const sides: Partial<Record<DropZone, { axis: SplitAxis; before: boolean }>> = {
+      left: { axis: "horizontal", before: true },
+      right: { axis: "horizontal", before: false },
+      top: { axis: "vertical", before: true },
+      bottom: { axis: "vertical", before: false },
+    };
+    const side = sides[zone];
+    if (!side) {
+      await openLocalTerminal(shell, paneId);
+      return;
+    }
+    const newPaneId = crypto.randomUUID();
+    const next = splitPaneById(layoutTree, paneId, newPaneId, side.axis, side.before);
+    if (next === layoutTree) return;
+    layoutTree = next;
+    const before = tabs.length;
+    await openLocalTerminal(shell, newPaneId);
+    if (tabs.length === before) removePane(newPaneId);
+  }
+
   function onPaneDrop(event: DragEvent, paneId: string) {
-    if (isConnDrag(event)) {
-      const connId = event.dataTransfer?.getData(CONN_MIME);
+    if (isTreeItemDrag(event)) {
       const zone = dropZoneAt(event, event.currentTarget as HTMLElement);
+      const localShell = event.dataTransfer?.getData(LOCAL_MIME) as "powershell" | "wsl" | "";
+      const connId = event.dataTransfer?.getData(CONN_MIME);
       connDrop = null;
       event.preventDefault();
-      if (connId) void dropConnection(connId, paneId, zone);
+      if (localShell === "powershell" || localShell === "wsl") void dropLocalTerminal(localShell, paneId, zone);
+      else if (connId) void dropConnection(connId, paneId, zone);
       return;
     }
     const sessionId = draggingTab;
@@ -828,7 +921,7 @@
 
   async function toggleSessionProtection(sessionId: string) {
     const tab = tabs.find((item) => item.sessionId === sessionId);
-    if (!tab || !tab.connected) return;
+    if (!tab || !tab.connected || tab.kind === "local") return;
     const protectedNext = !tab.protected;
     try {
       const [connection, tree] = await Promise.all([
@@ -1030,7 +1123,7 @@
   {/if}
 
   <div class="body">
-    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectnode={(node) => (selectedNode = node)} />{/if}
+    {#if treeVisible}<ConnectionSidebar {openIds} {refreshToken} expandedFolders={treeExpandedFolders} onexpandedchange={persistTreeExpansion} onopen={connect} onlocalopen={(shell) => shell === "powershell" ? void openLocalTerminal("powershell") : void openWslPicker()} onopensftp={(connection) => void openSftpInPane(connection.id)} onedit={edit} onnewconn={(parentId) => (editor = { conn: blank(), isNew: true, parentId })} ontunnels={() => (tunnelPanelOpen = true)} onselectnode={(node) => (selectedNode = node)} />{/if}
     {#if propertiesVisible}
       <ConnectionPropertiesPane selectedNode={selectedNode} focusToken={propertiesFocusToken} width={propertiesWidth} onsave={(connection) => save(connection, null)} oncolorschange={(connections) => { const colors = new Map(connections.map((item) => [item.id, item.identity_color ?? null])); tabs = tabs.map((tab) => ({ ...tab, identityColor: colors.get(tab.connId) ?? null })); sftpTabs = sftpTabs.map((tab) => ({ ...tab, identityColor: tab.connectionId ? colors.get(tab.connectionId) ?? null : null })); refreshToken += 1; }} />
       <div class="properties-resizer" role="separator" aria-orientation="vertical" aria-label={t("properties.resize")} aria-valuemin="250" aria-valuemax="450" aria-valuenow={propertiesWidth} tabindex="0" onpointerdown={startPropertiesResize} onkeydown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); propertiesWidth = Math.max(250, Math.min(450, propertiesWidth + (event.key === "ArrowLeft" ? -8 : 8))); } }}></div>
@@ -1040,6 +1133,8 @@
       <button class:chosen={propertiesVisible} title={t("workspace.toggleProperties")} aria-label={t("workspace.toggleProperties")} aria-pressed={propertiesVisible} onclick={toggleProperties}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 4v16M13 8h5M13 12h5M13 16h3"/></svg></button>
       <span class="tool-separator"></span>
       <button bind:this={newTabButton} title={t("workspace.newTab")} aria-label={t("workspace.newTab")} onclick={openPicker}><svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="1.5"/><path d="m7 9 3 3-3 3m6 0h4"/></svg></button>
+      <button title={t("workspace.newPowerShell")} aria-label={t("workspace.newPowerShell")} onclick={() => void openLocalTerminal("powershell")}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/></svg></button>
+      <button title={t("workspace.newWsl")} aria-label={t("workspace.newWsl")} bind:this={wslLauncherButton} onclick={() => void openWslPicker()}><svg viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 18h8"/><path d="M15 4v4M13 6h4"/></svg></button>
       <button title={t("workspace.layout.single")} aria-label={t("workspace.layout.single")} aria-pressed={layoutPreset === "single"} class:chosen={layoutPreset === "single"} onclick={() => chooseLayout("single")}><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/></svg></button>
       <button title={t("workspace.layout.leftRight")} aria-label={t("workspace.layout.leftRight")} aria-pressed={layoutPreset === "left-right"} class:chosen={layoutPreset === "left-right"} onclick={() => chooseLayout("left-right")}><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16"/><rect x="13" y="4" width="8" height="16"/></svg></button>
       <button title={t("workspace.layout.topBottom")} aria-label={t("workspace.layout.topBottom")} aria-pressed={layoutPreset === "top-bottom"} class:chosen={layoutPreset === "top-bottom"} onclick={() => chooseLayout("top-bottom")}><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="8"/><rect x="4" y="13" width="16" height="8"/></svg></button>
@@ -1085,12 +1180,16 @@
                             <span class="pane-focus-dot" aria-hidden="true"></span>
                           {/if}
                         </button>
+                        {#if tab.kind !== "local"}
                         <button class="pane-tab-protect" class:protected={tab.protected}
                           aria-label={tab.protected ? t("workspace.session.unprotect") : t("workspace.session.protect")}
                           aria-pressed={tab.protected}
                           title={tab.protected ? t("workspace.session.unprotect") : t("workspace.session.protect")}
                           disabled={!tab.connected} onclick={() => toggleSessionProtection(sessionId)}
                         >{tab.protected ? "🔒" : "🔓"}</button>
+                        {:else}
+                          <span class="pane-tab-indicator jump">LOCAL</span>
+                        {/if}
                         <button class="pane-tab-close" aria-label={`Close ${tab.name}`} title={t("workspace.close")} onclick={() => closeTab(sessionId)}>×</button>
                       </div>
                     {:else if sftpTab}
@@ -1318,6 +1417,30 @@
     </div>
   {/if}
 
+  {#if wslPickerOpen}
+    <div class="backdrop">
+      <button type="button" class="scrim" tabindex="-1" aria-label={t("workspace.close")} onclick={closeWslPicker}></button>
+      <div class="dialog" role="dialog" aria-modal="true" aria-label={t("workspace.wslTitle")}>
+        <div class="dialog-head">
+          <h2>{t("workspace.wslTitle")}</h2>
+          <button type="button" class="close" onclick={closeWslPicker} title={t("workspace.close")} aria-label={t("workspace.close")}>&times;</button>
+        </div>
+        <label class="wsl-distro-label" for="wsl-distro-select">{t("workspace.wslDistribution")}</label>
+        <select id="wsl-distro-select" class="picker-search" bind:value={selectedWslDistro}>
+          <option value="">{t("workspace.wslDefault")}</option>
+          {#each wslDistros as distro (distro)}
+            <option value={distro}>{distro}</option>
+          {/each}
+        </select>
+        {#if wslPickerError}<p class="hint" role="status">{wslPickerError}</p>{/if}
+        <div class="confirm-actions">
+          <button type="button" class="confirm" onclick={() => { void closeWslPicker(); void openLocalTerminal("wsl", undefined, selectedWslDistro || null); }}>{t("workspace.wslStart")}</button>
+          <button type="button" class="ghost" onclick={closeWslPicker}>{t("editor.cancel")}</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if editor}
     <ConnectionEditor
       conn={editor.conn}
@@ -1335,6 +1458,7 @@
     flex-direction: column;
     overflow: hidden;
   }
+  .wsl-distro-label { color: var(--text-secondary); font-size: var(--ui-font-body); }
   .error {
     margin: 0;
     padding: 0.5rem 0.9rem;

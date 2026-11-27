@@ -20,6 +20,14 @@ pub struct PtySize {
 
 pub type OutputReceiver = UnboundedReceiver<Vec<u8>>;
 
+/// A local interactive shell launched inside the same ConPTY used by SSH.
+#[derive(Debug, Clone)]
+pub struct LocalShellConfig {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub cwd: Option<PathBuf>,
+}
+
 #[derive(Debug)]
 pub struct TransportError {
     /// Short, stable code; the frontend translates it.
@@ -121,6 +129,9 @@ pub struct SshConfig {
 #[async_trait]
 pub trait Transport: Send {
     async fn open(&mut self, cfg: &SshConfig, size: PtySize) -> Result<(), TransportError>;
+    async fn open_local(&mut self, _cfg: &LocalShellConfig, _size: PtySize) -> Result<(), TransportError> {
+        Err(TransportError::new("local_shell_unsupported", "local shells are not supported by this transport"))
+    }
     async fn write(&mut self, data: &[u8]) -> Result<(), TransportError>;
     async fn resize(&mut self, size: PtySize) -> Result<(), TransportError>;
     async fn close(&mut self) -> Result<(), TransportError>;
