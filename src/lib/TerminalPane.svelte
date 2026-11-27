@@ -69,6 +69,7 @@
   let fit: FitAddon | undefined;
   let lastCols = PROVISIONAL.cols;
   let lastRows = PROVISIONAL.rows;
+  let lastResizeAt = "";
   // Set once xterm is mounted, so the focus effect runs after `open()`.
   let mounted = $state(false);
   let disconnected = $state(false);
@@ -90,7 +91,10 @@
     lastCols = cols;
     lastRows = rows;
     setLastPaneSize(cols, rows);
-    if (!disconnected) void invoke("session_resize", { id: sessionId, cols, rows });
+    if (!disconnected) {
+      lastResizeAt = performance.now().toFixed(0);
+      void invoke("session_resize", { id: sessionId, cols, rows });
+    }
   }
 
   function tintedTerminalTheme() {
@@ -107,9 +111,17 @@
   }
 
   onMount(() => {
-    // The canvas renderer is used deliberately: the WebGL addon can fail to
-    // paint in WebView2, which shows a cursor but no text at all.
-    const t = new Terminal({
+    let mountCancelled = false;
+    let disposeTerminal: (() => void) | undefined;
+    void (async () => {
+      // Read the actual Windows build from the registry instead of hardcoding
+      // a Windows 11 build number. xterm uses it for ConPTY compatibility.
+      const windowsBuildNumber = await invoke<number | null>("terminal_windows_build_number").catch(() => null);
+      if (mountCancelled) return;
+
+      // The canvas renderer is used deliberately: the WebGL addon can fail to
+      // paint in WebView2, which shows a cursor but no text at all.
+      const t = new Terminal({
       fontFamily: 'Consolas, "Cascadia Mono", monospace',
       fontSize: 14,
       cursorBlink: true,
@@ -117,12 +129,25 @@
       allowProposedApi: true,
       theme: tintedTerminalTheme(),
       allowTransparency: true,
+      ...(windowsBuildNumber ? { windowsPty: { backend: "conpty" as const, buildNumber: windowsBuildNumber } } : {}),
     });
     term = t;
     const f = new FitAddon();
     fit = f;
     t.loadAddon(f);
     t.open(host);
+    // Diagnostic only: observe ED (CSI J) without changing xterm behavior.
+    // In particular, params [3] near lastResizeAt would implicate ConPTY's
+    // resize repaint in scrollback loss. Returning false lets xterm process it.
+    const eraseDisplayObserver = t.parser.registerCsiHandler({ final: "J" }, (params) => {
+      console.debug(
+        "[sshterm][ED]",
+        Array.from(params),
+        performance.now().toFixed(0),
+        "lastResize:", lastResizeAt,
+      );
+      return false;
+    });
     mounted = true;
 
 
@@ -399,13 +424,14 @@
       }),
     ];
 
-    return () => {
+    disposeTerminal = () => {
       cleanups.forEach((fn) => fn());
       highlightDisposed = true;
       highlightRequest += 1;
       clearTimeout(highlightTimer);
       highlightListeners.forEach((listener) => listener.dispose());
       clearHighlightDecorations();
+      eraseDisplayObserver.dispose();
       host.removeEventListener("contextmenu", onContextMenu);
       host.removeEventListener("mousedown", onMouseDown);
       releaseSession(sessionId);
@@ -413,6 +439,12 @@
       observer.disconnect();
       finishLog();
       t.dispose();
+    };
+    })();
+
+    return () => {
+      mountCancelled = true;
+      disposeTerminal?.();
     };
   });
 
