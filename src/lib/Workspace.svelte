@@ -123,6 +123,7 @@
     name: tab.name,
     protected: tab.protected,
     connected: tab.connected,
+    kind: tab.kind,
   })));
 
   /** The backend sends short codes; here they are converted to messages. */
@@ -698,12 +699,15 @@
   }
 
   const CONN_MIME = "application/x-sshterm-conn";
+  const LOCAL_MIME = "application/x-sshterm-local";
   const isConnDrag = (event: DragEvent) => !draggingTab && !!event.dataTransfer?.types.includes(CONN_MIME);
+  const isLocalTerminalDrag = (event: DragEvent) => !draggingTab && !!event.dataTransfer?.types.includes(LOCAL_MIME);
+  const isTreeItemDrag = (event: DragEvent) => isConnDrag(event) || isLocalTerminalDrag(event);
 
   function onPaneDragOver(event: DragEvent, paneId: string) {
-    if (isConnDrag(event)) {
+    if (isTreeItemDrag(event)) {
       event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      if (event.dataTransfer) event.dataTransfer.dropEffect = isLocalTerminalDrag(event) ? "copy" : "move";
       const zone = dropZoneAt(event, event.currentTarget as HTMLElement);
       if (connDrop?.paneId !== paneId || connDrop.zone !== zone) connDrop = { paneId, zone };
       return;
@@ -771,13 +775,36 @@
     }
   }
 
+  async function dropLocalTerminal(shell: "powershell" | "wsl", paneId: string, zone: DropZone) {
+    const sides: Partial<Record<DropZone, { axis: SplitAxis; before: boolean }>> = {
+      left: { axis: "horizontal", before: true },
+      right: { axis: "horizontal", before: false },
+      top: { axis: "vertical", before: true },
+      bottom: { axis: "vertical", before: false },
+    };
+    const side = sides[zone];
+    if (!side) {
+      await openLocalTerminal(shell, paneId);
+      return;
+    }
+    const newPaneId = crypto.randomUUID();
+    const next = splitPaneById(layoutTree, paneId, newPaneId, side.axis, side.before);
+    if (next === layoutTree) return;
+    layoutTree = next;
+    const before = tabs.length;
+    await openLocalTerminal(shell, newPaneId);
+    if (tabs.length === before) removePane(newPaneId);
+  }
+
   function onPaneDrop(event: DragEvent, paneId: string) {
-    if (isConnDrag(event)) {
-      const connId = event.dataTransfer?.getData(CONN_MIME);
+    if (isTreeItemDrag(event)) {
       const zone = dropZoneAt(event, event.currentTarget as HTMLElement);
+      const localShell = event.dataTransfer?.getData(LOCAL_MIME) as "powershell" | "wsl" | "";
+      const connId = event.dataTransfer?.getData(CONN_MIME);
       connDrop = null;
       event.preventDefault();
-      if (connId) void dropConnection(connId, paneId, zone);
+      if (localShell === "powershell" || localShell === "wsl") void dropLocalTerminal(localShell, paneId, zone);
+      else if (connId) void dropConnection(connId, paneId, zone);
       return;
     }
     const sessionId = draggingTab;
