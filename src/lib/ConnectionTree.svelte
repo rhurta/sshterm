@@ -177,6 +177,15 @@
     return node.id === id || (node.type === "folder" && node.children.some((child) => containsNode(child, id)));
   }
 
+  function onLocalDragStart(event: DragEvent, shell: "powershell" | "wsl") {
+    if (query.trim()) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer?.setData("application/x-sshterm-local", shell);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
+  }
+
   function onDragStart(event: DragEvent, node: TreeNode) {
     if (query.trim()) {
       event.preventDefault();
@@ -341,18 +350,18 @@
 {/snippet}
 
 <div class="tree" role="tree" tabindex="0" aria-label={t("workspace.connections")} class:root-drop={rootDrop} ondragover={onRootDragOver} ondrop={onRootDrop} ondragleave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) rootDrop = false; }}>
-  <div class="line local-line" role="treeitem">
+  <div class="line local-line" role="treeitem" draggable={!query.trim()} ondragstart={(event) => onLocalDragStart(event, "powershell")} ondragend={clearDrag}>
     <button class="row local-row" onclick={() => onlocalopen("powershell")}>
       <span class="conn-icon local-icon"></span>
       <span class="conn"><span class="label">{t("workspace.localPowerShell")}</span><span class="detail">{t("workspace.localTerminal")}</span></span>
       <span class="spacer"></span><span class="local-lock" title={t("workspace.builtInTerminal")}>🔒</span>
     </button>
   </div>
-  <div class="line local-line" role="treeitem">
+  <div class="line local-line" role="treeitem" draggable={!query.trim()} ondragstart={(event) => onLocalDragStart(event, "wsl")} ondragend={clearDrag}>
     <button class="row local-row" onclick={() => onlocalopen("wsl")}>
       <span class="conn-icon local-icon"></span>
       <span class="conn"><span class="label">{t("workspace.localWsl")}</span><span class="detail">{t("workspace.localTerminal")}</span></span>
-      <span class="spacer"></span><span class="local-lock" title={t("workspace.builtInTerminal")}>●</span>
+      <span class="spacer"></span><span class="local-lock" title={t("workspace.builtInTerminal")}>🔒</span>
     </button>
   </div>
   {#each visible(tree) as node, index (node.id)}
