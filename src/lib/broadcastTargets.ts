@@ -6,6 +6,7 @@ export interface BroadcastSession {
   name: string;
   protected: boolean;
   connected: boolean;
+  kind?: "ssh" | "local";
 }
 
 export interface BroadcastTargetResolution {
