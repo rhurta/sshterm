@@ -1,6 +1,8 @@
 //! Commands the frontend can call with `invoke("name", {...})`.
 
+use std::io::Write;
 use std::sync::{Mutex, MutexGuard};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager, State};
 
@@ -221,6 +223,41 @@ pub fn appearance_background_data(path: String) -> Result<String, String> {
     }
     let bytes = std::fs::read(&file).map_err(|_| "background_missing".to_string())?;
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+/// Whether application diagnostics are enabled (stored outside the vault).
+#[tauri::command]
+pub fn config_get_debug_logging() -> bool {
+    Config::load(&paths::config_path()).debug_logging
+}
+
+#[tauri::command]
+pub fn config_set_debug_logging(enabled: bool) -> Result<(), String> {
+    let path = paths::config_path();
+    let mut cfg = Config::load(&path);
+    cfg.debug_logging = enabled;
+    cfg.save(&path).map_err(|e| e.to_string())
+}
+
+/// Append one allowlisted diagnostic event. Terminal content and user input are
+/// never passed here. Keep the file bounded and rotate it once it reaches 2 MiB.
+#[tauri::command]
+pub fn debug_log_append(event: String) -> Result<(), String> {
+    if !Config::load(&paths::config_path()).debug_logging { return Ok(()); }
+    if event.len() > 4096 { return Err("debug_event_too_large".into()); }
+    let event = event.replace(['\r', '\n'], " ");
+    let dir = paths::logs_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("debug.log");
+    const MAX_BYTES: u64 = 2 * 1024 * 1024;
+    if std::fs::metadata(&path).map(|m| m.len() >= MAX_BYTES).unwrap_or(false) {
+        let previous = dir.join("debug.log.1");
+        let _ = std::fs::remove_file(&previous);
+        std::fs::rename(&path, &previous).map_err(|e| e.to_string())?;
+    }
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|e| e.to_string())?;
+    writeln!(file, "{timestamp} {event}").map_err(|e| e.to_string())
 }
 
 /// Terminal clipboard and mouse preferences stored in config.toml.
