@@ -1093,11 +1093,45 @@ pub async fn sftp_open(
 
 const DIRECTORY_READ_CONCURRENCY: usize = 4;
 
+async fn read_directory_sequential_raw(
+    session: &RawSftpSession,
+    path: String,
+) -> Result<Vec<(String, Metadata)>, String> {
+    let opened = session.opendir(path).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    let handle = opened.handle;
+    let mut entries = Vec::new();
+
+    loop {
+        match session.readdir(handle.clone()).await {
+            Ok(page) => {
+                entries.extend(page.files.into_iter().filter_map(|entry| {
+                    let name = entry.filename.to_string();
+                    if name == "." || name == ".." {
+                        None
+                    } else {
+                        Some((name, entry.attrs))
+                    }
+                }));
+            }
+            Err(SftpClientError::Status(status)) if status.status_code == StatusCode::Eof => break,
+            Err(error) => {
+                let _ = session.close(handle).await;
+                return Err(format!("sftp_protocol: {error}"));
+            }
+        }
+    }
+
+    session.close(handle).await
+        .map_err(|error| format!("sftp_protocol: directory close failed: {error}"))?;
+    Ok(entries)
+}
+
 async fn read_directory_pipelined(
     session: Arc<RawSftpSession>,
     path: String,
 ) -> Result<Vec<(String, Metadata)>, String> {
-    let opened = session.opendir(path).await
+    let opened = session.opendir(path.clone()).await
         .map_err(|error| format!("sftp_protocol: {error}"))?;
     let handle = opened.handle;
     let mut tasks = JoinSet::new();
@@ -1155,7 +1189,10 @@ async fn read_directory_pipelined(
         .map_err(|error| format!("sftp_protocol: directory close failed: {error}"));
     if let Some(error) = failure {
         let _ = close_result;
-        return Err(error);
+        // Some servers support SFTP but reject concurrent READDIR requests
+        // against one handle. Retry on the same isolated channel sequentially.
+        return read_directory_sequential_raw(&session, path).await
+            .or(Err(error));
     }
     close_result?;
     Ok(entries)
