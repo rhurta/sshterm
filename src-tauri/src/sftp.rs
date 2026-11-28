@@ -1063,12 +1063,12 @@ pub async fn sftp_open(
     })
 }
 
-#[tauri::command]
 fn is_normalized_absolute_remote_path(path: &str) -> bool {
     path.starts_with('/')
         && !path.split('/').any(|component| matches!(component, "." | ".."))
 }
 
+#[tauri::command]
 pub async fn sftp_list(
     state: State<'_, SftpState>,
     session_id: String,
