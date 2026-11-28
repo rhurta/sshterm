@@ -1616,19 +1616,22 @@ async fn upload_file_pipelined(
     ];
 
     // Open independent write handles to the same temporary file so offset-based
-    // writes can be acknowledged concurrently. Some servers limit simultaneous
-    // handles; close and remove the partial file before falling back to sequential.
-    for _ in 1..concurrency {
+    // writes can be acknowledged concurrently. Keep using the handles accepted
+    // by the server if it imposes a lower limit than our requested concurrency.
+    let requested_concurrency = concurrency;
+    for _ in 1..requested_concurrency {
         match sftp.open_with_flags(temporary.clone(), OpenFlags::WRITE).await {
             Ok(target) => targets.push(target),
-            Err(_) => {
-                for target in targets {
-                    let _ = target.close().await;
-                }
-                let _ = sftp.remove_file(&temporary).await;
-                return upload_file_sequential(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await;
-            }
+            Err(_) => break,
         }
+    }
+    let concurrency = targets.len();
+    if concurrency <= 1 {
+        for target in targets {
+            let _ = target.close().await;
+        }
+        let _ = sftp.remove_file(&temporary).await;
+        return upload_file_sequential(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await;
     }
 
     let worker_stride = chunk_size.saturating_mul(concurrency as u64);
@@ -1824,19 +1827,20 @@ async fn download_file_pipelined(
     }
 
     // Separate handles allow independent offset-based reads to be in flight at
-    // the same time. If a server refuses multiple opens, retain compatibility
-    // by falling back to the ordinary sequential transfer.
+    // the same time. Use as many as the server accepts, up to our bounded limit.
     let mut sources = Vec::with_capacity(concurrency);
     for _ in 0..concurrency {
         match sftp.open(item.source.clone()).await {
             Ok(source) => sources.push(source),
-            Err(_) => {
-                for source in sources {
-                    let _ = source.close().await;
-                }
-                return download_file_sequential(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await;
-            }
+            Err(_) => break,
         }
+    }
+    let concurrency = sources.len();
+    if concurrency <= 1 {
+        for source in sources {
+            let _ = source.close().await;
+        }
+        return download_file_sequential(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await;
     }
 
     let destination = std::path::PathBuf::from(&item.destination);
