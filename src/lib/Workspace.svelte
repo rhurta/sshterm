@@ -1265,7 +1265,7 @@
               <TerminalPane sessionId={tab.sessionId} container={paneEls[sessionPane[tab.sessionId]] ?? null}
                 active={paneActiveIds[sessionPane[tab.sessionId]] === tab.sessionId}
                 focused={activeId === tab.sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
-                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} identityColor={tab.identityColor ?? null} {settings} {theme} {terminalOpacity} />
+                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} identityColor={tab.identityColor ?? null} {settings} {debugLogging} {theme} {terminalOpacity} />
             {/each}
           </div>
           <!-- SFTP browser roots are re-parented into their active pane without
