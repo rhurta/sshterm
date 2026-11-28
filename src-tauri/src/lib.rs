@@ -166,10 +166,6 @@ pub fn run() {
             app.manage(ActiveBackdrop(backdrop));
             build_main_window(app, backdrop)?;
             if let Some(window) = app.get_webview_window("main") {
-                // Open WebView2 DevTools automatically in this diagnostic build so
-                // resize/CSI logging can be inspected even when the shortcut is unavailable.
-                #[cfg(target_os = "windows")]
-                window.open_devtools();
                 restore_window_state(&window);
                 let save_path = window_state_path();
                 let event_window = window.clone();
@@ -258,6 +254,9 @@ pub fn run() {
             commands::config_set_workspace_panel_settings,
             commands::config_get_app_behavior_settings,
             commands::config_set_app_behavior_settings,
+            commands::config_get_debug_logging,
+            commands::config_set_debug_logging,
+            commands::debug_log_append,
             store::conn_list,
             store::conn_export,
             store::conn_export_ssh_config,
