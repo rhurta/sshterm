@@ -25,6 +25,7 @@
     onactivate,
     onclosed,
     settings,
+    debugLogging = false,
     theme,
     onmultilinepaste,
     highlightSets = [],
@@ -40,6 +41,7 @@
     onactivate: (id: string) => void;
     onclosed: (id: string) => void;
     settings: TerminalSettings;
+    debugLogging?: boolean;
     theme: AppTheme;
     /** Terminal background opacity in percent; below 100 the window background shows through. */
     terminalOpacity?: number;
@@ -77,6 +79,7 @@
   /** Fits the terminal to its box and tells the PTY, but only when the size really
    * changed: every resize makes ConPTY repaint the whole screen. */
   function debugLog(event: string) {
+    if (!debugLogging) return;
     // The backend checks the persisted opt-in setting and writes only metadata;
     // terminal output and keystrokes are never included.
     void invoke("debug_log_append", { event }).catch(() => {});
