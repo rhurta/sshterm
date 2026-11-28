@@ -864,7 +864,7 @@ mod tests {
 #[derive(Default)]
 pub struct SftpState {
     gate: RwLock<()>,
-    sessions: Mutex<HashMap<String, Arc<SftpClient>>,
+    sessions: Mutex<HashMap<String, Arc<SftpClient>>>,
     transfers: Arc<Mutex<HashMap<String, SftpTransferControl>>>,
 }
 
