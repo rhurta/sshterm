@@ -18,8 +18,8 @@ use russh::keys::agent::{client::{AgentClient, AgentStream}, AgentIdentity};
 use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
 use rand::{rngs::OsRng, RngCore};
 use russh_sftp::client::fs::Metadata;
-use russh_sftp::protocol::OpenFlags;
 use russh_sftp::client::SftpSession;
+use russh_sftp::protocol::OpenFlags;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use sha1::Sha1;
@@ -1262,7 +1262,7 @@ pub async fn sftp_close_all(state: State<'_, SftpState>) -> Result<(), String> {
     state.close_all_inner().await
 }
 
-// Match russh-sftp's default maximum SFTP read length (255 KiB).
+// Match russh-sftp's default maximum SFTP read/write request length (255 KiB).
 const TRANSFER_CHUNK_SIZE: usize = 255 * 1024;
 const TRANSFER_CONCURRENCY: usize = 16;
 const MAX_TRANSFER_ENTRIES: usize = 100_000;
