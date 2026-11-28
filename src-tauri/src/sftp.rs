@@ -6,7 +6,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,13 +17,12 @@ use russh::keys::agent::{client::{AgentClient, AgentStream}, AgentIdentity};
 use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
 use rand::{rngs::OsRng, RngCore};
 use russh_sftp::client::fs::Metadata;
-use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::OpenFlags;
+use russh_sftp::client::{Config as SftpConfig, SftpSession};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use sha1::Sha1;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
-use tokio::sync::{mpsc, watch, Mutex, RwLock};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::{watch, Mutex, RwLock};
 
 use crate::store;
 use crate::vault::{Auth, Connection};
@@ -723,9 +721,20 @@ pub async fn connect(
         .request_subsystem(true, "sftp")
         .await
         .map_err(SftpError::from)?;
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .map_err(|error| SftpError::new("sftp_subsystem", error.to_string()))?;
+    // Keep a bounded request window per file. The library pipelines writes and
+    // reads internally; opening many handles on top of that only multiplies
+    // outstanding requests and can starve directory operations on the same channel.
+    let sftp = SftpSession::new_with_config(
+        channel.into_stream(),
+        SftpConfig {
+            max_concurrent_reads: 16,
+            max_concurrent_writes: 16,
+            max_write_packet_len: 64 * 1024,
+            ..SftpConfig::default()
+        },
+    )
+    .await
+    .map_err(|error| SftpError::new("sftp_subsystem", error.to_string()))?;
     sessions.push(target);
 
     let start_dir = connection
@@ -1055,6 +1064,11 @@ pub async fn sftp_open(
 }
 
 #[tauri::command]
+fn is_normalized_absolute_remote_path(path: &str) -> bool {
+    path.starts_with('/')
+        && !path.split('/').any(|component| matches!(component, "." | ".."))
+}
+
 pub async fn sftp_list(
     state: State<'_, SftpState>,
     session_id: String,
@@ -1067,8 +1081,14 @@ pub async fn sftp_list(
     let requested = remote_path.unwrap_or_else(|| ".".to_string());
     validate_remote_path(&requested)
         .map_err(|error| format!("{}: {}", error.code, error.detail))?;
-    let current_path = client.session().canonicalize(requested).await
-        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    // Paths returned by this browser are already absolute and normalized.
+    // Avoid an extra REALPATH round trip on every directory double-click.
+    let current_path = if is_normalized_absolute_remote_path(&requested) {
+        requested
+    } else {
+        client.session().canonicalize(requested).await
+            .map_err(|error| format!("sftp_protocol: {error}"))?
+    };
     let directory = client.session().read_dir(current_path.clone()).await
         .map_err(|error| format!("sftp_protocol: {error}"))?;
 
@@ -1264,7 +1284,6 @@ pub async fn sftp_close_all(state: State<'_, SftpState>) -> Result<(), String> {
 
 // Match russh-sftp's default maximum SFTP read/write request length (255 KiB).
 const TRANSFER_CHUNK_SIZE: usize = 255 * 1024;
-const TRANSFER_CONCURRENCY: usize = 16;
 const MAX_TRANSFER_ENTRIES: usize = 100_000;
 
 #[derive(Debug, Clone, Serialize)]
@@ -1587,185 +1606,6 @@ async fn upload_file(
     sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
     overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, emitter: &TransferEmitter,
 ) -> Result<(), TransferFailure> {
-    upload_file_pipelined(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await
-}
-
-async fn upload_file_pipelined(
-    sftp: &SftpSession,
-    item: &TransferItem,
-    transfer_id: &str,
-    index: usize,
-    overwrite: bool,
-    cancel: &mut watch::Receiver<bool>,
-    progress: &mut SftpTransferProgress,
-    emitter: &TransferEmitter,
-) -> Result<(), TransferFailure> {
-    let chunk_size = TRANSFER_CHUNK_SIZE as u64;
-    let concurrency = TRANSFER_CONCURRENCY
-        .min(item.size.div_ceil(chunk_size) as usize)
-        .max(1);
-    if concurrency <= 1 {
-        return upload_file_sequential(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await;
-    }
-
-    let temporary = remote_temp_sibling(&item.destination, transfer_id, index, "part")
-        .map_err(TransferFailure::Failed)?;
-    let mut targets = vec![
-        sftp.create(temporary.clone()).await
-            .map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?
-    ];
-
-    // Open independent write handles to the same temporary file so offset-based
-    // writes can be acknowledged concurrently. Keep using the handles accepted
-    // by the server if it imposes a lower limit than our requested concurrency.
-    let requested_concurrency = concurrency;
-    for _ in 1..requested_concurrency {
-        match sftp.open_with_flags(temporary.clone(), OpenFlags::WRITE).await {
-            Ok(target) => targets.push(target),
-            Err(_) => break,
-        }
-    }
-    let concurrency = targets.len();
-    if concurrency <= 1 {
-        for target in targets {
-            let _ = target.close().await;
-        }
-        let _ = sftp.remove_file(&temporary).await;
-        return upload_file_sequential(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await;
-    }
-
-    let worker_stride = chunk_size.saturating_mul(concurrency as u64);
-    let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<u64>();
-    let (worker_cancel_tx, worker_cancel_rx) = watch::channel(false);
-    let mut tasks = tokio::task::JoinSet::new();
-
-    for (worker, mut target) in targets.into_iter().enumerate() {
-        let source_path = item.source.clone();
-        let file_size = item.size;
-        let progress_tx = progress_tx.clone();
-        let mut cancel_rx = cancel.clone();
-        let mut worker_cancel_rx = worker_cancel_rx.clone();
-
-        tasks.spawn(async move {
-            let result: Result<(), TransferFailure> = async {
-                let mut source = tokio::fs::File::open(&source_path).await
-                    .map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
-                let mut offset = worker as u64 * chunk_size;
-
-                while offset < file_size {
-                    if *cancel_rx.borrow() || *worker_cancel_rx.borrow() {
-                        return Err(TransferFailure::Cancelled);
-                    }
-
-                    let length = (file_size - offset).min(chunk_size) as usize;
-                    let mut buffer = vec![0u8; length];
-
-                    tokio::select! {
-                        result = source.seek(SeekFrom::Start(offset)) => {
-                            result.map_err(|error| TransferFailure::failed("sftp_transfer_local_seek", error))?;
-                        }
-                        _ = cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                        _ = worker_cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                    }
-                    tokio::select! {
-                        result = source.read_exact(&mut buffer) => {
-                            result.map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
-                        }
-                        _ = cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                        _ = worker_cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                    }
-                    tokio::select! {
-                        result = target.seek(SeekFrom::Start(offset)) => {
-                            result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_seek", error))?;
-                        }
-                        _ = cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                        _ = worker_cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                    }
-                    tokio::select! {
-                        result = target.write_all(&buffer) => {
-                            result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?;
-                        }
-                        _ = cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                        _ = worker_cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                    }
-
-                    let _ = progress_tx.send(length as u64);
-                    offset = offset.saturating_add(worker_stride);
-                }
-
-                Ok(())
-            }.await;
-
-            let close_result = target.close().await;
-            result?;
-            close_result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_close", error))?;
-            Ok::<(), TransferFailure>(())
-        });
-    }
-    drop(progress_tx);
-
-    let mut remaining_workers = concurrency;
-    let mut failure = None;
-    let mut progress_open = true;
-    while remaining_workers > 0 {
-        tokio::select! {
-            bytes = progress_rx.recv(), if progress_open => {
-                match bytes {
-                    Some(bytes) => {
-                        progress.bytes_transferred = progress.bytes_transferred.saturating_add(bytes);
-                        emit_transfer(emitter, progress);
-                    }
-                    None => progress_open = false,
-                }
-            }
-            joined = tasks.join_next() => {
-                match joined {
-                    Some(Ok(Ok(()))) => remaining_workers -= 1,
-                    Some(Ok(Err(error))) => {
-                        remaining_workers -= 1;
-                        if failure.is_none() {
-                            failure = Some(error);
-                            let _ = worker_cancel_tx.send(true);
-                        }
-                    }
-                    Some(Err(error)) => {
-                        remaining_workers -= 1;
-                        if failure.is_none() {
-                            failure = Some(TransferFailure::Failed(format!("sftp_transfer_worker: {error}")));
-                            let _ = worker_cancel_tx.send(true);
-                        }
-                    }
-                    None => break,
-                }
-            }
-        }
-    }
-
-    while let Some(bytes) = progress_rx.recv().await {
-        progress.bytes_transferred = progress.bytes_transferred.saturating_add(bytes);
-        emit_transfer(emitter, progress);
-    }
-
-    if let Some(error) = failure {
-        let _ = sftp.remove_file(&temporary).await;
-        return Err(error);
-    }
-    if *cancel.borrow() {
-        let _ = sftp.remove_file(&temporary).await;
-        return Err(TransferFailure::Cancelled);
-    }
-
-    if let Err(error) = commit_remote_file(sftp, &temporary, &item.destination, transfer_id, index, overwrite).await {
-        let _ = sftp.remove_file(&temporary).await;
-        return Err(TransferFailure::Failed(error));
-    }
-    Ok(())
-}
-
-async fn upload_file_sequential(
-    sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
-    overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, emitter: &TransferEmitter,
-) -> Result<(), TransferFailure> {
     let mut source = tokio::fs::File::open(&item.source).await
         .map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
     let temporary = remote_temp_sibling(&item.destination, transfer_id, index, "part")
@@ -1808,185 +1648,7 @@ async fn upload_file_sequential(
     Ok(())
 }
 
-async fn download_file_pipelined(
-    sftp: &SftpSession,
-    item: &TransferItem,
-    transfer_id: &str,
-    index: usize,
-    overwrite: bool,
-    cancel: &mut watch::Receiver<bool>,
-    progress: &mut SftpTransferProgress,
-    emitter: &TransferEmitter,
-) -> Result<(), TransferFailure> {
-    let chunk_size = TRANSFER_CHUNK_SIZE as u64;
-    let concurrency = TRANSFER_CONCURRENCY
-        .min(item.size.div_ceil(chunk_size) as usize)
-        .max(1);
-    if concurrency <= 1 {
-        return download_file_sequential(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await;
-    }
-
-    // Separate handles allow independent offset-based reads to be in flight at
-    // the same time. Use as many as the server accepts, up to our bounded limit.
-    let mut sources = Vec::with_capacity(concurrency);
-    for _ in 0..concurrency {
-        match sftp.open(item.source.clone()).await {
-            Ok(source) => sources.push(source),
-            Err(_) => break,
-        }
-    }
-    let concurrency = sources.len();
-    if concurrency <= 1 {
-        for source in sources {
-            let _ = source.close().await;
-        }
-        return download_file_sequential(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await;
-    }
-
-    let destination = std::path::PathBuf::from(&item.destination);
-    let temporary = local_temp_sibling(&destination, transfer_id, index, "part")
-        .map_err(TransferFailure::Failed)?;
-    let output = match tokio::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).await {
-        Ok(file) => Arc::new(Mutex::new(file)),
-        Err(error) => {
-            for source in sources {
-                let _ = source.close().await;
-            }
-            return Err(TransferFailure::failed("sftp_transfer_local_io", error));
-        }
-    };
-
-    let worker_stride = chunk_size.saturating_mul(concurrency as u64);
-    let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<u64>();
-    let mut tasks = tokio::task::JoinSet::new();
-    for (worker, mut source) in sources.into_iter().enumerate() {
-        let output = Arc::clone(&output);
-        let progress_tx = progress_tx.clone();
-        let mut cancel_rx = cancel.clone();
-        let file_size = item.size;
-        tasks.spawn(async move {
-            let mut offset = worker as u64 * chunk_size;
-            let result: Result<(), TransferFailure> = async {
-                while offset < file_size {
-                    if *cancel_rx.borrow() {
-                        return Err(TransferFailure::Cancelled);
-                    }
-                    let length = (file_size - offset).min(chunk_size) as usize;
-                    let mut buffer = vec![0u8; length];
-                    tokio::select! {
-                        result = source.seek(SeekFrom::Start(offset)) => {
-                            result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_seek", error))?;
-                        }
-                        _ = cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                    }
-                    tokio::select! {
-                        result = source.read_exact(&mut buffer) => {
-                            result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?;
-                        }
-                        _ = cancel_rx.changed() => return Err(TransferFailure::Cancelled),
-                    }
-                    {
-                        let mut file = output.lock().await;
-                        file.seek(SeekFrom::Start(offset)).await
-                            .map_err(|error| TransferFailure::failed("sftp_transfer_local_seek", error))?;
-                        file.write_all(&buffer).await
-                            .map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
-                    }
-                    let _ = progress_tx.send(length as u64);
-                    offset = offset.saturating_add(worker_stride);
-                }
-                Ok(())
-            }.await;
-            let close_result = source.close().await;
-            result?;
-            close_result.map_err(|error| TransferFailure::failed("sftp_transfer_remote_close", error))?;
-            Ok::<(), TransferFailure>(())
-        });
-    }
-    drop(progress_tx);
-
-    let mut completed_workers = 0usize;
-    let mut progress_open = true;
-    let mut failure = None;
-    while completed_workers < concurrency {
-        tokio::select! {
-            bytes = progress_rx.recv(), if progress_open => {
-                match bytes {
-                    Some(bytes) => {
-                        progress.bytes_transferred = progress.bytes_transferred.saturating_add(bytes);
-                        emit_transfer(emitter, progress);
-                    }
-                    None => progress_open = false,
-                }
-            }
-            joined = tasks.join_next() => {
-                match joined {
-                    Some(Ok(Ok(()))) => completed_workers += 1,
-                    Some(Ok(Err(error))) => {
-                        failure = Some(error);
-                        tasks.abort_all();
-                        while tasks.join_next().await.is_some() {}
-                        break;
-                    }
-                    Some(Err(error)) => {
-                        failure = Some(TransferFailure::Failed(format!("sftp_transfer_worker: {error}")));
-                        tasks.abort_all();
-                        while tasks.join_next().await.is_some() {}
-                        break;
-                    }
-                    None => break,
-                }
-            }
-        }
-    }
-
-    while let Ok(bytes) = progress_rx.try_recv() {
-        progress.bytes_transferred = progress.bytes_transferred.saturating_add(bytes);
-        emit_transfer(emitter, progress);
-    }
-
-    if let Some(error) = failure {
-        drop(output);
-        let _ = tokio::fs::remove_file(&temporary).await;
-        return Err(error);
-    }
-    if *cancel.borrow() {
-        drop(output);
-        let _ = tokio::fs::remove_file(&temporary).await;
-        return Err(TransferFailure::Cancelled);
-    }
-
-    {
-        let mut file = output.lock().await;
-        if let Err(error) = file.flush().await {
-            drop(file);
-            drop(output);
-            let _ = tokio::fs::remove_file(&temporary).await;
-            return Err(TransferFailure::failed("sftp_transfer_local_flush", error));
-        }
-        if let Err(error) = file.sync_all().await {
-            drop(file);
-            drop(output);
-            let _ = tokio::fs::remove_file(&temporary).await;
-            return Err(TransferFailure::failed("sftp_transfer_local_sync", error));
-        }
-    }
-    drop(output);
-    if let Err(error) = commit_local_file(&temporary, &destination, transfer_id, index, overwrite).await {
-        let _ = tokio::fs::remove_file(&temporary).await;
-        return Err(TransferFailure::Failed(error));
-    }
-    Ok(())
-}
-
 async fn download_file(
-    sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
-    overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, emitter: &TransferEmitter,
-) -> Result<(), TransferFailure> {
-    download_file_pipelined(sftp, item, transfer_id, index, overwrite, cancel, progress, emitter).await
-}
-
-async fn download_file_sequential(
     sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
     overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, emitter: &TransferEmitter,
 ) -> Result<(), TransferFailure> {
@@ -2465,6 +2127,16 @@ mod lifecycle_tests {
 
         through_jump.close().await.expect("close jump SFTP");
         direct.close().await.expect("close direct SFTP");
+    }
+
+    #[test]
+    fn normalized_absolute_remote_paths_skip_realpath() {
+        for path in ["/", "/home/user", "/srv/data/nested dir", "/tmp/file.txt"] {
+            assert!(is_normalized_absolute_remote_path(path), "{path}");
+        }
+        for path in ["", ".", "..", "relative/path", "/home/../etc", "/home/./user"] {
+            assert!(!is_normalized_absolute_remote_path(path), "{path}");
+        }
     }
 
     #[test]
