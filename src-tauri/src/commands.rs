@@ -245,9 +245,13 @@ static DEBUG_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 #[tauri::command]
 pub fn debug_log_append(event: String) -> Result<(), String> {
-    if !Config::load(&paths::config_path()).debug_logging { return Ok(()); }
+    if !Config::load(&paths::config_path()).debug_logging {
+        return Ok(());
+    }
     let _guard = DEBUG_LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    if event.len() > 4096 { return Err("debug_event_too_large".into()); }
+    if event.len() > 4096 {
+        return Err("debug_event_too_large".into());
+    }
     let event = event.replace('\r', " ").replace('\n', " ");
     let dir = paths::logs_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -258,8 +262,15 @@ pub fn debug_log_append(event: String) -> Result<(), String> {
         let _ = std::fs::remove_file(&previous);
         std::fs::rename(&path, &previous).map_err(|e| e.to_string())?;
     }
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
-    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|e| e.to_string())?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
     writeln!(file, "{timestamp} {event}").map_err(|e| e.to_string())
 }
 
