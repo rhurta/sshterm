@@ -111,7 +111,7 @@
       debugLog(`terminal.resize.request session=${sessionId} from=${previous} to=${cols}x${rows} at=${lastResizeAt} ${bufferMetrics(term)}`);
       void invoke("session_resize", { id: sessionId, cols, rows })
         .then(() => debugLog(`terminal.resize.complete session=${sessionId} size=${cols}x${rows} at=${performance.now().toFixed(0)}`))
-        .catch((error) => debugLog(`terminal.resize.error session=${sessionId} size=${cols}x${rows} error=${String(error).slice(0, 300)}`));
+        .catch(() => debugLog(`terminal.resize.error session=${sessionId} size=${cols}x${rows}`));
     }
   }
 
