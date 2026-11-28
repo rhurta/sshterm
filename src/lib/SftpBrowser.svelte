@@ -1369,6 +1369,7 @@
   .sftp-list-head, .local-list-head { flex: 0 0 29px; min-height: 29px; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border); font-size: var(--ui-font-meta); font-weight: 600; }
   .sftp-list, .local-list { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; padding: 4px 0; }
   .sftp-entry, .local-entry { flex: 0 0 30px; min-height: 30px; color: var(--text); border: 1px solid transparent; border-radius: 4px; font-size: var(--ui-font-dense); }
+  .sftp-entry { box-sizing: border-box; }
   .sftp-virtual-spacer { flex: 0 0 auto; min-height: 0; pointer-events: none; }
   .sftp-entry:hover, .local-entry:hover { background: var(--surface-hover); }
   .sftp-entry.selected, .local-entry.selected { background: var(--surface-hover); border-color: var(--accent); }
