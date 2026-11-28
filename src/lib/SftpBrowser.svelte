@@ -79,6 +79,10 @@
   let localPathInput: HTMLInputElement | undefined = $state();
   let nameInput: HTMLInputElement | undefined = $state();
   let rowList: HTMLDivElement | undefined = $state();
+  let remoteScrollTop = $state(0);
+  const REMOTE_ROW_HEIGHT = 30;
+  const REMOTE_WINDOW_ROWS = 120;
+  const REMOTE_OVERSCAN_ROWS = 12;
   let localRowList: HTMLDivElement | undefined = $state();
   let browserDialog: HTMLElement | undefined = $state();
   let deleteCancelButton: HTMLButtonElement | undefined = $state();
@@ -115,6 +119,17 @@
     const entries = activeDirectory?.entries ?? [];
     if (!query) return entries;
     return entries.filter((entry) => entry.name.toLocaleLowerCase().includes(query));
+  });
+  const remoteVisibleWindow = $derived.by(() => {
+    const entries = filteredEntries;
+    const start = Math.max(0, Math.floor(remoteScrollTop / REMOTE_ROW_HEIGHT) - REMOTE_OVERSCAN_ROWS);
+    const end = Math.min(entries.length, start + REMOTE_WINDOW_ROWS);
+    return {
+      entries: entries.slice(start, end),
+      start,
+      top: start * REMOTE_ROW_HEIGHT,
+      bottom: (entries.length - end) * REMOTE_ROW_HEIGHT,
+    };
   });
   const filteredConnections = $derived.by(() => {
     const query = pickerSearch.trim().toLocaleLowerCase();
@@ -195,7 +210,17 @@
     searchInput?.focus();
   }
 
+  function resetRemoteScroll() {
+    remoteScrollTop = 0;
+    if (rowList) rowList.scrollTop = 0;
+  }
+
+  function updateRemoteScroll(event: Event) {
+    remoteScrollTop = (event.currentTarget as HTMLDivElement).scrollTop;
+  }
+
   async function listDirectory(sessionId: string, path: string) {
+    resetRemoteScroll();
     listing = true;
     errorMessage = "";
     try {
@@ -739,10 +764,18 @@
   }
 
   function focusRow(index: number) {
-    const rows = rowList?.querySelectorAll<HTMLButtonElement>("button.entry-name");
-    if (!rows?.length) return;
-    const target = Math.max(0, Math.min(index, rows.length - 1));
-    rows[target]?.focus();
+    if (!rowList || !filteredEntries.length) return;
+    const target = Math.max(0, Math.min(index, filteredEntries.length - 1));
+    const rowTop = target * REMOTE_ROW_HEIGHT;
+    const rowBottom = rowTop + REMOTE_ROW_HEIGHT;
+    if (rowTop < rowList.scrollTop) rowList.scrollTop = rowTop;
+    else if (rowBottom > rowList.scrollTop + rowList.clientHeight) {
+      rowList.scrollTop = rowBottom - rowList.clientHeight;
+    }
+    remoteScrollTop = rowList.scrollTop;
+    void tick().then(() => {
+      rowList?.querySelector<HTMLButtonElement>(`button[data-entry-index="${target}"]`)?.focus();
+    });
   }
 
   function onSearchKeydown(event: KeyboardEvent) {
@@ -1054,7 +1087,7 @@
             <span>{t("sftp.modified")}</span>
             <span>{t("sftp.permissions")}</span>
           </div>
-          <div class="sftp-list" bind:this={rowList} role="list" aria-label={t("sftp.remoteEntries")} ondragover={(event) => event.preventDefault()} ondrop={onRemoteDrop}>
+          <div class="sftp-list" bind:this={rowList} role="list" aria-label={t("sftp.remoteEntries")} onscroll={updateRemoteScroll} ondragover={(event) => event.preventDefault()} ondrop={onRemoteDrop}>
             {#if !activeSession}
               <div class="sftp-empty">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/><path d="M3 7V5h7l2 2"/></svg>
@@ -1070,11 +1103,14 @@
             {:else if filteredEntries.length === 0}
               <div class="sftp-empty-list">{search ? t("sftp.noSearchResults") : t("sftp.emptyDirectory")}</div>
             {:else}
-              {#each filteredEntries as entry, index (entry.path)}
+              {#if remoteVisibleWindow.top > 0}
+                <div class="sftp-virtual-spacer" style:height={remoteVisibleWindow.top + "px"} aria-hidden="true"></div>
+              {/if}
+              {#each remoteVisibleWindow.entries as entry, index (entry.path)}
                 <div class="sftp-entry" class:selected={(selectedRemotePaths[activeId] ?? []).includes(entry.path)} class:focused={selectedPaths[activeId] === entry.path}>
                   <div class="entry-name-cell">
                     <input class="entry-select" type="checkbox" checked={(selectedRemotePaths[activeId] ?? []).includes(entry.path)} aria-label={t("sftp.selectEntry", { name: entry.name })} onchange={(event) => toggleRemoteSelection(entry.path, event.currentTarget.checked)} />
-                    <button class="entry-name" class:directory-entry={entry.kind === "directory"} class:symlink-entry={entry.kind === "symlink"} tabindex={selectedPaths[activeId] === entry.path || (!selectedPaths[activeId] && index === 0) ? 0 : -1} draggable={entry.kind === "file" || entry.kind === "directory"} aria-label={entry.name + (entry.kind === "directory" ? ", " + t("sftp.directory") : "")} onclick={(event) => selectRemoteEntry(entry, event)} ondblclick={() => openEntry(entry)} onfocus={() => chooseEntry(entry)} onkeydown={(event) => onRowKeydown(event, index, entry)} ondragstart={(event) => { event.dataTransfer?.setData("application/x-sshterm-remote-path", entry.path); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy"; }}>
+                    <button class="entry-name" data-entry-index={remoteVisibleWindow.start + index} class:directory-entry={entry.kind === "directory"} class:symlink-entry={entry.kind === "symlink"} tabindex={selectedPaths[activeId] === entry.path || (!selectedPaths[activeId] && remoteVisibleWindow.start + index === 0) ? 0 : -1} draggable={entry.kind === "file" || entry.kind === "directory"} aria-label={entry.name + (entry.kind === "directory" ? ", " + t("sftp.directory") : "")} onclick={(event) => selectRemoteEntry(entry, event)} ondblclick={() => openEntry(entry)} onfocus={() => chooseEntry(entry)} onkeydown={(event) => onRowKeydown(event, remoteVisibleWindow.start + index, entry)} ondragstart={(event) => { event.dataTransfer?.setData("application/x-sshterm-remote-path", entry.path); if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy"; }}>
                       <span class="entry-icon" aria-hidden="true">
                         {#if entry.kind === "directory"}
                           <svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v12H3z"/><path d="M3 6V4h7l2 2"/></svg>
@@ -1092,12 +1128,15 @@
                   <span class="entry-meta permission-meta">{formatPermissions(entry.permissions)}</span>
                 </div>
               {/each}
+              {#if remoteVisibleWindow.bottom > 0}
+                <div class="sftp-virtual-spacer" style:height={remoteVisibleWindow.bottom + "px"} aria-hidden="true"></div>
+              {/if}
             {/if}
           </div>
           <footer class="pane-footer">
             <div class="sftp-filter">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
-              <input bind:this={searchInput} bind:value={search} onkeydown={onSearchKeydown} placeholder={t("sftp.search")} aria-label={t("sftp.search")} disabled={!activeSession} />
+              <input bind:this={searchInput} bind:value={search} oninput={resetRemoteScroll} onkeydown={onSearchKeydown} placeholder={t("sftp.search")} aria-label={t("sftp.search")} disabled={!activeSession} />
               {#if search}<button title={t("sftp.clearSearch")} aria-label={t("sftp.clearSearch")} onclick={() => { search = ""; searchInput?.focus(); }}>×</button>{/if}
             </div>
             <span class="footer-status" aria-live="polite">{#if statusMessage}{statusMessage}{:else if activeDirectory}{t("sftp.itemCount", { count: activeDirectory.entries.length })}{:else}{t("sftp.ready")}{/if}</span>
@@ -1330,6 +1369,8 @@
   .sftp-list-head, .local-list-head { flex: 0 0 29px; min-height: 29px; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border); font-size: var(--ui-font-meta); font-weight: 600; }
   .sftp-list, .local-list { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; padding: 4px 0; }
   .sftp-entry, .local-entry { flex: 0 0 30px; min-height: 30px; color: var(--text); border: 1px solid transparent; border-radius: 4px; font-size: var(--ui-font-dense); }
+  .sftp-entry { box-sizing: border-box; }
+  .sftp-virtual-spacer { flex: 0 0 auto; min-height: 0; pointer-events: none; }
   .sftp-entry:hover, .local-entry:hover { background: var(--surface-hover); }
   .sftp-entry.selected, .local-entry.selected { background: var(--surface-hover); border-color: var(--accent); }
   .local-entry.focused:not(.selected), .sftp-entry.focused:not(.selected) { border-color: var(--border-strong); }

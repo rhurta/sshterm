@@ -17,12 +17,14 @@ use russh::keys::agent::{client::{AgentClient, AgentStream}, AgentIdentity};
 use russh::keys::{self, HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
 use rand::{rngs::OsRng, RngCore};
 use russh_sftp::client::fs::Metadata;
-use russh_sftp::client::SftpSession;
+use russh_sftp::client::{error::Error as SftpClientError, Config as SftpConfig, RawSftpSession, SftpSession};
+use russh_sftp::protocol::StatusCode;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use sha1::Sha1;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{watch, Mutex, RwLock};
+use tokio::task::JoinSet;
 
 use crate::store;
 use crate::vault::{Auth, Connection};
@@ -624,6 +626,7 @@ async fn authenticate(
 /// are retained for as long as the target SFTP channel is alive.
 pub struct SftpClient {
     sftp: SftpSession,
+    listing_sftp: Option<Arc<RawSftpSession>>,
     sessions: Vec<Handle<SftpHostKeyHandler>>,
     start_dir: String,
     agent_binding: AgentBindingStatus,
@@ -632,6 +635,10 @@ pub struct SftpClient {
 impl SftpClient {
     pub fn session(&self) -> &SftpSession {
         &self.sftp
+    }
+
+    pub fn listing_session(&self) -> Option<Arc<RawSftpSession>> {
+        self.listing_sftp.clone()
     }
 
     pub async fn current_directory(&self) -> Result<String, SftpError> {
@@ -643,12 +650,14 @@ impl SftpClient {
     }
 
     pub async fn close(&self) -> Result<(), SftpError> {
-        let mut first_error = self
-            .sftp
-            .close()
-            .await
-            .err()
-            .map(|error| SftpError::new("sftp_close", error.to_string()));
+        let mut first_error = self.listing_sftp.as_ref()
+            .and_then(|listing| listing.close_session().err())
+            .map(|error| SftpError::new("sftp_listing_close", error.to_string()));
+        if let Err(error) = self.sftp.close().await {
+            if first_error.is_none() {
+                first_error = Some(SftpError::new("sftp_close", error.to_string()));
+            }
+        }
         for session in self.sessions.iter().rev() {
             if let Err(error) = session
                 .disconnect(russh::Disconnect::ByApplication, "SSH Term SFTP closed", "en")
@@ -721,9 +730,39 @@ pub async fn connect(
         .request_subsystem(true, "sftp")
         .await
         .map_err(SftpError::from)?;
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .map_err(|error| SftpError::new("sftp_subsystem", error.to_string()))?;
+    // Keep a bounded request window per file. The library pipelines writes and
+    // reads internally; opening many handles on top of that only multiplies
+    // outstanding requests and can starve directory operations on the same channel.
+    let sftp = SftpSession::new_with_config(
+        channel.into_stream(),
+        SftpConfig {
+            max_concurrent_reads: 16,
+            max_concurrent_writes: 16,
+            max_write_packet_len: 256 * 1024,
+            ..SftpConfig::default()
+        },
+    )
+    .await
+    .map_err(|error| SftpError::new("sftp_subsystem", error.to_string()))?;
+
+    // Directory requests get their own SSH/SFTP channel. A slow recursive file
+    // transfer can then no longer queue ahead of READDIR responses.
+    let listing_sftp = if let Ok(listing_channel) = target.channel_open_session().await {
+        if listing_channel.request_subsystem(true, "sftp").await.is_ok() {
+            let raw = RawSftpSession::new(listing_channel.into_stream());
+            match raw.init().await {
+                Ok(_) => Some(Arc::new(raw)),
+                Err(_) => {
+                    let _ = raw.close_session();
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     sessions.push(target);
 
     let start_dir = connection
@@ -733,7 +772,7 @@ pub async fn connect(
         .filter(|path| !path.is_empty())
         .unwrap_or_default();
 
-    Ok(SftpClient { sftp, sessions, start_dir, agent_binding })
+    Ok(SftpClient { sftp, listing_sftp, sessions, start_dir, agent_binding })
 }
 
 #[cfg(test)]
@@ -863,7 +902,7 @@ mod tests {
 #[derive(Default)]
 pub struct SftpState {
     gate: RwLock<()>,
-    sessions: Mutex<HashMap<String, Arc<Mutex<SftpClient>>>>,
+    sessions: Mutex<HashMap<String, Arc<SftpClient>>>,
     transfers: Arc<Mutex<HashMap<String, SftpTransferControl>>>,
 }
 
@@ -993,7 +1032,7 @@ impl SftpState {
         let sessions = std::mem::take(&mut *self.sessions.lock().await);
         let mut first_error = None;
         for (_, session) in sessions {
-            if let Err(error) = session.lock().await.close().await {
+            if let Err(error) = session.close().await {
                 if first_error.is_none() {
                     first_error = Some(format!("{}: {}", error.code, error.detail));
                 }
@@ -1037,7 +1076,7 @@ pub async fn sftp_open(
     let session_id = new_session_id();
     let port = connection.effective_sftp_port();
     let agent_binding = client.agent_binding;
-    state.sessions.lock().await.insert(session_id.clone(), Arc::new(Mutex::new(client)));
+    state.sessions.lock().await.insert(session_id.clone(), Arc::new(client));
 
     Ok(SftpSessionInfo {
         session_id,
@@ -1052,6 +1091,118 @@ pub async fn sftp_open(
     })
 }
 
+const DIRECTORY_READ_CONCURRENCY: usize = 4;
+
+async fn read_directory_sequential_raw(
+    session: &RawSftpSession,
+    path: String,
+) -> Result<Vec<(String, Metadata)>, String> {
+    let opened = session.opendir(path).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    let handle = opened.handle;
+    let mut entries = Vec::new();
+
+    loop {
+        match session.readdir(handle.clone()).await {
+            Ok(page) => {
+                entries.extend(page.files.into_iter().filter_map(|entry| {
+                    let name = entry.filename.to_string();
+                    if name == "." || name == ".." {
+                        None
+                    } else {
+                        Some((name, entry.attrs))
+                    }
+                }));
+            }
+            Err(SftpClientError::Status(status)) if status.status_code == StatusCode::Eof => break,
+            Err(error) => {
+                let _ = session.close(handle).await;
+                return Err(format!("sftp_protocol: {error}"));
+            }
+        }
+    }
+
+    session.close(handle).await
+        .map_err(|error| format!("sftp_protocol: directory close failed: {error}"))?;
+    Ok(entries)
+}
+
+async fn read_directory_pipelined(
+    session: Arc<RawSftpSession>,
+    path: String,
+) -> Result<Vec<(String, Metadata)>, String> {
+    let opened = session.opendir(path.clone()).await
+        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    let handle = opened.handle;
+    let mut tasks = JoinSet::new();
+
+    for _ in 0..DIRECTORY_READ_CONCURRENCY {
+        let session = Arc::clone(&session);
+        let handle = handle.clone();
+        tasks.spawn(async move { session.readdir(handle).await });
+    }
+
+    let mut entries = Vec::new();
+    let mut eof = false;
+    let mut failure = None;
+
+    while let Some(joined) = tasks.join_next().await {
+        let result = match joined {
+            Ok(result) => result,
+            Err(error) => {
+                failure = Some(format!("sftp_protocol: directory worker failed: {error}"));
+                break;
+            }
+        };
+        match result {
+            Ok(page) => {
+                entries.extend(page.files.into_iter().filter_map(|entry| {
+                    let name = entry.filename.to_string();
+                    if name == "." || name == ".." {
+                        None
+                    } else {
+                        Some((name, entry.attrs))
+                    }
+                }));
+                if !eof {
+                    let session = Arc::clone(&session);
+                    let handle = handle.clone();
+                    tasks.spawn(async move { session.readdir(handle).await });
+                }
+            }
+            Err(SftpClientError::Status(status)) if status.status_code == StatusCode::Eof => {
+                eof = true;
+            }
+            Err(error) => {
+                failure = Some(format!("sftp_protocol: {error}"));
+                break;
+            }
+        }
+    }
+
+    if failure.is_some() {
+        tasks.abort_all();
+    }
+    while tasks.join_next().await.is_some() {}
+
+    let close_result = session.close(handle).await
+        .map_err(|error| format!("sftp_protocol: directory close failed: {error}"));
+    if let Some(error) = failure {
+        let _ = close_result;
+        // Some servers support SFTP but reject concurrent READDIR requests
+        // against one handle. Retry on the same isolated channel sequentially.
+        return read_directory_sequential_raw(&session, path).await
+            .or(Err(error));
+    }
+    close_result?;
+    Ok(entries)
+}
+
+fn is_normalized_absolute_remote_path(path: &str) -> bool {
+    path.starts_with('/')
+        && !path.split('/').any(|component| matches!(component, "." | ".."))
+}
+
 #[tauri::command]
 pub async fn sftp_list(
     state: State<'_, SftpState>,
@@ -1061,22 +1212,32 @@ pub async fn sftp_list(
     let _lifecycle = state.gate.read().await;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     let requested = remote_path.unwrap_or_else(|| ".".to_string());
     validate_remote_path(&requested)
         .map_err(|error| format!("{}: {}", error.code, error.detail))?;
-    let current_path = client.session().canonicalize(requested).await
-        .map_err(|error| format!("sftp_protocol: {error}"))?;
-    let directory = client.session().read_dir(current_path.clone()).await
-        .map_err(|error| format!("sftp_protocol: {error}"))?;
+    // Paths returned by this browser are already absolute and normalized.
+    // Avoid an extra REALPATH round trip on every directory double-click.
+    let current_path = if is_normalized_absolute_remote_path(&requested) {
+        requested
+    } else {
+        client.session().canonicalize(requested).await
+            .map_err(|error| format!("sftp_protocol: {error}"))?
+    };
+    let directory_entries = if let Some(listing_session) = client.listing_session() {
+        read_directory_pipelined(listing_session, current_path.clone()).await?
+    } else {
+        client.session().read_dir(current_path.clone()).await
+            .map_err(|error| format!("sftp_protocol: {error}"))?
+            .map(|entry| (entry.file_name().to_string(), entry.metadata()))
+            .collect()
+    };
 
     let mut entries = Vec::new();
-    for entry in directory {
-        let name = entry.file_name().to_string();
+    for (name, metadata) in directory_entries {
         if name == "." || name == ".." {
             continue;
         }
-        let metadata = entry.metadata();
         let kind = if metadata.is_dir() {
             "directory"
         } else if metadata.is_symlink() {
@@ -1120,7 +1281,7 @@ pub async fn sftp_mkdir(
     validate_remote_path(&remote_path).map_err(|error| format!("{}: {}", error.code, error.detail))?;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     let parent = client.session().canonicalize(remote_path).await
         .map_err(|error| format!("sftp_protocol: {error}"))?;
     let target = remote_child(&parent, &name);
@@ -1144,7 +1305,7 @@ pub async fn sftp_rename(
     validate_remote_name(&new_name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     let (parent, old_name) = canonical_sibling(client.session(), &remote_path).await
         .map_err(|error| format!("{}: {}", error.code, error.detail))?;
     if old_name == new_name {
@@ -1200,7 +1361,7 @@ pub async fn sftp_delete(
     let _lifecycle = state.gate.read().await;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     delete_remote_entry(client.session(), &remote_path).await
 }
 
@@ -1231,7 +1392,7 @@ pub async fn sftp_delete_many(
     let _lifecycle = state.gate.read().await;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     Ok(delete_remote_entries(client.session(), remote_paths).await)
 }
 
@@ -1251,7 +1412,7 @@ pub async fn sftp_close(
     wait_for_transfers(pending).await;
     let session = state.sessions.lock().await.remove(&session_id)
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    session.lock().await.close().await
+    session.close().await
         .map_err(|error| format!("{}: {}", error.code, error.detail))
 }
 
@@ -1260,7 +1421,8 @@ pub async fn sftp_close_all(state: State<'_, SftpState>) -> Result<(), String> {
     state.close_all_inner().await
 }
 
-const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
+// Match russh-sftp's default maximum SFTP read/write request length (255 KiB).
+const TRANSFER_CHUNK_SIZE: usize = 255 * 1024;
 const MAX_TRANSFER_ENTRIES: usize = 100_000;
 
 #[derive(Debug, Clone, Serialize)]
@@ -1461,6 +1623,7 @@ async fn build_upload_plan(
 
 async fn build_download_plan(
     sftp: &SftpSession,
+    listing_sftp: Option<Arc<RawSftpSession>>,
     remote_sources: &[String],
     local_destination: &str,
 ) -> Result<(Vec<TransferItem>, Vec<String>), String> {
@@ -1493,15 +1656,19 @@ async fn build_download_plan(
         }
     }
     while let Some((remote_directory, local_directory)) = stack.pop() {
-        let entries = sftp.read_dir(remote_directory.clone()).await
-            .map_err(|error| format!("sftp_protocol: {error}"))?;
-        for entry in entries {
-            let name = entry.file_name().to_string();
+        let entries = if let Some(listing_session) = &listing_sftp {
+            read_directory_pipelined(Arc::clone(listing_session), remote_directory.clone()).await?
+        } else {
+            sftp.read_dir(remote_directory.clone()).await
+                .map_err(|error| format!("sftp_protocol: {error}"))?
+                .map(|entry| (entry.file_name().to_string(), entry.metadata()))
+                .collect()
+        };
+        for (name, metadata) in entries {
             if name == "." || name == ".." { continue; }
             validate_remote_name(&name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
             validate_local_component(&name)?;
             let remote_path = remote_child(&remote_directory, &name);
-            let metadata = entry.metadata();
             let local_path = local_directory.join(&name);
             if metadata.is_symlink() { return Err(format!("sftp_transfer_symlink_unsupported: Remote symbolic links are not followed: {remote_path}")); }
             if metadata.is_dir() {
@@ -1583,9 +1750,12 @@ async fn upload_file(
     sftp: &SftpSession, item: &TransferItem, transfer_id: &str, index: usize,
     overwrite: bool, cancel: &mut watch::Receiver<bool>, progress: &mut SftpTransferProgress, emitter: &TransferEmitter,
 ) -> Result<(), TransferFailure> {
-    let mut source = tokio::fs::File::open(&item.source).await.map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
-    let temporary = remote_temp_sibling(&item.destination, transfer_id, index, "part").map_err(|error| TransferFailure::Failed(error))?;
-    let mut target = sftp.create(temporary.clone()).await.map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?;
+    let mut source = tokio::fs::File::open(&item.source).await
+        .map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
+    let temporary = remote_temp_sibling(&item.destination, transfer_id, index, "part")
+        .map_err(TransferFailure::Failed)?;
+    let mut target = sftp.create(temporary.clone()).await
+        .map_err(|error| TransferFailure::failed("sftp_transfer_remote_io", error))?;
     let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
     let result = loop {
         if *cancel.borrow() { break Err(TransferFailure::Cancelled); }
@@ -1722,9 +1892,8 @@ pub async fn sftp_transfer_start(
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
     if !matches!(direction.as_str(), "upload" | "download") { return Err("sftp_transfer_bad_direction: Expected upload or download.".into()); }
     let (items, conflicts) = {
-        let client = session.lock().await;
-        if direction == "upload" { build_upload_plan(client.session(), &sources, &destination).await? }
-        else { build_download_plan(client.session(), &sources, &destination).await? }
+        if direction == "upload" { build_upload_plan(session.session(), &sources, &destination).await? }
+        else { build_download_plan(session.session(), session.listing_session(), &sources, &destination).await? }
     };
     if !overwrite && !conflicts.is_empty() {
         return Ok(SftpTransferStartResult { transfer_id: None, conflicts });
@@ -1752,8 +1921,7 @@ pub async fn sftp_transfer_start(
     let worker_id = transfer_id.clone();
     tokio::spawn(async move {
         let result = {
-            let client = worker_session.lock().await;
-            run_transfer(client.session(), &items, &direction, &worker_id, overwrite, &mut cancel_rx, &mut progress, &emitter).await
+            run_transfer(worker_session.session(), &items, &direction, &worker_id, overwrite, &mut cancel_rx, &mut progress, &emitter).await
         };
         match result {
             Ok(()) => progress.status = SftpTransferStatus::Completed,
@@ -1948,7 +2116,7 @@ mod lifecycle_tests {
         tokio::fs::write(local_source.join("empty.bin"), b"").await.expect("create empty file");
         tokio::fs::write(local_source.join("hello world.txt"), b"first upload").await.expect("create text file");
         tokio::fs::write(local_source.join("nested/deeper/資料 final.txt"), b"unicode path").await.expect("create unicode file");
-        let large_payload = (0..900_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
+        let large_payload = (0..8 * 1024 * 1024).map(|index| (index % 251) as u8).collect::<Vec<_>>();
         tokio::fs::write(local_source.join("nested/large.bin"), &large_payload).await.expect("create large file");
 
         let (upload_items, upload_conflicts) = build_upload_plan(
@@ -1961,10 +2129,18 @@ mod lifecycle_tests {
         let mut upload_progress = transfer_progress(&client.id, &upload_id, "upload", &upload_items);
         let (_upload_cancel, mut upload_cancel_rx) = watch::channel(false);
         let no_emit = |_progress: &SftpTransferProgress| {};
-        run_transfer(
-            direct.session(), &upload_items, "upload", &upload_id, false,
-            &mut upload_cancel_rx, &mut upload_progress, &no_emit,
-        ).await.expect("upload files and folders");
+        let (upload_result, upload_browse_result) = tokio::join!(
+            run_transfer(
+                direct.session(), &upload_items, "upload", &upload_id, false,
+                &mut upload_cancel_rx, &mut upload_progress, &no_emit,
+            ),
+            async {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                direct.session().read_dir(remote_base.clone()).await
+            },
+        );
+        upload_result.expect("upload files and folders");
+        upload_browse_result.expect("browse remote directory while upload is running");
         assert_eq!(upload_progress.files_completed, 4);
 
         let remote_tree = remote_child(&remote_base, "upload-tree");
@@ -1973,19 +2149,43 @@ mod lifecycle_tests {
         assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "nested/deeper/資料 final.txt")).await, b"unicode path");
         assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "nested/large.bin")).await, large_payload);
 
+        // Exercise pipelined READDIR across several pages and verify that
+        // concurrent requests neither lose nor duplicate directory entries.
+        let paging_dir = remote_child(&remote_base, "listing-pages");
+        direct.session().create_dir(paging_dir.clone()).await.expect("create large listing directory");
+        for index in 0..300 {
+            let path = remote_child(&paging_dir, &format!("entry-{index:03}.txt"));
+            let file = direct.session().create(path).await.expect("create listing test file");
+            file.close().await.expect("close listing test file");
+        }
+        let listing_session = direct.listing_session().expect("dedicated listing SFTP channel");
+        let listed = read_directory_pipelined(listing_session, paging_dir)
+            .await.expect("read all pages through pipelined READDIR");
+        assert_eq!(listed.len(), 300, "all directory entries must be returned");
+        let distinct_names = listed.into_iter().map(|(name, _)| name).collect::<HashSet<_>>();
+        assert_eq!(distinct_names.len(), 300, "pipelined READDIR must not duplicate entries");
+
         let download_root = workspace.path().join("download");
         tokio::fs::create_dir_all(&download_root).await.expect("create local download folder");
         let (download_items, download_conflicts) = build_download_plan(
-            direct.session(), &[remote_tree.clone()], &download_root.to_string_lossy(),
+            direct.session(), direct.listing_session(), &[remote_tree.clone()], &download_root.to_string_lossy(),
         ).await.expect("build recursive download plan");
         assert!(download_conflicts.is_empty());
         let download_id = new_session_id();
         let mut download_progress = transfer_progress(&client.id, &download_id, "download", &download_items);
         let (_download_cancel, mut download_cancel_rx) = watch::channel(false);
-        run_transfer(
-            direct.session(), &download_items, "download", &download_id, false,
-            &mut download_cancel_rx, &mut download_progress, &no_emit,
-        ).await.expect("download files and folders");
+        let (download_result, browse_result) = tokio::join!(
+            run_transfer(
+                direct.session(), &download_items, "download", &download_id, false,
+                &mut download_cancel_rx, &mut download_progress, &no_emit,
+            ),
+            async {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                direct.session().read_dir(remote_tree.clone()).await
+            },
+        );
+        download_result.expect("download files and folders");
+        browse_result.expect("browse remote directory while download is running");
         assert_eq!(tokio::fs::read(download_root.join("upload-tree/nested/large.bin")).await.unwrap(), large_payload);
         assert_eq!(tokio::fs::read(download_root.join("upload-tree/nested/deeper/資料 final.txt")).await.unwrap(), b"unicode path");
 
@@ -2087,6 +2287,16 @@ mod lifecycle_tests {
 
         through_jump.close().await.expect("close jump SFTP");
         direct.close().await.expect("close direct SFTP");
+    }
+
+    #[test]
+    fn normalized_absolute_remote_paths_skip_realpath() {
+        for path in ["/", "/home/user", "/srv/data/nested dir", "/tmp/file.txt"] {
+            assert!(is_normalized_absolute_remote_path(path), "{path}");
+        }
+        for path in ["", ".", "..", "relative/path", "/home/../etc", "/home/./user"] {
+            assert!(!is_normalized_absolute_remote_path(path), "{path}");
+        }
     }
 
     #[test]
