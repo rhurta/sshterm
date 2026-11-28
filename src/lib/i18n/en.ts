@@ -33,8 +33,7 @@ export const en = {
   "settings.debugLogging": "Enable diagnostic logging",
   "settings.debugLoggingHint": "Records terminal resize, screen-buffer and redraw events. It does not record terminal text, commands, passwords or SSH keys.",
   "settings.debugLogLocation": "File: logs/debug.log (next to the application). The log rotates at 2 MiB; one previous file is kept.",
-  "settings.keepDisconnectedSessions": "Keep disconnected terminal tabs open to inspect errors"
-  "settings.highlightRules": "Syntax highlighting rules and tester",
+  "settings.keepDisconnectedSessions": "Keep disconnected terminal tabs open to inspect errors"  "settings.highlightRules": "Syntax highlighting rules and tester",
   "workspace.layout": "Terminal layout",
   "workspace.layout.single": "Single pane",
   "workspace.layout.leftRight": "Left and right",
