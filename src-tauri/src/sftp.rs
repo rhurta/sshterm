@@ -2107,6 +2107,22 @@ mod lifecycle_tests {
         assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "nested/deeper/資料 final.txt")).await, b"unicode path");
         assert_eq!(read_remote_file(direct.session(), &remote_child(&remote_tree, "nested/large.bin")).await, large_payload);
 
+        // Exercise pipelined READDIR across several pages and verify that
+        // concurrent requests neither lose nor duplicate directory entries.
+        let paging_dir = remote_child(&remote_base, "listing-pages");
+        direct.session().create_dir(paging_dir.clone()).await.expect("create large listing directory");
+        for index in 0..300 {
+            let path = remote_child(&paging_dir, &format!("entry-{index:03}.txt"));
+            let file = direct.session().create(path).await.expect("create listing test file");
+            file.close().await.expect("close listing test file");
+        }
+        let listing_session = direct.listing_session().expect("dedicated listing SFTP channel");
+        let listed = read_directory_pipelined(listing_session, paging_dir)
+            .await.expect("read all pages through pipelined READDIR");
+        assert_eq!(listed.len(), 300, "all directory entries must be returned");
+        let distinct_names = listed.into_iter().map(|(name, _)| name).collect::<HashSet<_>>();
+        assert_eq!(distinct_names.len(), 300, "pipelined READDIR must not duplicate entries");
+
         let download_root = workspace.path().join("download");
         tokio::fs::create_dir_all(&download_root).await.expect("create local download folder");
         let (download_items, download_conflicts) = build_download_plan(
