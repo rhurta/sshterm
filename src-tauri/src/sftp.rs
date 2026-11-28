@@ -863,7 +863,7 @@ mod tests {
 #[derive(Default)]
 pub struct SftpState {
     gate: RwLock<()>,
-    sessions: Mutex<HashMap<String, Arc<Mutex<SftpClient>>>>,
+    sessions: Mutex<HashMap<String, Arc<SftpClient>>,
     transfers: Arc<Mutex<HashMap<String, SftpTransferControl>>>,
 }
 
@@ -993,7 +993,7 @@ impl SftpState {
         let sessions = std::mem::take(&mut *self.sessions.lock().await);
         let mut first_error = None;
         for (_, session) in sessions {
-            if let Err(error) = session.lock().await.close().await {
+            if let Err(error) = session.close().await {
                 if first_error.is_none() {
                     first_error = Some(format!("{}: {}", error.code, error.detail));
                 }
@@ -1037,7 +1037,7 @@ pub async fn sftp_open(
     let session_id = new_session_id();
     let port = connection.effective_sftp_port();
     let agent_binding = client.agent_binding;
-    state.sessions.lock().await.insert(session_id.clone(), Arc::new(Mutex::new(client)));
+    state.sessions.lock().await.insert(session_id.clone(), Arc::new(client));
 
     Ok(SftpSessionInfo {
         session_id,
@@ -1061,7 +1061,7 @@ pub async fn sftp_list(
     let _lifecycle = state.gate.read().await;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     let requested = remote_path.unwrap_or_else(|| ".".to_string());
     validate_remote_path(&requested)
         .map_err(|error| format!("{}: {}", error.code, error.detail))?;
@@ -1120,7 +1120,7 @@ pub async fn sftp_mkdir(
     validate_remote_path(&remote_path).map_err(|error| format!("{}: {}", error.code, error.detail))?;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     let parent = client.session().canonicalize(remote_path).await
         .map_err(|error| format!("sftp_protocol: {error}"))?;
     let target = remote_child(&parent, &name);
@@ -1144,7 +1144,7 @@ pub async fn sftp_rename(
     validate_remote_name(&new_name).map_err(|error| format!("{}: {}", error.code, error.detail))?;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     let (parent, old_name) = canonical_sibling(client.session(), &remote_path).await
         .map_err(|error| format!("{}: {}", error.code, error.detail))?;
     if old_name == new_name {
@@ -1200,7 +1200,7 @@ pub async fn sftp_delete(
     let _lifecycle = state.gate.read().await;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     delete_remote_entry(client.session(), &remote_path).await
 }
 
@@ -1231,7 +1231,7 @@ pub async fn sftp_delete_many(
     let _lifecycle = state.gate.read().await;
     let session = state.sessions.lock().await.get(&session_id).cloned()
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    let client = session.lock().await;
+    let client = session;
     Ok(delete_remote_entries(client.session(), remote_paths).await)
 }
 
@@ -1251,7 +1251,7 @@ pub async fn sftp_close(
     wait_for_transfers(pending).await;
     let session = state.sessions.lock().await.remove(&session_id)
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
-    session.lock().await.close().await
+    session.close().await
         .map_err(|error| format!("{}: {}", error.code, error.detail))
 }
 
@@ -1722,9 +1722,8 @@ pub async fn sftp_transfer_start(
         .ok_or_else(|| "sftp_session_not_found".to_string())?;
     if !matches!(direction.as_str(), "upload" | "download") { return Err("sftp_transfer_bad_direction: Expected upload or download.".into()); }
     let (items, conflicts) = {
-        let client = session.lock().await;
-        if direction == "upload" { build_upload_plan(client.session(), &sources, &destination).await? }
-        else { build_download_plan(client.session(), &sources, &destination).await? }
+        if direction == "upload" { build_upload_plan(session.session(), &sources, &destination).await? }
+        else { build_download_plan(session.session(), &sources, &destination).await? }
     };
     if !overwrite && !conflicts.is_empty() {
         return Ok(SftpTransferStartResult { transfer_id: None, conflicts });
@@ -1752,8 +1751,7 @@ pub async fn sftp_transfer_start(
     let worker_id = transfer_id.clone();
     tokio::spawn(async move {
         let result = {
-            let client = worker_session.lock().await;
-            run_transfer(client.session(), &items, &direction, &worker_id, overwrite, &mut cancel_rx, &mut progress, &emitter).await
+            run_transfer(worker_session.session(), &items, &direction, &worker_id, overwrite, &mut cancel_rx, &mut progress, &emitter).await
         };
         match result {
             Ok(()) => progress.status = SftpTransferStatus::Completed,
