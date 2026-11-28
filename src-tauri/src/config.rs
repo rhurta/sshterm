@@ -189,6 +189,8 @@ pub struct Config {
     pub log_output: bool,
     /// Kind of log (default: plain text of the screen).
     pub log_mode: LogMode,
+    /// Write opt-in application/terminal diagnostics to logs/debug.log.
+    pub debug_logging: bool,
     /// Terminal clipboard and mouse behavior.
     pub terminal: TerminalSettings,
     /// Command-console visibility and preferred height (never contains command drafts).
@@ -210,6 +212,7 @@ impl Default for Config {
             theme: AppTheme::default(),
             log_output: true,
             log_mode: LogMode::Screen,
+            debug_logging: false,
             terminal: TerminalSettings::default(),
             command_console: CommandConsoleSettings::default(),
             workspace_panels: WorkspacePanelSettings::default(),
