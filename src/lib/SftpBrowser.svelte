@@ -1036,9 +1036,6 @@
                   <span class="entry-meta modified-meta" title={formatModified(entry.modified)}>{formatModified(entry.modified)}</span>
                 </div>
               {/each}
-              {#if remoteVisibleWindow.bottom > 0}
-                <div class="sftp-virtual-spacer" style:height={remoteVisibleWindow.bottom + "px"} aria-hidden="true"></div>
-              {/if}
             {/if}
           </div>
           <footer class="pane-footer">
@@ -1131,6 +1128,9 @@
                   <span class="entry-meta permission-meta">{formatPermissions(entry.permissions)}</span>
                 </div>
               {/each}
+              {#if remoteVisibleWindow.bottom > 0}
+                <div class="sftp-virtual-spacer" style:height={remoteVisibleWindow.bottom + "px"} aria-hidden="true"></div>
+              {/if}
             {/if}
           </div>
           <footer class="pane-footer">
