@@ -1122,8 +1122,13 @@ async fn read_directory_pipelined(
         };
         match result {
             Ok(page) => {
-                entries.extend(page.files.into_iter().map(|entry| {
-                    (entry.filename.to_string(), entry.attrs)
+                entries.extend(page.files.into_iter().filter_map(|entry| {
+                    let name = entry.filename.to_string();
+                    if name == "." || name == ".." {
+                        None
+                    } else {
+                        Some((name, entry.attrs))
+                    }
                 }));
                 if !eof {
                     let session = Arc::clone(&session);
