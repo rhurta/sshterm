@@ -1671,6 +1671,7 @@ async fn download_file_pipelined(
         }
     };
 
+    let worker_stride = chunk_size.saturating_mul(concurrency as u64);
     let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<u64>();
     let mut tasks = tokio::task::JoinSet::new();
     for (worker, mut source) in sources.into_iter().enumerate() {
@@ -1707,7 +1708,7 @@ async fn download_file_pipelined(
                             .map_err(|error| TransferFailure::failed("sftp_transfer_local_io", error))?;
                     }
                     let _ = progress_tx.send(length as u64);
-                    offset = offset.saturating_add(chunk_size.saturating_mul(TRANSFER_READ_CONCURRENCY as u64));
+                    offset = offset.saturating_add(worker_stride);
                 }
                 Ok(())
             }.await;
@@ -1752,6 +1753,11 @@ async fn download_file_pipelined(
                 }
             }
         }
+    }
+
+    while let Ok(bytes) = progress_rx.try_recv() {
+        progress.bytes_transferred = progress.bytes_transferred.saturating_add(bytes);
+        emit_transfer(emitter, progress);
     }
 
     if let Some(error) = failure {
