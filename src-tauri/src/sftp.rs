@@ -2126,7 +2126,7 @@ mod lifecycle_tests {
         tokio::fs::write(local_source.join("empty.bin"), b"").await.expect("create empty file");
         tokio::fs::write(local_source.join("hello world.txt"), b"first upload").await.expect("create text file");
         tokio::fs::write(local_source.join("nested/deeper/資料 final.txt"), b"unicode path").await.expect("create unicode file");
-        let large_payload = (0..900_000).map(|index| (index % 251) as u8).collect::<Vec<_>>();
+        let large_payload = (0..8 * 1024 * 1024).map(|index| (index % 251) as u8).collect::<Vec<_>>();
         tokio::fs::write(local_source.join("nested/large.bin"), &large_payload).await.expect("create large file");
 
         let (upload_items, upload_conflicts) = build_upload_plan(
@@ -2160,10 +2160,18 @@ mod lifecycle_tests {
         let download_id = new_session_id();
         let mut download_progress = transfer_progress(&client.id, &download_id, "download", &download_items);
         let (_download_cancel, mut download_cancel_rx) = watch::channel(false);
-        run_transfer(
-            direct.session(), &download_items, "download", &download_id, false,
-            &mut download_cancel_rx, &mut download_progress, &no_emit,
-        ).await.expect("download files and folders");
+        let (download_result, browse_result) = tokio::join!(
+            run_transfer(
+                direct.session(), &download_items, "download", &download_id, false,
+                &mut download_cancel_rx, &mut download_progress, &no_emit,
+            ),
+            async {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                direct.session().read_dir(remote_tree.clone()).await
+            },
+        );
+        download_result.expect("download files and folders");
+        browse_result.expect("browse remote directory while download is running");
         assert_eq!(tokio::fs::read(download_root.join("upload-tree/nested/large.bin")).await.unwrap(), large_payload);
         assert_eq!(tokio::fs::read(download_root.join("upload-tree/nested/deeper/資料 final.txt")).await.unwrap(), b"unicode path");
 
