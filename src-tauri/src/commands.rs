@@ -241,9 +241,12 @@ pub fn config_set_debug_logging(enabled: bool) -> Result<(), String> {
 
 /// Append one allowlisted diagnostic event. Terminal content and user input are
 /// never passed here. Keep the file bounded and rotate it once it reaches 2 MiB.
+static DEBUG_LOG_LOCK: Mutex<()> = Mutex::new(());
+
 #[tauri::command]
 pub fn debug_log_append(event: String) -> Result<(), String> {
     if !Config::load(&paths::config_path()).debug_logging { return Ok(()); }
+    let _guard = DEBUG_LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if event.len() > 4096 { return Err("debug_event_too_large".into()); }
     let event = event.replace('\r', " ").replace('\n', " ");
     let dir = paths::logs_dir();
