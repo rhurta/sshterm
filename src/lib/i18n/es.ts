@@ -34,8 +34,7 @@ export const es: Record<MessageKey, string> = {
   "settings.debugLogging": "Habilitar registro de diagnóstico",
   "settings.debugLoggingHint": "Registra redimensionamientos, estado del búfer y eventos de repintado del terminal. No registra texto del terminal, comandos, contraseñas ni claves SSH.",
   "settings.debugLogLocation": "Archivo: logs/debug.log (junto a la aplicación). Se rota al alcanzar 2 MiB y se conserva un archivo anterior.",
-  "settings.keepDisconnectedSessions": "Mantener abiertas las pestañas desconectadas para revisar errores"
-  "settings.highlightRules": "Reglas y probador de resaltado de sintaxis",
+  "settings.keepDisconnectedSessions": "Mantener abiertas las pestañas desconectadas para revisar errores"  "settings.highlightRules": "Reglas y probador de resaltado de sintaxis",
   "workspace.layout": "Distribución de terminales",
   "workspace.layout.single": "Un panel",
   "workspace.layout.leftRight": "Izquierda y derecha",
