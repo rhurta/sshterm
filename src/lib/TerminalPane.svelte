@@ -78,11 +78,12 @@
 
   /** Fits the terminal to its box and tells the PTY, but only when the size really
    * changed: every resize makes ConPTY repaint the whole screen. */
+  let debugLogQueue: Promise<unknown> = Promise.resolve();
   function debugLog(event: string) {
     if (!debugLogging) return;
-    // The backend checks the persisted opt-in setting and writes only metadata;
-    // terminal output and keystrokes are never included.
-    void invoke("debug_log_append", { event }).catch(() => {});
+    // Keep events from this terminal in parser/resize order. The backend also
+    // checks the persisted opt-in setting and accepts only known metadata events.
+    debugLogQueue = debugLogQueue.then(() => invoke("debug_log_append", { event })).catch(() => {});
   }
 
   function bufferMetrics(t: Terminal) {
