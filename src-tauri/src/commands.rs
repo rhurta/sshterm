@@ -249,6 +249,17 @@ pub fn debug_log_append(event: String) -> Result<(), String> {
         return Ok(());
     }
     let _guard = DEBUG_LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    const ALLOWED_EVENTS: &[&str] = &[
+        "terminal.created ",
+        "terminal.resize.request ",
+        "terminal.resize.complete ",
+        "terminal.resize.error ",
+        "terminal.csi.erase_display ",
+        "terminal.buffer.change ",
+    ];
+    if !ALLOWED_EVENTS.iter().any(|prefix| event.starts_with(prefix)) {
+        return Err("debug_event_invalid".into());
+    }
     if event.len() > 4096 {
         return Err("debug_event_too_large".into());
     }
