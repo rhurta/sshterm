@@ -245,7 +245,7 @@ pub fn config_set_debug_logging(enabled: bool) -> Result<(), String> {
 pub fn debug_log_append(event: String) -> Result<(), String> {
     if !Config::load(&paths::config_path()).debug_logging { return Ok(()); }
     if event.len() > 4096 { return Err("debug_event_too_large".into()); }
-    let event = event.replace(['\r', '\n'], " ");
+    let event = event.replace('\r', " ").replace('\n', " ");
     let dir = paths::logs_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("debug.log");
