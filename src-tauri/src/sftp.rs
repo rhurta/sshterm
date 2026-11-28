@@ -1261,7 +1261,8 @@ pub async fn sftp_close_all(state: State<'_, SftpState>) -> Result<(), String> {
     state.close_all_inner().await
 }
 
-const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
+// Match russh-sftp's default maximum SFTP read length (255 KiB).
+const TRANSFER_CHUNK_SIZE: usize = 255 * 1024;
 const TRANSFER_READ_CONCURRENCY: usize = 8;
 const MAX_TRANSFER_ENTRIES: usize = 100_000;
 
