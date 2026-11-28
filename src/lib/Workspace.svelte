@@ -113,6 +113,7 @@
   let error = $state("");
   let settings = $state<TerminalSettings>({ ...DEFAULT_TERMINAL_SETTINGS });
   let appBehavior = $state<AppBehaviorSettings>({ ...DEFAULT_APP_BEHAVIOR_SETTINGS });
+  let debugLogging = $state(false);
   let multilinePaste = $state<{ lineCount: number } | null>(null);
   let multilinePasteCancelButton = $state<HTMLButtonElement | null>(null);
   let multilinePasteResolver: ((confirmed: boolean) => void) | null = null;
@@ -198,6 +199,9 @@
     void invoke<AppBehaviorSettings>("config_get_app_behavior_settings")
       .then((value) => (appBehavior = value))
       .catch(() => {});
+    void invoke<boolean>("config_get_debug_logging")
+      .then((value) => (debugLogging = value))
+      .catch(() => {});
     void invoke<CommandConsoleSettings>("config_get_command_console_settings")
       .then((value) => {
         if (!consoleSettingsDirty) {
@@ -233,6 +237,17 @@
     } catch (e) {
       settings = previous;
       error = String(e);
+    }
+  }
+
+  async function setDebugLogging(enabled: boolean) {
+    const previous = debugLogging;
+    debugLogging = enabled;
+    try {
+      await invoke("config_set_debug_logging", { enabled });
+    } catch (e) {
+      debugLogging = previous;
+      error = errorText(String(e));
     }
   }
 
@@ -1250,7 +1265,7 @@
               <TerminalPane sessionId={tab.sessionId} container={paneEls[sessionPane[tab.sessionId]] ?? null}
                 active={paneActiveIds[sessionPane[tab.sessionId]] === tab.sessionId}
                 focused={activeId === tab.sessionId} onactivate={activateSession} onclosed={handleSessionClosed}
-                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} identityColor={tab.identityColor ?? null} {settings} {theme} {terminalOpacity} />
+                onmultilinepaste={requestMultilinePaste} highlightSets={tab.highlightSets ?? []} identityColor={tab.identityColor ?? null} {settings} {debugLogging} {theme} {terminalOpacity} />
             {/each}
           </div>
           <!-- SFTP browser roots are re-parented into their active pane without
@@ -1306,6 +1321,8 @@
       {theme}
       {appearance}
       {windowBackdropActive}
+      {debugLogging}
+      ondebuglogging={setDebugLogging}
       onterminal={setTerminalSetting}
       onbehavior={setAppBehaviorSetting}
       onhighlight={() => (highlightPanelOpen = true)}

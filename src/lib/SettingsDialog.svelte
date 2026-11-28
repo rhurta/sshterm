@@ -11,6 +11,8 @@
     theme,
     appearance,
     windowBackdropActive,
+    debugLogging,
+    ondebuglogging,
     onterminal,
     onbehavior,
     onhighlight,
@@ -24,6 +26,8 @@
     appearance: AppearanceSettings;
     /** Backdrop the window was created with; a different saved value needs a restart. */
     windowBackdropActive: WindowBackdrop;
+    debugLogging: boolean;
+    ondebuglogging: (enabled: boolean) => void;
     onterminal: <K extends keyof TerminalSettings>(key: K, value: TerminalSettings[K]) => void;
     onbehavior: <K extends keyof AppBehaviorSettings>(key: K, value: AppBehaviorSettings[K]) => void;
     onhighlight: () => void;
@@ -52,6 +56,7 @@
       title: "settings.applicationBehavior",
       items: ["settings.stopTunnelsOnLock", "settings.keepTunnelsOnLockWarning", "settings.closeToTray", "settings.closeToTrayHint"],
     },
+    diagnostics: { title: "settings.diagnostics", items: ["settings.debugLogging", "settings.debugLoggingHint", "settings.debugLogLocation"] },
     terminal: {
       title: "settings.terminal",
       items: [
@@ -246,6 +251,15 @@
           <label class="setting"><input type="checkbox" checked={appBehavior.close_to_tray} onchange={(e) => onbehavior("close_to_tray", e.currentTarget.checked)} />{t("settings.closeToTray")}</label>
           <p class="hint">{t("settings.closeToTrayHint")}</p>
         {/if}
+      {/if}
+
+      {#if showSection("diagnostics")}
+        <h3>{t("settings.diagnostics")}</h3>
+        {#if show("diagnostics", "settings.debugLogging")}
+          <label class="setting"><input type="checkbox" checked={debugLogging} onchange={(e) => ondebuglogging(e.currentTarget.checked)} />{t("settings.debugLogging")}</label>
+        {/if}
+        {#if show("diagnostics", "settings.debugLoggingHint")}<p class="hint">{t("settings.debugLoggingHint")}</p>{/if}
+        {#if show("diagnostics", "settings.debugLogLocation")}<p class="hint">{t("settings.debugLogLocation")}</p>{/if}
       {/if}
 
       {#if showSection("terminal")}

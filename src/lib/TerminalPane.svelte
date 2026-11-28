@@ -25,6 +25,7 @@
     onactivate,
     onclosed,
     settings,
+    debugLogging = false,
     theme,
     onmultilinepaste,
     highlightSets = [],
@@ -40,6 +41,7 @@
     onactivate: (id: string) => void;
     onclosed: (id: string) => void;
     settings: TerminalSettings;
+    debugLogging?: boolean;
     theme: AppTheme;
     /** Terminal background opacity in percent; below 100 the window background shows through. */
     terminalOpacity?: number;
@@ -69,12 +71,26 @@
   let fit: FitAddon | undefined;
   let lastCols = PROVISIONAL.cols;
   let lastRows = PROVISIONAL.rows;
+  let lastResizeAt = "";
   // Set once xterm is mounted, so the focus effect runs after `open()`.
   let mounted = $state(false);
   let disconnected = $state(false);
 
   /** Fits the terminal to its box and tells the PTY, but only when the size really
    * changed: every resize makes ConPTY repaint the whole screen. */
+  let debugLogQueue: Promise<unknown> = Promise.resolve();
+  function debugLog(event: string) {
+    if (!debugLogging) return;
+    // Keep events from this terminal in parser/resize order. The backend also
+    // checks the persisted opt-in setting and accepts only known metadata events.
+    debugLogQueue = debugLogQueue.then(() => invoke("debug_log_append", { event })).catch(() => {});
+  }
+
+  function bufferMetrics(t: Terminal) {
+    const buffer = t.buffer.active;
+    return `baseY=${buffer.baseY} viewportY=${buffer.viewportY} cursorY=${buffer.cursorY} length=${buffer.length} rows=${t.rows} cols=${t.cols}`;
+  }
+
   function syncSize() {
     if (!active || !term || !fit) return; // a hidden tab has no valid dimensions
     // Not attached to a pane (parked, or its pane is being rebuilt): the box has
@@ -87,10 +103,17 @@
     }
     const { cols, rows } = term;
     if (cols === lastCols && rows === lastRows) return;
+    const previous = `${lastCols}x${lastRows}`;
     lastCols = cols;
     lastRows = rows;
     setLastPaneSize(cols, rows);
-    if (!disconnected) void invoke("session_resize", { id: sessionId, cols, rows });
+    if (!disconnected) {
+      lastResizeAt = performance.now().toFixed(0);
+      debugLog(`terminal.resize.request session=${sessionId} from=${previous} to=${cols}x${rows} at=${lastResizeAt} ${bufferMetrics(term)}`);
+      void invoke("session_resize", { id: sessionId, cols, rows })
+        .then(() => debugLog(`terminal.resize.complete session=${sessionId} size=${cols}x${rows} at=${performance.now().toFixed(0)}`))
+        .catch(() => debugLog(`terminal.resize.error session=${sessionId} size=${cols}x${rows}`));
+    }
   }
 
   function tintedTerminalTheme() {
@@ -107,9 +130,17 @@
   }
 
   onMount(() => {
-    // The canvas renderer is used deliberately: the WebGL addon can fail to
-    // paint in WebView2, which shows a cursor but no text at all.
-    const t = new Terminal({
+    let mountCancelled = false;
+    let disposeTerminal: (() => void) | undefined;
+    void (async () => {
+      // Read the actual Windows build from the registry instead of hardcoding
+      // a Windows 11 build number. xterm uses it for ConPTY compatibility.
+      const windowsBuildNumber = await invoke<number | null>("terminal_windows_build_number").catch(() => null);
+      if (mountCancelled) return;
+
+      // The canvas renderer is used deliberately: the WebGL addon can fail to
+      // paint in WebView2, which shows a cursor but no text at all.
+      const t = new Terminal({
       fontFamily: 'Consolas, "Cascadia Mono", monospace',
       fontSize: 14,
       cursorBlink: true,
@@ -117,12 +148,30 @@
       allowProposedApi: true,
       theme: tintedTerminalTheme(),
       allowTransparency: true,
+      ...(windowsBuildNumber ? { windowsPty: { backend: "conpty" as const, buildNumber: windowsBuildNumber } } : {}),
     });
     term = t;
     const f = new FitAddon();
     fit = f;
     t.loadAddon(f);
     t.open(host);
+    // Diagnostic only: observe ED (CSI J) without changing xterm behavior.
+    // In particular, params [3] near lastResizeAt would implicate ConPTY's
+    // resize repaint in scrollback loss. Returning false lets xterm process it.
+    const eraseDisplayObserver = t.parser.registerCsiHandler({ final: "J" }, (params) => {
+      debugLog(`terminal.csi.erase_display session=${sessionId} params=${Array.from(params).join(",")} at=${performance.now().toFixed(0)} lastResize=${lastResizeAt || "none"} ${bufferMetrics(t)}`);
+      return false;
+    });
+    let lastBufferSnapshot = "";
+    const bufferObserver = t.onWriteParsed(() => {
+      const buffer = t.buffer.active;
+      const snapshot = `${buffer.baseY}:${buffer.viewportY}:${buffer.length}:${t.rows}:${t.cols}`;
+      if (snapshot !== lastBufferSnapshot) {
+        lastBufferSnapshot = snapshot;
+        debugLog(`terminal.buffer.change session=${sessionId} at=${performance.now().toFixed(0)} ${bufferMetrics(t)}`);
+      }
+    });
+    debugLog(`terminal.created session=${sessionId} at=${performance.now().toFixed(0)} ${bufferMetrics(t)}`);
     mounted = true;
 
 
@@ -399,13 +448,15 @@
       }),
     ];
 
-    return () => {
+    disposeTerminal = () => {
       cleanups.forEach((fn) => fn());
       highlightDisposed = true;
       highlightRequest += 1;
       clearTimeout(highlightTimer);
       highlightListeners.forEach((listener) => listener.dispose());
       clearHighlightDecorations();
+      eraseDisplayObserver.dispose();
+      bufferObserver.dispose();
       host.removeEventListener("contextmenu", onContextMenu);
       host.removeEventListener("mousedown", onMouseDown);
       releaseSession(sessionId);
@@ -413,6 +464,12 @@
       observer.disconnect();
       finishLog();
       t.dispose();
+    };
+    })();
+
+    return () => {
+      mountCancelled = true;
+      disposeTerminal?.();
     };
   });
 
